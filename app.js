@@ -50,6 +50,27 @@ function statusLabel(status) {
   }
 }
 
+// HTML 轉義（防 XSS）
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// CSV 文字安全處理（防公式注入）
+function safeForCsv(cell) {
+  const s = String(cell ?? "");
+  // 如果第一個字是 = + - @，前面加一個 '
+  if (/^[=+\-@]/.test(s)) {
+    return "'" + s;
+  }
+  return s;
+}
+
 // date string YYYY-MM-DD compare
 function isDateInRange(date, start, end) {
   return (!start || date >= start) && (!end || date <= end);
@@ -212,10 +233,10 @@ function renderProjects() {
       const profit = calcProfit(p);
 
       tr.innerHTML = `
-        <td>${p.name || "-"}</td>
-        <td>${p.client || "-"}</td>
-        <td>${p.startDate || "-"}<br/>～ ${p.endDate || "-"}</td>
-        <td>${statusLabel(p.status)}</td>
+        <td>${escapeHtml(p.name) || "-"}</td>
+        <td>${escapeHtml(p.client) || "-"}</td>
+        <td>${escapeHtml(p.startDate) || "-"}<br/>～ ${escapeHtml(p.endDate) || "-"}</td>
+        <td>${escapeHtml(statusLabel(p.status))}</td>
         <td class="num">${formatMoney(p.revenue)}</td>
         <td class="num">${formatMoney(p.cost)}</td>
         <td class="num">${formatMoney(profit)}</td>
@@ -299,9 +320,9 @@ function renderEquipments() {
     .forEach((eq) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td>${eq.name}</td>
+        <td>${escapeHtml(eq.name)}</td>
         <td class="num">${eq.qty}</td>
-        <td>${eq.note || ""}</td>
+        <td>${escapeHtml(eq.note || "")}</td>
         <td>
           <div class="table-actions">
             <button class="btn ghost small" data-action="edit" data-id="${eq.id}">編輯</button>
@@ -440,6 +461,7 @@ function renderCalendar() {
     projectsToday.forEach((p) => {
       const span = document.createElement("div");
       span.className = `calendar-project status-${p.status || "planning"}`;
+      // 這裡用 textContent，本身就會自動轉義
       span.textContent = p.name;
       body.appendChild(span);
     });
@@ -492,10 +514,10 @@ function renderReport() {
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${p.name || "-"}</td>
-      <td>${p.client || "-"}</td>
-      <td>${p.startDate || "-"}<br/>～ ${p.endDate || "-"}</td>
-      <td>${statusLabel(p.status)}</td>
+      <td>${escapeHtml(p.name) || "-"}</td>
+      <td>${escapeHtml(p.client) || "-"}</td>
+      <td>${escapeHtml(p.startDate) || "-"}<br/>～ ${escapeHtml(p.endDate) || "-"}</td>
+      <td>${escapeHtml(statusLabel(p.status))}</td>
       <td class="num">${formatMoney(p.revenue)}</td>
       <td class="num">${formatMoney(p.cost)}</td>
       <td class="num">${formatMoney(profit)}</td>
@@ -547,11 +569,11 @@ function exportCsv() {
 
   filtered.forEach((p) => {
     rows.push([
-      p.name || "",
-      p.client || "",
+      safeForCsv(p.name || ""),
+      safeForCsv(p.client || ""),
       p.startDate || "",
       p.endDate || "",
-      statusLabel(p.status),
+      safeForCsv(statusLabel(p.status)),
       String(p.revenue || 0),
       String(p.cost || 0),
       String(calcProfit(p) || 0)
@@ -559,7 +581,9 @@ function exportCsv() {
   });
 
   const csvContent = rows
-    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+    .map((row) =>
+      row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
+    )
     .join("\r\n");
 
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
