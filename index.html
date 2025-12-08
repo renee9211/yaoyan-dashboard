@@ -2,2173 +2,249 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>曜炎創意娛樂</title>
+  <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <style>
-    * {
-      box-sizing: border-box;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-        sans-serif;
-    }
-    body {
-      margin: 0;
-      padding: 16px;
-      background: #f3f4f6;
-      color: #111827;
-    }
-    h1 {
-      margin: 0 0 8px;
-      font-size: 24px;
-    }
-    .subtitle {
-      color: #6b7280;
-      margin-bottom: 16px;
-      font-size: 14px;
-    }
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
-      flex-wrap: wrap;
-    }
-    .user-info {
-      font-size: 12px;
-      color: #4b5563;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .role-pill {
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 11px;
-      background: #e0f2fe;
-      color: #0369a1;
-    }
-    .layout {
-      display: grid;
-      grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
-      gap: 16px;
-    }
-    @media (max-width: 960px) {
-      .layout {
-        grid-template-columns: 1fr;
-      }
-    }
-    .card {
-      background: #ffffff;
-      border-radius: 12px;
-      padding: 16px;
-      box-shadow: 0 10px 15px -10px rgba(0, 0, 0, 0.15);
-    }
-    .card h2 {
-      margin: 0 0 12px;
-      font-size: 18px;
-    }
-    .section-title {
-      font-size: 12px;
-      font-weight: 700;
-      color: #6b7280;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin: 12px 0 4px;
-      border-top: 1px dashed #e5e7eb;
-      padding-top: 10px;
-    }
-    .form-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px 12px;
-    }
-    .form-grid-full {
-      grid-column: 1 / -1;
-    }
-    label {
-      display: block;
-      font-size: 12px;
-      margin-bottom: 4px;
-      color: #4b5563;
-    }
-    input, select, textarea {
-      width: 100%;
-      padding: 6px 8px;
-      border-radius: 8px;
-      border: 1px solid #d1d5db;
-      font-size: 13px;
-      background: #f9fafb;
-    }
-    textarea {
-      min-height: 60px;
-      resize: vertical;
-    }
-    input:focus,
-    select:focus,
-    textarea:focus {
-      outline: none;
-      border-color: #2563eb;
-      box-shadow: 0 0 0 1px #2563eb22;
-      background: #ffffff;
-    }
-    input[disabled], select[disabled], textarea[disabled] {
-      background: #f3f4f6;
-      color: #9ca3af;
-    }
-    .actions {
-      margin-top: 12px;
-      display: flex;
-      gap: 8px;
-      justify-content: flex-end;
-    }
-    button {
-      border-radius: 999px;
-      border: none;
-      padding: 6px 14px;
-      font-size: 13px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-    .btn-primary {
-      background: #2563eb;
-      color: #ffffff;
-    }
-    .btn-secondary {
-      background: #e5e7eb;
-      color: #374151;
-    }
-    .btn-danger {
-      background: #ef4444;
-      color: #ffffff;
-    }
-    .btn-small {
-      padding: 4px 10px;
-      font-size: 12px;
-      border-radius: 999px;
-    }
-    .toolbar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 12px;
-      flex-wrap: wrap;
-    }
-    .toolbar-group {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px;
-      flex-wrap: wrap;
-    }
-    .pill {
-      padding: 3px 8px;
-      border-radius: 999px;
-      font-size: 11px;
-      background: #eef2ff;
-      color: #4338ca;
-      white-space: nowrap;
-    }
-    .status-pill {
-      padding: 3px 8px;
-      border-radius: 999px;
-      font-size: 11px;
-      white-space: nowrap;
-    }
-    .status-booked {
-      background: #e0f2fe;
-      color: #0369a1;
-    }
-    .status-progress {
-      background: #fef3c7;
-      color: #92400e;
-    }
-    .status-done {
-      background: #dcfce7;
-      color: #166534;
-    }
-    .status-cancel {
-      background: #fee2e2;
-      color: #b91c1c;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-    }
-    thead {
-      background: #f3f4f6;
-      position: sticky;
-      top: 0;
-      z-index: 1;
-    }
-    th, td {
-      padding: 6px 8px;
-      border-bottom: 1px solid #e5e7eb;
-      vertical-align: top;
-    }
-    th {
-      text-align: left;
-      font-weight: 600;
-      color: #4b5563;
-      white-space: nowrap;
-    }
-    tbody tr:nth-child(even) {
-      background: #f9fafb;
-    }
-    .row-selected {
-      background: #e0f2fe !important;
-    }
-    .table-wrapper {
-      max-height: 260px;
-      overflow: auto;
-      border-radius: 10px;
-      border: 1px solid #e5e7eb;
-      background: #ffffff;
-    }
-    .table-wrapper + .table-wrapper {
-      margin-top: 8px;
-    }
-    .text-right {
-      text-align: right;
-    }
-    .muted {
-      color: #9ca3af;
-    }
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 12px;
-    }
-    .summary-item {
-      padding: 8px;
-      border-radius: 10px;
-      background: #f9fafb;
-      font-size: 11px;
-    }
-    .summary-label {
-      color: #6b7280;
-      margin-bottom: 4px;
-    }
-    .summary-value {
-      font-size: 14px;
-      font-weight: 600;
-    }
-    .summary-hint {
-      font-size: 10px;
-      color: #9ca3af;
-      margin-top: 4px;
-    }
-    .no-data {
-      text-align: center;
-      padding: 16px;
-      font-size: 13px;
-      color: #9ca3af;
-    }
-    .details-card {
-      margin-top: 12px;
-      border-radius: 10px;
-      border: 1px solid #e5e7eb;
-      padding: 12px;
-      background: #f9fafb;
-      font-size: 12px;
-    }
-    .details-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 8px;
-      margin-bottom: 4px;
-    }
-    .details-title {
-      font-weight: 600;
-    }
-    .details-subtitle {
-      font-size: 11px;
-      color: #6b7280;
-    }
-    .details-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px 12px;
-      margin-top: 8px;
-    }
-    .details-section-title {
-      font-size: 11px;
-      font-weight: 600;
-      color: #4b5563;
-      margin-top: 4px;
-      margin-bottom: 2px;
-    }
-    .details-item-label {
-      font-size: 11px;
-      color: #6b7280;
-    }
-    .details-item-value {
-      font-size: 12px;
-      font-weight: 500;
-    }
-    @media (max-width: 960px) {
-      .summary-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-      .details-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-    }
-    @media (max-width: 640px) {
-      .details-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-    .view-tabs {
-      display: inline-flex;
-      border-radius: 999px;
-      background: #e5e7eb;
-      padding: 2px;
-      margin-bottom: 8px;
-      gap: 2px;
-    }
-    .tab-button {
-      border-radius: 999px;
-      border: none;
-      padding: 4px 10px;
-      font-size: 12px;
-      background: transparent;
-      cursor: pointer;
-      color: #4b5563;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-    .tab-button-active {
-      background: #111827;
-      color: #f9fafb;
-    }
-    /* 設備 10 行：排版 */
-    .equipment-line-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 4px;
-      font-size: 12px;
-    }
-    .equipment-line-row span {
-      width: 46px;
-      color: #6b7280;
-    }
-    .equipment-line-row select {
-      flex: 1;
-    }
-    .equipment-line-row input {
-      width: 80px;
-    }
-    /* 行事曆 */
-    .calendar-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 11px;
-      margin-top: 4px;
-    }
-    .calendar-table th,
-    .calendar-table td {
-      border: 1px solid #e5e7eb;
-      padding: 4px;
-      vertical-align: top;
-      height: 72px;
-    }
-    .calendar-table th {
-      background: #f3f4f6;
-      text-align: center;
-      font-weight: 600;
-      color: #4b5563;
-    }
-    .calendar-day-number {
-      font-weight: 600;
-      margin-bottom: 2px;
-    }
-    .calendar-day-usage {
-      font-size: 11px;
-      color: #4b5563;
-    }
-    .calendar-ok {
-      background: #ecfdf5;
-    }
-    .calendar-over {
-      background: #fee2e2;
-    }
-  </style>
+  <!-- 外部樣式 -->
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="topbar">
+  <header class="topbar">
     <div>
-      <h1>曜炎創意娛樂</h1>
-      <div class="subtitle">
-        多人共用、即時同步。依月份查看收支、人力排班、設備出勤與設備庫存。
-      </div>
+      <h1>曜炎創意娛樂 Dashboard</h1>
+      <p class="subtitle">專案檔期、特效設備、行事曆與月報表一站管理</p>
     </div>
-    <div class="user-info">
-      <span id="user-info-text">尚未登入</span>
-      <span id="user-role-pill" class="role-pill" style="display:none;"></span>
-      <button class="btn-secondary btn-small" id="login-btn">使用 Google 登入</button>
-      <button class="btn-secondary btn-small" id="logout-btn" style="display:none;">登出</button>
+    <div class="topbar-right">
+      <span class="tag">Admin</span>
+      <span id="todayLabel"></span>
     </div>
-  </div>
+  </header>
 
-  <div class="layout">
-    <!-- 左側：表單 -->
-    <div class="card">
-      <h2 id="form-title">新增專案 Project</h2>
-      <div id="form-permission-hint" class="muted" style="font-size:12px;margin-bottom:6px;">
-        🔒 請先登入，且權限為 staff / manager / admin 才能新增或編輯專案。
-      </div>
-      <form id="project-form">
-        <div class="form-grid">
-          <!-- 基本資訊 -->
-          <div class="form-grid-full section-title">基本資訊</div>
-          <div class="form-grid-full">
-            <label>專案名稱 Project Name</label>
-            <input type="text" id="project-name" required placeholder="例如：MV 拍攝－品牌 X" />
-          </div>
-          <div>
-            <label>客戶 Client</label>
-            <input type="text" id="client" placeholder="例如：品牌／製作公司名稱" />
-          </div>
-          <div>
-            <label>檔期開始 Start Date</label>
-            <input type="date" id="start-date" required />
-          </div>
-          <div>
-            <label>檔期結束 End Date</label>
-            <input type="date" id="end-date" />
-          </div>
+  <main>
+    <!-- 分頁切換 -->
+    <nav class="tabs">
+      <button class="tab-button active" data-tab="projects">專案管理</button>
+      <button class="tab-button" data-tab="equipments">設備清單</button>
+      <button class="tab-button" data-tab="calendar">檔期 & 設備行事曆</button>
+      <button class="tab-button" data-tab="report">每月營收淨利報表</button>
+    </nav>
 
-          <!-- 設備：10 行 from 設備清單 -->
-          <div class="form-grid-full section-title">設備 Equipment</div>
-          <div class="form-grid-full">
-            <label>使用設備（最多 10 筆）</label>
-            <div id="equipment-lines"></div>
-            <div class="muted" style="font-size:11px; margin-top:4px;">
-              設備名稱從「設備清單」下拉選擇，數量代表本專案在檔期內需要的台數。<br />
-              （之後會用來算行事曆是否超出總設備數）
-            </div>
-          </div>
-          <div>
-            <label>設備來源 Source</label>
-            <select id="equipment-source">
-              <option value="own">自有設備</option>
-              <option value="rental">租借</option>
-              <option value="mixed">自有＋租借</option>
-            </select>
-          </div>
-          <div>
-            <label>自有設備成本 Own Cost (NTD)</label>
-            <input type="number" id="equipment-own-cost" min="0" step="100" />
-          </div>
-          <div>
-            <label>租借設備成本 Rental Cost (NTD)</label>
-            <input type="number" id="equipment-rental-cost" min="0" step="100" />
-          </div>
-
-          <!-- 人力 -->
-          <div class="form-grid-full section-title">人力 Manpower</div>
-          <div>
-            <label>現場技師 Technician (NTD)</label>
-            <input type="number" id="man-tech" min="0" step="100" />
-          </div>
-          <div>
-            <label>助理 Assistant (NTD)</label>
-            <input type="number" id="man-assistant" min="0" step="100" />
-          </div>
-          <div>
-            <label>司機 Driver (NTD)</label>
-            <input type="number" id="man-driver" min="0" step="100" />
-          </div>
-          <div>
-            <label>夜班費 Night Shift (NTD)</label>
-            <input type="number" id="man-night" min="0" step="100" />
-          </div>
-          <div>
-            <label>加班費 Overtime (NTD)</label>
-            <input type="number" id="man-overtime" min="0" step="100" />
-          </div>
-
-          <!-- 財務 -->
-          <div class="form-grid-full section-title">財務 Financial</div>
-          <div>
-            <label>報價金額 Quote (NTD)</label>
-            <input type="number" id="quote-amount" min="0" step="100" />
-          </div>
-          <div>
-            <label>實際執行預算 Project Budget (NTD)</label>
-            <input type="number" id="budget" min="0" step="100" />
-          </div>
-          <div>
-            <label>其他支出 Other Expenses (NTD)</label>
-            <input type="number" id="expenses" min="0" step="100" />
-          </div>
-          <div>
-            <label>稅別 Tax Type</label>
-            <select id="tax-type">
-              <option value="na">不適用 / 不計</option>
-              <option value="included">含稅金額 (含 5% VAT)</option>
-              <option value="excluded">未稅金額 (5% 另計)</option>
-            </select>
-          </div>
-
-          <!-- 請款 -->
-          <div class="form-grid-full section-title">請款 & 發票 Billing</div>
-          <div>
-            <label>發票號碼 Invoice No.</label>
-            <input type="text" id="invoice-number" />
-          </div>
-          <div>
-            <label>開立日期 Invoice Date</label>
-            <input type="date" id="invoice-date" />
-          </div>
-          <div>
-            <label>預計收款日 Expected Payment</label>
-            <input type="date" id="expected-payment-date" />
-          </div>
-          <div>
-            <label>實際收款日 Actual Payment</label>
-            <input type="date" id="actual-payment-date" />
-          </div>
-          <div>
-            <label>請款狀態 Billing Status</label>
-            <select id="billing-status">
-              <option value="none">尚未開立</option>
-              <option value="invoiced">已開立發票</option>
-              <option value="partial">部分收款</option>
-              <option value="paid">已全額收款</option>
-            </select>
-          </div>
-
-          <!-- 專案狀態 & 備註 -->
-          <div>
-            <label>專案狀態 Project Status</label>
-            <select id="project-status">
-              <option value="booked">已確認檔期</option>
-              <option value="in-progress">執行中</option>
-              <option value="done">已完成</option>
-              <option value="cancel">取消</option>
-            </select>
-          </div>
-          <div class="form-grid-full">
-            <label>備註 Notes</label>
-            <textarea id="notes" placeholder="例如：需要夜間加班／戶外場需備防水設備……"></textarea>
-          </div>
-        </div>
-
-        <div class="actions">
-          <button type="button" class="btn-secondary" id="reset-btn">清除表單 Reset</button>
-          <button type="submit" class="btn-primary" id="submit-btn">新增專案 Add</button>
-        </div>
-      </form>
-    </div>
-
-    <!-- 右側：列表 + 詳情 + 月份總覽 + 人力 & 設備視角 + 設備清單 + 行事曆 -->
-    <div>
+    <!-- 📌 專案管理 -->
+    <section class="tab-panel active" id="tab-projects">
       <div class="card">
-        <div class="toolbar">
-          <div class="toolbar-group">
-            <span>📅 檢視月份：</span>
-            <input type="month" id="month-filter" />
-          </div>
-          <div class="toolbar-group">
-            <span class="pill" id="project-count-pill">共 0 筆專案</span>
-          </div>
-          <div class="toolbar-group">
-            <div class="view-tabs">
-              <button class="tab-button tab-button-active" id="tab-project">專案總覽</button>
-              <button class="tab-button" id="tab-resource">人力 / 設備視角</button>
-              <button class="tab-button" id="tab-equipment">設備清單</button>
-            </div>
-          </div>
-        </div>
+        <h2>新增 / 編輯專案</h2>
+        <form id="project-form" class="grid-form">
+          <input type="hidden" id="projectId" />
 
-        <!-- View 1：專案總覽 -->
-        <div id="view-project">
-          <div class="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>專案 / 客戶</th>
-                  <th>檔期</th>
-                  <th class="text-right">淨營收</th>
-                  <th class="text-right">預估毛利</th>
-                  <th>狀態</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody id="project-tbody">
-                <tr>
-                  <td colspan="6" class="no-data">目前尚無專案，請從左側新增。</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="field">
+            <label for="projectName">專案名稱</label>
+            <input id="projectName" type="text" placeholder="例：跨年煙火特效" required />
           </div>
 
-          <!-- 當月統計 -->
-          <div class="summary-grid" id="summary-grid">
-            <div class="summary-item">
-              <div class="summary-label">當月報價總額</div>
-              <div class="summary-value" id="sum-quote">NT$ 0</div>
-              <div class="summary-hint">Quote 金額加總</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">當月執行預算</div>
-              <div class="summary-value" id="sum-budget">NT$ 0</div>
-              <div class="summary-hint">Project Budget 加總</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">當月總成本</div>
-              <div class="summary-value" id="sum-cost">NT$ 0</div>
-              <div class="summary-hint">設備＋人力＋其他支出</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">當月淨營收</div>
-              <div class="summary-value" id="sum-net-revenue">NT$ 0</div>
-              <div class="summary-hint">扣除稅額後營收</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">當月預估毛利</div>
-              <div class="summary-value" id="sum-profit">NT$ 0</div>
-              <div class="summary-hint">淨營收 − 總成本</div>
+          <div class="field">
+            <label for="projectClient">客戶名稱</label>
+            <input id="projectClient" type="text" placeholder="例：〇〇活動整合公司" />
+          </div>
+
+          <div class="field">
+            <label>專案期間</label>
+            <div class="field-inline">
+              <input id="projectStart" type="date" required />
+              <span>～</span>
+              <input id="projectEnd" type="date" required />
             </div>
           </div>
 
-          <!-- 詳情 -->
-          <div class="details-card" id="details-card">
-            <div class="no-data">點選上方任一專案，即可查看詳細成本與請款資訊。</div>
-          </div>
-        </div>
-
-        <!-- View 2：人力 / 設備視角 -->
-        <div id="view-resource" style="display:none; margin-top:4px;">
-          <!-- 人力 & 設備 Summary -->
-          <div class="summary-grid" id="resource-summary-grid">
-            <div class="summary-item">
-              <div class="summary-label">技師成本</div>
-              <div class="summary-value" id="sum-man-tech">NT$ 0</div>
-              <div class="summary-hint">Technician 合計</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">助理成本</div>
-              <div class="summary-value" id="sum-man-assistant">NT$ 0</div>
-              <div class="summary-hint">Assistant 合計</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">司機成本</div>
-              <div class="summary-value" id="sum-man-driver">NT$ 0</div>
-              <div class="summary-hint">Driver 合計</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">夜班 + 加班費</div>
-              <div class="summary-value" id="sum-man-extra">NT$ 0</div>
-              <div class="summary-hint">Night Shift + OT</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">設備成本</div>
-              <div class="summary-value" id="sum-equipment">NT$ 0</div>
-              <div class="summary-hint">自有＋租借成本</div>
-            </div>
-          </div>
-
-          <!-- 人力排班表 -->
-          <div style="margin-top:10px; font-size:12px; font-weight:600; color:#4b5563;">
-            👥 人力排班一覽（依日期）
-          </div>
-          <div class="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>日期</th>
-                  <th class="text-right">專案數</th>
-                  <th class="text-right">技師案數</th>
-                  <th class="text-right">助理案數</th>
-                  <th class="text-right">司機案數</th>
-                  <th>夜班 / OT</th>
-                </tr>
-              </thead>
-              <tbody id="manpower-tbody">
-                <tr>
-                  <td colspan="6" class="no-data">請先選擇月份。</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- 設備出勤表 -->
-          <div style="margin-top:10px; font-size:12px; font-weight:600; color:#4b5563;">
-            🎛 設備出勤一覽（依日期）
-          </div>
-          <div class="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>日期</th>
-                  <th class="text-right">有設備專案數</th>
-                  <th class="text-right">設備成本</th>
-                  <th>部分專案名稱</th>
-                </tr>
-              </thead>
-              <tbody id="equipment-tbody">
-                <tr>
-                  <td colspan="4" class="no-data">請先選擇月份。</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- View 3：設備清單 + 檔期行事曆 -->
-        <div id="view-equipment" style="display:none; margin-top:4px;">
-          <div style="font-size:12px; margin-bottom:8px; color:#4b5563;">
-            ✅ 在這裡維護所有特效設備的清單與庫存總數，並用行事曆檢查檔期是否超用。
-          </div>
-
-          <!-- 設備表單 -->
-          <div class="card" style="padding:12px; margin-bottom:12px; box-shadow:none; border:1px solid #e5e7eb;">
-            <div style="font-size:13px; font-weight:600; margin-bottom:8px;">
-              設備資料 Equipment
-              <span class="muted" style="font-size:11px; margin-left:4px;">
-                （先登入即可編輯）
-              </span>
-            </div>
-            <form id="equipment-form">
-              <div class="form-grid">
-                <div>
-                  <label>設備名稱 Name</label>
-                  <input type="text" id="eq-name" required placeholder="例如：煙霧機 1500W" />
-                </div>
-                <div>
-                  <label>設備代碼 Code</label>
-                  <input type="text" id="eq-code" placeholder="例如：SMOKE1500" />
-                </div>
-                <div>
-                  <label>分類 Category</label>
-                  <input type="text" id="eq-category" placeholder="例如：煙霧 / 火焰 / 泡泡…" />
-                </div>
-                <div>
-                  <label>總數量 Total Quantity</label>
-                  <input type="number" id="eq-total" min="0" step="1" />
-                </div>
-                <div>
-                  <label>是否啟用 Active</label>
-                  <select id="eq-active">
-                    <option value="true">使用中</option>
-                    <option value="false">停用 / 報廢</option>
-                  </select>
-                </div>
-                <div class="form-grid-full">
-                  <label>備註 Notes</label>
-                  <textarea id="eq-notes" placeholder="例如：自有 6 台，固定跟某間公司租 2 台。"></textarea>
-                </div>
-              </div>
-              <div class="actions">
-                <button type="button" class="btn-secondary btn-small" id="eq-reset-btn">清除</button>
-                <button type="submit" class="btn-primary btn-small" id="eq-submit-btn">儲存設備</button>
-              </div>
-              <div id="eq-form-hint" class="muted" style="font-size:11px; margin-top:4px;">
-                🔑 請先登入，登入後即可維護設備清單。
-              </div>
-            </form>
-          </div>
-
-          <!-- 設備列表 -->
-          <div class="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>設備名稱</th>
-                  <th>代碼</th>
-                  <th>分類</th>
-                  <th class="text-right">總數量</th>
-                  <th>狀態</th>
-                  <th>備註</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody id="equipment-master-tbody">
-                <tr>
-                  <td colspan="7" class="no-data">目前還沒有任何設備，請上方新增。</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- 檔期行事曆 -->
-          <div style="margin-top:12px; font-size:12px; font-weight:600; color:#4b5563;">
-            📆 設備檔期行事曆（檢查是否超出總設備數）
-          </div>
-          <div class="toolbar-group" style="margin:6px 0 10px;">
-            <span style="font-size:12px;">選擇要檢查的設備：</span>
-            <select id="calendar-equipment-select" style="padding:4px 8px; border-radius:999px; font-size:12px; border:1px solid #d1d5db;">
-              <option value="">請先在上方建立設備清單</option>
+          <div class="field">
+            <label>專案狀態</label>
+            <select id="projectStatus">
+              <option value="planning">規劃中</option>
+              <option value="confirmed">已簽約 / 確認</option>
+              <option value="executing">執行中</option>
+              <option value="closed">已結案</option>
+              <option value="lost">流標 / 未成案</option>
             </select>
-            <span class="muted" style="font-size:11px;">
-              配合同一頁上方的「檢視月份」使用。
-            </span>
-          </div>
-          <div id="equipment-calendar" class="card" style="padding:8px; box-shadow:none; border:1px dashed #d1d5db; background:#f9fafb;">
-            <div class="no-data">請先選擇設備與月份。</div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  </div>
-
-  <!-- Firebase CDN -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-
-  <script>
-    // 你的 Firebase config
-    const firebaseConfig = {
-      apiKey: "AIzaSyDBF3pBxsjJx_VJF4_GHDvY6OQe7U4SCIc",
-      authDomain: "yaoyan-fb9cb.firebaseapp.com",
-      projectId: "yaoyan-fb9cb",
-      storageBucket: "yaoyan-fb9cb.firebasestorage.app",
-      messagingSenderId: "288682348042",
-      appId: "1:288682348042:web:1fe4657eaf7fa9c5ba59f3",
-      measurementId: "G-XYYM91DRLX"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-    const db = firebase.firestore();
-
-    const PROJECTS_COLLECTION = "projects";
-    const USERS_COLLECTION = "users";
-    const EQUIPMENT_COLLECTION = "equipment";
-
-    let projects = [];
-    let editingId = null;
-    let selectedId = null;
-    let viewMode = "project";
-    let unsubscribeProjects = null;
-    let unsubscribeEquipment = null;
-    let currentUser = null;
-    let currentRole = "viewer";
-
-    let equipmentList = [];
-    let editingEquipmentId = null;
-
-    function num(v) { return Number(v) || 0; }
-    function formatMoney(value) {
-      const n = Number(value) || 0;
-      return "NT$ " + n.toLocaleString("zh-TW");
-    }
-    function dateRangeString(start, end) {
-      if (!start && !end) return "-";
-      if (start && !end) return start;
-      if (!start && end) return end;
-      return start + " ~ " + end;
-    }
-    function statusPill(status) {
-      switch (status) {
-        case "booked": return '<span class="status-pill status-booked">已確認檔期</span>';
-        case "in-progress": return '<span class="status-pill status-progress">執行中</span>';
-        case "done": return '<span class="status-pill status-done">已完成</span>';
-        case "cancel": return '<span class="status-pill status-cancel">取消</span>';
-        default: return "";
-      }
-    }
-    function billingLabel(status) {
-      switch (status) {
-        case "invoiced": return "已開立發票";
-        case "partial": return "部分收款";
-        case "paid": return "已全額收款";
-        default: return "尚未開立";
-      }
-    }
-    function overlapsMonth(project, year, monthIndex) {
-      const ms = new Date(year, monthIndex, 1);
-      const me = new Date(year, monthIndex + 1, 0, 23, 59, 59);
-      const start = project.startDate ? new Date(project.startDate) : new Date("1900-01-01");
-      const end = project.endDate ? new Date(project.endDate) : start;
-      return end >= ms && start <= me;
-    }
-    function overlapsDate(project, year, monthIndex, day) {
-      const d = new Date(year, monthIndex, day);
-      const start = project.startDate ? new Date(project.startDate) : new Date("1900-01-01");
-      const end = project.endDate ? new Date(project.endDate) : start;
-      return d >= start && d <= end;
-    }
-
-    function calcFinancials(p) {
-      const quote = num(p.quoteAmount);
-      const budget = num(p.budget);
-      const revenueBase = budget || quote;
-      const taxType = p.taxType || "na";
-      const taxRate = 0.05;
-
-      let taxAmount = 0;
-      let netRevenue = revenueBase;
-
-      if (revenueBase > 0) {
-        if (taxType === "included") {
-          taxAmount = (revenueBase * taxRate) / (1 + taxRate);
-          netRevenue = revenueBase - taxAmount;
-        } else if (taxType === "excluded") {
-          taxAmount = revenueBase * taxRate;
-          netRevenue = revenueBase;
-        }
-      }
-
-      const equipmentOwn = num(p.equipmentOwnCost);
-      const equipmentRental = num(p.equipmentRentalCost);
-      const manTech = num(p.manTech);
-      const manAssistant = num(p.manAssistant);
-      const manDriver = num(p.manDriver);
-      const manNight = num(p.manNight);
-      const manOvertime = num(p.manOvertime);
-      const manpowerTotal = manTech + manAssistant + manDriver + manNight + manOvertime;
-      const otherExpenses = num(p.expenses);
-
-      const totalCost = equipmentOwn + equipmentRental + manpowerTotal + otherExpenses;
-      const profit = netRevenue - totalCost;
-
-      return {
-        quote,
-        budget,
-        revenueBase,
-        taxAmount,
-        netRevenue,
-        equipmentOwn,
-        equipmentRental,
-        manpowerTotal,
-        manTech,
-        manAssistant,
-        manDriver,
-        manNight,
-        manOvertime,
-        otherExpenses,
-        totalCost,
-        profit,
-      };
-    }
-
-    function updateFormPermission() {
-      const form = document.getElementById("project-form");
-      const hint = document.getElementById("form-permission-hint");
-      const submitBtn = document.getElementById("submit-btn");
-      const resetBtn = document.getElementById("reset-btn");
-
-      const canEdit =
-        currentUser &&
-        (currentRole === "admin" ||
-          currentRole === "manager" ||
-          currentRole === "staff");
-
-      const controlIds = [
-        "project-name","client","start-date","end-date",
-        "equipment-source","equipment-own-cost","equipment-rental-cost",
-        "man-tech","man-assistant","man-driver","man-night","man-overtime",
-        "quote-amount","budget","expenses","tax-type",
-        "invoice-number","invoice-date",
-        "expected-payment-date","actual-payment-date",
-        "billing-status","project-status","notes"
-      ];
-
-      Array.from(form.elements).forEach((el) => {
-        if (!el.id) return;
-        if (controlIds.includes(el.id)) {
-          el.disabled = !canEdit;
-        }
-      });
-
-      // 設備 10 行的 select / input 另外處理
-      const eqLineInputs = document.querySelectorAll(
-        "#equipment-lines select, #equipment-lines input"
-      );
-      eqLineInputs.forEach((el) => {
-        el.disabled = !canEdit;
-      });
-
-      submitBtn.style.display = canEdit ? "inline-flex" : "none";
-      resetBtn.style.display = canEdit ? "inline-flex" : "none";
-      hint.textContent = canEdit
-        ? "✅ 你目前可以新增 / 編輯專案。"
-        : "🔒 請先登入，且權限為 staff / manager / admin 才能新增或編輯專案。";
-    }
-
-    function renderEquipmentLines(lines) {
-      const container = document.getElementById("equipment-lines");
-      if (!container) return;
-      container.innerHTML = "";
-
-      for (let i = 0; i < 10; i++) {
-        const row = document.createElement("div");
-        row.className = "equipment-line-row";
-
-        const labelSpan = document.createElement("span");
-        labelSpan.textContent = "設備 " + (i + 1);
-        row.appendChild(labelSpan);
-
-        const select = document.createElement("select");
-        select.className = "equipment-line-name";
-        select.dataset.index = String(i);
-
-        const optEmpty = document.createElement("option");
-        optEmpty.value = "";
-        optEmpty.textContent = "未選擇";
-        select.appendChild(optEmpty);
-
-        equipmentList.forEach((eq) => {
-          const opt = document.createElement("option");
-          opt.value = eq.id;
-          opt.textContent = eq.name || "(未命名設備)";
-          select.appendChild(opt);
-        });
-
-        const qtyInput = document.createElement("input");
-        qtyInput.type = "number";
-        qtyInput.min = "0";
-        qtyInput.step = "1";
-        qtyInput.placeholder = "數量";
-        qtyInput.className = "equipment-line-qty";
-        qtyInput.dataset.index = String(i);
-
-        const lineData = lines && lines[i] ? lines[i] : null;
-        if (lineData) {
-          if (lineData.equipmentId) {
-            select.value = lineData.equipmentId;
-          }
-          if (lineData.quantity != null) {
-            qtyInput.value = String(lineData.quantity);
-          }
-        }
-
-        row.appendChild(select);
-        row.appendChild(qtyInput);
-        container.appendChild(row);
-      }
-
-      // 套用 disabled 狀態
-      updateFormPermission();
-    }
-
-    function collectEquipmentLinesFromForm() {
-      const result = [];
-      const selects = document.querySelectorAll(".equipment-line-name");
-      selects.forEach((sel) => {
-        const idx = sel.dataset.index;
-        const qtyInput = document.querySelector(
-          '.equipment-line-qty[data-index="' + idx + '"]'
-        );
-        if (!qtyInput) return;
-        const eqId = sel.value;
-        const qty = Number(qtyInput.value || "0");
-        if (!eqId || qty <= 0) return;
-        const eq = equipmentList.find((e) => e.id === eqId);
-        result.push({
-          equipmentId: eqId,
-          equipmentName: eq ? eq.name || "" : "",
-          quantity: qty,
-        });
-      });
-      return result;
-    }
-
-    function render() {
-      const tbody = document.getElementById("project-tbody");
-      const monthInput = document.getElementById("month-filter");
-      const projectCountPill = document.getElementById("project-count-pill");
-
-      tbody.innerHTML = "";
-
-      let filtered = projects;
-      let year = null;
-      let monthIndex = null;
-
-      if (monthInput.value) {
-        const [y, m] = monthInput.value.split("-");
-        year = Number(y);
-        monthIndex = Number(m) - 1;
-        filtered = projects.filter((p) => overlapsMonth(p, year, monthIndex));
-      }
-
-      if (filtered.length === 0) {
-        const tr = document.createElement("tr");
-        const td = document.createElement("td");
-        td.colSpan = 6;
-        td.className = "no-data";
-        td.textContent = "此條件下尚無專案。";
-        tr.appendChild(td);
-        tbody.appendChild(tr);
-        projectCountPill.textContent = `共 ${projects.length} 筆專案`;
-        updateSummary([]);
-        renderDetails(null);
-        renderResourceView([], year, monthIndex);
-        renderEquipmentCalendar();
-        return;
-      }
-
-      if (!selectedId || !filtered.some((p) => p.id === selectedId)) {
-        selectedId = filtered[0].id;
-      }
-
-      filtered.forEach((p) => {
-        const tr = document.createElement("tr");
-        if (p.id === selectedId) tr.classList.add("row-selected");
-
-        const canEditThis =
-          currentUser &&
-          (currentRole === "admin" ||
-            currentRole === "manager" ||
-            (currentRole === "staff" && p.ownerUid === currentUser.uid));
-
-        const fin = calcFinancials(p);
-
-        const tdName = document.createElement("td");
-        tdName.innerHTML =
-          "<strong>" +
-          (p.name || "(未命名專案)") +
-          "</strong><br /><span class='muted'>" +
-          (p.client || "未填寫客戶") +
-          "</span>";
-
-        const tdDates = document.createElement("td");
-        tdDates.textContent = dateRangeString(p.startDate, p.endDate);
-
-        const tdNet = document.createElement("td");
-        tdNet.className = "text-right";
-        tdNet.textContent = formatMoney(fin.netRevenue);
-
-        const tdProfit = document.createElement("td");
-        tdProfit.className = "text-right";
-        tdProfit.textContent = formatMoney(fin.profit);
-
-        const tdStatus = document.createElement("td");
-        tdStatus.innerHTML =
-          statusPill(p.projectStatus) +
-          "<br /><span class='muted' style='font-size:11px'>" +
-          billingLabel(p.billingStatus) +
-          "</span>";
-
-        const tdActions = document.createElement("td");
-        const selectBtn = document.createElement("button");
-        selectBtn.textContent = "檢視";
-        selectBtn.className = "btn-secondary btn-small";
-        selectBtn.onclick = () => {
-          selectedId = p.id;
-          render();
-        };
-        tdActions.appendChild(selectBtn);
-
-        if (canEditThis) {
-          const editBtn = document.createElement("button");
-          editBtn.textContent = "編輯";
-          editBtn.className = "btn-secondary btn-small";
-          editBtn.style.marginLeft = "4px";
-          editBtn.onclick = () => fillFormForEdit(p.id);
-
-          const delBtn = document.createElement("button");
-          delBtn.textContent = "刪除";
-          delBtn.className = "btn-danger btn-small";
-          delBtn.style.marginLeft = "4px";
-          delBtn.onclick = () => deleteProject(p.id);
-
-          tdActions.appendChild(editBtn);
-          tdActions.appendChild(delBtn);
-        }
-
-        tr.appendChild(tdName);
-        tr.appendChild(tdDates);
-        tr.appendChild(tdNet);
-        tr.appendChild(tdProfit);
-        tr.appendChild(tdStatus);
-        tr.appendChild(tdActions);
-
-        tbody.appendChild(tr);
-      });
-
-      projectCountPill.textContent = `共 ${projects.length} 筆專案`;
-      updateSummary(filtered);
-      const current = filtered.find((p) => p.id === selectedId) || null;
-      renderDetails(current);
-      renderResourceView(filtered, year, monthIndex);
-      renderEquipmentCalendar();
-    }
-
-    function updateSummary(list) {
-      const sumQuote = document.getElementById("sum-quote");
-      const sumBudget = document.getElementById("sum-budget");
-      const sumCost = document.getElementById("sum-cost");
-      const sumNetRevenue = document.getElementById("sum-net-revenue");
-      const sumProfit = document.getElementById("sum-profit");
-
-      let totalQuote = 0;
-      let totalBudget = 0;
-      let totalCost = 0;
-      let totalNetRevenue = 0;
-      let totalProfit = 0;
-
-      list.forEach((p) => {
-        const fin = calcFinancials(p);
-        totalQuote += fin.quote;
-        totalBudget += fin.budget;
-        totalCost += fin.totalCost;
-        totalNetRevenue += fin.netRevenue;
-        totalProfit += fin.profit;
-      });
-
-      sumQuote.textContent = formatMoney(totalQuote);
-      sumBudget.textContent = formatMoney(totalBudget);
-      sumCost.textContent = formatMoney(totalCost);
-      sumNetRevenue.textContent = formatMoney(totalNetRevenue);
-      sumProfit.textContent = formatMoney(totalProfit);
-    }
-
-    function renderDetails(p) {
-      const container = document.getElementById("details-card");
-      if (!p) {
-        container.innerHTML =
-          '<div class="no-data">點選上方任一專案，即可查看詳細成本與請款資訊。</div>';
-        return;
-      }
-
-      const fin = calcFinancials(p);
-      const equipmentSourceLabel =
-        p.equipmentSource === "mixed"
-          ? "自有＋租借"
-          : p.equipmentSource === "rental"
-          ? "租借"
-          : "自有設備";
-
-      const taxTypeLabel =
-        p.taxType === "included"
-          ? "含稅 (5% 已含在金額內)"
-          : p.taxType === "excluded"
-          ? "未稅 (5% 另計)"
-          : "不適用 / 未設定";
-
-      const invoLabel = p.invoiceNumber
-        ? p.invoiceNumber + (p.invoiceDate ? "（" + p.invoiceDate + "）" : "")
-        : "未填寫";
-
-      const equipmentLinesText =
-        p.equipmentLines && p.equipmentLines.length
-          ? p.equipmentLines
-              .map((l) => (l.equipmentName || "未命名設備") + " x" + (l.quantity || 0))
-              .join(" / ")
-          : "—";
-
-      container.innerHTML = `
-        <div class="details-header">
-          <div>
-            <div class="details-title">${p.name || "(未命名專案)"}</div>
-            <div class="details-subtitle">
-              ${p.client || "未填寫客戶"} ｜ 檔期：${dateRangeString(p.startDate, p.endDate)}
-            </div>
-          </div>
-          <div class="details-subtitle">
-            狀態：${statusPill(p.projectStatus)}
-            <span class="muted">／ ${billingLabel(p.billingStatus)}</span>
-          </div>
-        </div>
-
-        <div class="details-grid">
-          <div>
-            <div class="details-section-title">設備</div>
-            <div class="details-item-label">使用設備</div>
-            <div class="details-item-value">${equipmentLinesText}</div>
-            <div class="details-item-label">來源</div>
-            <div class="details-item-value">${equipmentSourceLabel}</div>
-            <div class="details-item-label">自有成本</div>
-            <div class="details-item-value">${formatMoney(fin.equipmentOwn)}</div>
-            <div class="details-item-label">租借成本</div>
-            <div class="details-item-value">${formatMoney(fin.equipmentRental)}</div>
           </div>
 
-          <div>
-            <div class="details-section-title">人力成本</div>
-            <div class="details-item-label">技師</div>
-            <div class="details-item-value">${formatMoney(fin.manTech)}</div>
-            <div class="details-item-label">助理 / 司機</div>
-            <div class="details-item-value">
-              助理：${formatMoney(fin.manAssistant)}<br/>
-              司機：${formatMoney(fin.manDriver)}
-            </div>
-            <div class="details-item-label">夜班＋加班</div>
-            <div class="details-item-value">
-              夜班：${formatMoney(fin.manNight)}<br/>
-              加班：${formatMoney(fin.manOvertime)}
-            </div>
-            <div class="details-item-label">人力合計</div>
-            <div class="details-item-value">${formatMoney(fin.manpowerTotal)}</div>
+          <div class="field">
+            <label for="projectRevenue">專案營收（未稅）</label>
+            <input id="projectRevenue" type="number" min="0" step="1000" placeholder="例：500000" />
           </div>
 
-          <div>
-            <div class="details-section-title">財務 & 毛利</div>
-            <div class="details-item-label">報價 Quote</div>
-            <div class="details-item-value">${formatMoney(fin.quote)}</div>
-            <div class="details-item-label">執行預算 Budget</div>
-            <div class="details-item-value">${formatMoney(fin.budget)}</div>
-            <div class="details-item-label">稅別 / 預估稅額</div>
-            <div class="details-item-value">
-              ${taxTypeLabel}<br/>
-              稅額：約 ${formatMoney(fin.taxAmount)}
-            </div>
-            <div class="details-item-label">淨營收 / 總成本</div>
-            <div class="details-item-value">
-              淨營收：${formatMoney(fin.netRevenue)}<br/>
-              成本合計：${formatMoney(fin.totalCost)}
-            </div>
-            <div class="details-item-label">預估毛利</div>
-            <div class="details-item-value">${formatMoney(fin.profit)}</div>
+          <div class="field">
+            <label for="projectCost">專案成本（估算 or 實際）</label>
+            <input id="projectCost" type="number" min="0" step="1000" placeholder="例：320000" />
           </div>
 
-          <div>
-            <div class="details-section-title">其他支出</div>
-            <div class="details-item-label">其他支出 Other Expenses</div>
-            <div class="details-item-value">${formatMoney(fin.otherExpenses)}</div>
-            <div class="details-item-label">設備＋人力＋其他</div>
-            <div class="details-item-value">
-              設備：${formatMoney(fin.equipmentOwn + fin.equipmentRental)}<br/>
-              人力：${formatMoney(fin.manpowerTotal)}<br/>
-              其他：${formatMoney(fin.otherExpenses)}
-            </div>
-          </div>
-
-          <div>
-            <div class="details-section-title">請款資訊</div>
-            <div class="details-item-label">發票</div>
-            <div class="details-item-value">${invoLabel}</div>
-            <div class="details-item-label">預計收款日</div>
-            <div class="details-item-value">${p.expectedPaymentDate || "未填寫"}</div>
-            <div class="details-item-label">實際收款日</div>
-            <div class="details-item-value">${p.actualPaymentDate || "未填寫"}</div>
-          </div>
-
-          <div class="form-grid-full">
-            <div class="details-section-title">備註 Notes</div>
-            <div class="details-item-value">${p.notes ? p.notes.replace(/\n/g,"<br/>") : "—"}</div>
-          </div>
-        </div>
-      `;
-    }
-
-    function renderResourceView(list, year, monthIndex) {
-      const sumManTechEl = document.getElementById("sum-man-tech");
-      const sumManAssistantEl = document.getElementById("sum-man-assistant");
-      const sumManDriverEl = document.getElementById("sum-man-driver");
-      const sumManExtraEl = document.getElementById("sum-man-extra");
-      const sumEquipmentEl = document.getElementById("sum-equipment");
-      const manpowerTbody = document.getElementById("manpower-tbody");
-      const equipmentTbody = document.getElementById("equipment-tbody");
-
-      let totalManTech = 0;
-      let totalManAssistant = 0;
-      let totalManDriver = 0;
-      let totalManExtra = 0;
-      let totalEquipment = 0;
-
-      list.forEach((p) => {
-        const fin = calcFinancials(p);
-        totalManTech += fin.manTech;
-        totalManAssistant += fin.manAssistant;
-        totalManDriver += fin.manDriver;
-        totalManExtra += fin.manNight + fin.manOvertime;
-        totalEquipment += fin.equipmentOwn + fin.equipmentRental;
-      });
-
-      sumManTechEl.textContent = formatMoney(totalManTech);
-      sumManAssistantEl.textContent = formatMoney(totalManAssistant);
-      sumManDriverEl.textContent = formatMoney(totalManDriver);
-      sumManExtraEl.textContent = formatMoney(totalManExtra);
-      sumEquipmentEl.textContent = formatMoney(totalEquipment);
-
-      if (!year && !monthIndex && list.length === 0) {
-        manpowerTbody.innerHTML =
-          '<tr><td colspan="6" class="no-data">請先選擇月份。</td></tr>';
-        equipmentTbody.innerHTML =
-          '<tr><td colspan="4" class="no-data">請先選擇月份。</td></tr>';
-        return;
-      }
-
-      if (!list || list.length === 0) {
-        manpowerTbody.innerHTML =
-          '<tr><td colspan="6" class="no-data">此月份沒有任何專案。</td></tr>';
-        equipmentTbody.innerHTML =
-          '<tr><td colspan="4" class="no-data">此月份沒有任何專案。</td></tr>';
-        return;
-      }
-
-      const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-
-      manpowerTbody.innerHTML = "";
-      for (let d = 1; d <= daysInMonth; d++) {
-        let activeCount = 0;
-        let techCount = 0;
-        let assistantCount = 0;
-        let driverCount = 0;
-        let hasNight = false;
-        let hasOT = false;
-
-        list.forEach((p) => {
-          if (!overlapsDate(p, year, monthIndex, d)) return;
-          const fin = calcFinancials(p);
-          const hasAnyCost =
-            fin.manTech || fin.manAssistant || fin.manDriver ||
-            fin.manNight || fin.manOvertime ||
-            fin.equipmentOwn || fin.equipmentRental || fin.otherExpenses;
-          if (!hasAnyCost) return;
-
-          activeCount++;
-          if (fin.manTech > 0) techCount++;
-          if (fin.manAssistant > 0) assistantCount++;
-          if (fin.manDriver > 0) driverCount++;
-          if (fin.manNight > 0) hasNight = true;
-          if (fin.manOvertime > 0) hasOT = true;
-        });
-
-        const tr = document.createElement("tr");
-        const dateStr =
-          String(monthIndex + 1).padStart(2, "0") +
-          "/" +
-          String(d).padStart(2, "0");
-
-        const tdDate = document.createElement("td");
-        tdDate.textContent = dateStr;
-
-        const tdActive = document.createElement("td");
-        tdActive.className = "text-right";
-        tdActive.textContent = activeCount || "-";
-
-        const tdTech = document.createElement("td");
-        tdTech.className = "text-right";
-        tdTech.textContent = techCount || "-";
-
-        const tdAssistant = document.createElement("td");
-        tdAssistant.className = "text-right";
-        tdAssistant.textContent = assistantCount || "-";
-
-        const tdDriver = document.createElement("td");
-        tdDriver.className = "text-right";
-        tdDriver.textContent = driverCount || "-";
-
-        const tdExtra = document.createElement("td");
-        tdExtra.textContent =
-          activeCount === 0
-            ? "-"
-            : (hasNight ? "夜班" : "") +
-              (hasNight && hasOT ? " / " : "") +
-              (hasOT ? "加班" : "") || "—";
-
-        tr.appendChild(tdDate);
-        tr.appendChild(tdActive);
-        tr.appendChild(tdTech);
-        tr.appendChild(tdAssistant);
-        tr.appendChild(tdDriver);
-        tr.appendChild(tdExtra);
-
-        manpowerTbody.appendChild(tr);
-      }
-
-      equipmentTbody.innerHTML = "";
-      for (let d = 1; d <= daysInMonth; d++) {
-        let equipCount = 0;
-        let equipCost = 0;
-        const projectNames = [];
-
-        list.forEach((p) => {
-          if (!overlapsDate(p, year, monthIndex, d)) return;
-          const fin = calcFinancials(p);
-          const hasEquip =
-            (p.equipmentLines && p.equipmentLines.length > 0) ||
-            fin.equipmentOwn > 0 ||
-            fin.equipmentRental > 0;
-          if (!hasEquip) return;
-
-          equipCount++;
-          equipCost += fin.equipmentOwn + fin.equipmentRental;
-          if (projectNames.length < 3) {
-            projectNames.push(p.name || "(未命名專案)");
-          }
-        });
-
-        const tr = document.createElement("tr");
-        const dateStr =
-          String(monthIndex + 1).padStart(2, "0") +
-          "/" +
-          String(d).padStart(2, "0");
-
-        const tdDate = document.createElement("td");
-        tdDate.textContent = dateStr;
-
-        const tdCount = document.createElement("td");
-        tdCount.className = "text-right";
-        tdCount.textContent = equipCount || "-";
-
-        const tdCost = document.createElement("td");
-        tdCost.className = "text-right";
-        tdCost.textContent =
-          equipCount === 0 ? "-" : formatMoney(equipCost);
-
-        const tdNames = document.createElement("td");
-        tdNames.textContent =
-          equipCount === 0
-            ? "-"
-            : projectNames.join(" / ") +
-              (equipCount > projectNames.length ? " ..." : "");
-
-        tr.appendChild(tdDate);
-        tr.appendChild(tdCount);
-        tr.appendChild(tdCost);
-        tr.appendChild(tdNames);
-
-        equipmentTbody.appendChild(tr);
-      }
-    }
-
-    function resetForm() {
-      const form = document.getElementById("project-form");
-      form.reset();
-      editingId = null;
-      document.getElementById("form-title").textContent = "新增專案 Project";
-      document.getElementById("submit-btn").textContent = "新增專案 Add";
-      renderEquipmentLines([]);
-    }
-
-    function fillFormForEdit(id) {
-      const p = projects.find((x) => x.id === id);
-      if (!p) return;
-
-      const canEditThis =
-        currentUser &&
-        (currentRole === "admin" ||
-          currentRole === "manager" ||
-          (currentRole === "staff" && p.ownerUid === currentUser.uid));
-      if (!canEditThis) {
-        alert("你沒有權限編輯這筆專案。");
-        return;
-      }
-
-      editingId = id;
-      document.getElementById("form-title").textContent = "編輯專案 Edit Project";
-      document.getElementById("submit-btn").textContent = "更新專案 Update";
-
-      document.getElementById("project-name").value = p.name || "";
-      document.getElementById("client").value = p.client || "";
-      document.getElementById("start-date").value = p.startDate || "";
-      document.getElementById("end-date").value = p.endDate || "";
-      document.getElementById("equipment-source").value = p.equipmentSource || "own";
-      document.getElementById("equipment-own-cost").value = p.equipmentOwnCost || "";
-      document.getElementById("equipment-rental-cost").value = p.equipmentRentalCost || "";
-      document.getElementById("man-tech").value = p.manTech || "";
-      document.getElementById("man-assistant").value = p.manAssistant || "";
-      document.getElementById("man-driver").value = p.manDriver || "";
-      document.getElementById("man-night").value = p.manNight || "";
-      document.getElementById("man-overtime").value = p.manOvertime || "";
-      document.getElementById("quote-amount").value = p.quoteAmount || "";
-      document.getElementById("budget").value = p.budget || "";
-      document.getElementById("expenses").value = p.expenses || "";
-      document.getElementById("tax-type").value = p.taxType || "na";
-      document.getElementById("invoice-number").value = p.invoiceNumber || "";
-      document.getElementById("invoice-date").value = p.invoiceDate || "";
-      document.getElementById("expected-payment-date").value = p.expectedPaymentDate || "";
-      document.getElementById("actual-payment-date").value = p.actualPaymentDate || "";
-      document.getElementById("billing-status").value = p.billingStatus || "none";
-      document.getElementById("project-status").value = p.projectStatus || "booked";
-      document.getElementById("notes").value = p.notes || "";
-
-      renderEquipmentLines(p.equipmentLines || []);
-    }
-
-    async function deleteProject(id) {
-      const p = projects.find((x) => x.id === id);
-      if (!p) return;
-
-      const canEditThis =
-        currentUser &&
-        (currentRole === "admin" ||
-          currentRole === "manager" ||
-          (currentRole === "staff" && p.ownerUid === currentUser.uid));
-      if (!canEditThis) {
-        alert("你沒有權限刪除這筆專案。");
-        return;
-      }
-
-      if (!confirm("確定要刪除這筆專案嗎？")) return;
-      await db.collection(PROJECTS_COLLECTION).doc(id).delete();
-    }
-
-    function switchView(mode) {
-      viewMode = mode;
-      const viewProject = document.getElementById("view-project");
-      const viewResource = document.getElementById("view-resource");
-      const viewEquipment = document.getElementById("view-equipment");
-      const tabProject = document.getElementById("tab-project");
-      const tabResource = document.getElementById("tab-resource");
-      const tabEquipment = document.getElementById("tab-equipment");
-
-      if (mode === "project") {
-        viewProject.style.display = "";
-        viewResource.style.display = "none";
-        viewEquipment.style.display = "none";
-        tabProject.classList.add("tab-button-active");
-        tabResource.classList.remove("tab-button-active");
-        tabEquipment.classList.remove("tab-button-active");
-      } else if (mode === "resource") {
-        viewProject.style.display = "none";
-        viewResource.style.display = "";
-        viewEquipment.style.display = "none";
-        tabProject.classList.remove("tab-button-active");
-        tabResource.classList.add("tab-button-active");
-        tabEquipment.classList.remove("tab-button-active");
-      } else if (mode === "equipment") {
-        viewProject.style.display = "none";
-        viewResource.style.display = "none";
-        viewEquipment.style.display = "";
-        tabProject.classList.remove("tab-button-active");
-        tabResource.classList.remove("tab-button-active");
-        tabEquipment.classList.add("tab-button-active");
-      }
-    }
-
-    async function ensureUserDoc(user) {
-      const userRef = db.collection(USERS_COLLECTION).doc(user.uid);
-      const snap = await userRef.get();
-      if (!snap.exists) {
-        await userRef.set({
-          email: user.email || "",
-          displayName: user.displayName || "",
-          role: "viewer",
-          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        });
-        return "viewer";
-      } else {
-        const data = snap.data();
-        return data.role || "viewer";
-      }
-    }
-
-    function subscribeProjects() {
-      if (unsubscribeProjects) unsubscribeProjects();
-      unsubscribeProjects = db
-        .collection(PROJECTS_COLLECTION)
-        .orderBy("startDate")
-        .onSnapshot((snapshot) => {
-          projects = [];
-          snapshot.forEach((doc) => {
-            projects.push({ id: doc.id, ...doc.data() });
-          });
-          render();
-        });
-    }
-
-    function renderEquipmentListTable() {
-      const tbody = document.getElementById("equipment-master-tbody");
-      const formHint = document.getElementById("eq-form-hint");
-      if (!tbody || !formHint) return;
-
-      tbody.innerHTML = "";
-
-      if (!equipmentList.length) {
-        const tr = document.createElement("tr");
-        const td = document.createElement("td");
-        td.colSpan = 7;
-        td.className = "no-data";
-        td.textContent = "目前還沒有任何設備，請上方新增。";
-        tr.appendChild(td);
-        tbody.appendChild(tr);
-      } else {
-        equipmentList.forEach((eq) => {
-          const tr = document.createElement("tr");
-
-          const tdName = document.createElement("td");
-          tdName.textContent = eq.name || "(未命名設備)";
-
-          const tdCode = document.createElement("td");
-          tdCode.textContent = eq.code || "—";
-
-          const tdCategory = document.createElement("td");
-          tdCategory.textContent = eq.category || "—";
-
-          const tdTotal = document.createElement("td");
-          tdTotal.className = "text-right";
-          tdTotal.textContent = eq.totalQuantity != null ? eq.totalQuantity : "—";
-
-          const tdStatus = document.createElement("td");
-          tdStatus.textContent = eq.isActive === false ? "停用" : "使用中";
-
-          const tdNotes = document.createElement("td");
-          tdNotes.textContent = eq.notes || "—";
-
-          const tdActions = document.createElement("td");
-
-          const editBtn = document.createElement("button");
-          editBtn.textContent = "編輯";
-          editBtn.className = "btn-secondary btn-small";
-          editBtn.onclick = () => fillEquipmentForm(eq.id);
-
-          const delBtn = document.createElement("button");
-          delBtn.textContent = "刪除";
-          delBtn.className = "btn-danger btn-small";
-          delBtn.style.marginLeft = "4px";
-          delBtn.onclick = () => deleteEquipment(eq.id);
-
-          tdActions.appendChild(editBtn);
-          tdActions.appendChild(delBtn);
-
-          tr.appendChild(tdName);
-          tr.appendChild(tdCode);
-          tr.appendChild(tdCategory);
-          tr.appendChild(tdTotal);
-          tr.appendChild(tdStatus);
-          tr.appendChild(tdNotes);
-          tr.appendChild(tdActions);
-
-          tbody.appendChild(tr);
-        });
-      }
-
-      if (!currentUser) {
-        formHint.textContent = "🔑 請先登入，登入後即可維護設備清單。";
-      } else {
-        formHint.textContent = "✅ 你已登入，可以新增 / 編輯 / 刪除設備。";
-      }
-    }
-
-    function renderEquipmentSelectForCalendar() {
-      const select = document.getElementById("calendar-equipment-select");
-      if (!select) return;
-      const prev = select.value;
-      select.innerHTML = "";
-
-      if (!equipmentList.length) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "請先在上方建立設備清單";
-        select.appendChild(opt);
-        return;
-      }
-
-      const opt0 = document.createElement("option");
-      opt0.value = "";
-      opt0.textContent = "請選擇設備";
-      select.appendChild(opt0);
-
-      equipmentList.forEach((eq) => {
-        const opt = document.createElement("option");
-        opt.value = eq.id;
-        opt.textContent =
-          (eq.name || "(未命名設備)") +
-          (eq.totalQuantity != null ? "（總數 " + eq.totalQuantity + "）" : "");
-        select.appendChild(opt);
-      });
-
-      if (prev && equipmentList.some((e) => e.id === prev)) {
-        select.value = prev;
-      }
-    }
-
-    function subscribeEquipment() {
-      if (unsubscribeEquipment) unsubscribeEquipment();
-      unsubscribeEquipment = db
-        .collection(EQUIPMENT_COLLECTION)
-        .orderBy("name")
-        .onSnapshot((snapshot) => {
-          equipmentList = [];
-          snapshot.forEach((doc) => {
-            equipmentList.push({ id: doc.id, ...doc.data() });
-          });
-          renderEquipmentListTable();
-          renderEquipmentSelectForCalendar();
-
-          if (editingId) {
-            const p = projects.find((x) => x.id === editingId);
-            renderEquipmentLines(p && p.equipmentLines ? p.equipmentLines : []);
-          } else {
-            renderEquipmentLines([]);
-          }
-          renderEquipmentCalendar();
-        });
-    }
-
-    function resetEquipmentForm() {
-      const form = document.getElementById("equipment-form");
-      if (!form) return;
-      form.reset();
-      editingEquipmentId = null;
-    }
-
-    function fillEquipmentForm(id) {
-      const eq = equipmentList.find((x) => x.id === id);
-      if (!eq) return;
-
-      editingEquipmentId = id;
-      document.getElementById("eq-name").value = eq.name || "";
-      document.getElementById("eq-code").value = eq.code || "";
-      document.getElementById("eq-category").value = eq.category || "";
-      document.getElementById("eq-total").value =
-        eq.totalQuantity != null ? eq.totalQuantity : "";
-      document.getElementById("eq-active").value =
-        eq.isActive === false ? "false" : "true";
-      document.getElementById("eq-notes").value = eq.notes || "";
-    }
-
-    async function deleteEquipment(id) {
-      if (!currentUser) {
-        alert("請先登入再刪除設備。");
-        return;
-      }
-      if (!confirm("確定要刪除這個設備？")) return;
-      await db.collection(EQUIPMENT_COLLECTION).doc(id).delete();
-    }
-
-    function renderEquipmentCalendar() {
-      const container = document.getElementById("equipment-calendar");
-      const monthInput = document.getElementById("month-filter");
-      const select = document.getElementById("calendar-equipment-select");
-      if (!container || !monthInput || !select) return;
-
-      if (!monthInput.value || !select.value) {
-        container.innerHTML =
-          '<div class="no-data">請先選擇設備與月份。</div>';
-        return;
-      }
-
-      const eqId = select.value;
-      const eq = equipmentList.find((e) => e.id === eqId);
-      if (!eq) {
-        container.innerHTML =
-          '<div class="no-data">找不到這個設備，請重新選擇。</div>';
-        return;
-      }
-
-      const totalQty = Number(eq.totalQuantity || 0);
-      if (totalQty <= 0) {
-        container.innerHTML =
-          '<div class="no-data">此設備尚未設定「總數量」，無法檢查是否超用。請在上方設備清單設定總數。</div>';
-        return;
-      }
-
-      const [yStr, mStr] = monthInput.value.split("-");
-      const year = Number(yStr);
-      const monthIndex = Number(mStr) - 1;
-      const firstDay = new Date(year, monthIndex, 1).getDay();
-      const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-
-      let html = "";
-      html += `<div style="font-size:12px; margin-bottom:4px;">
-        檢查設備：<strong>${eq.name || "(未命名設備)"}</strong>（總數 ${totalQty} 台）
-      </div>`;
-      html += `<div style="font-size:11px; margin-bottom:4px;">
-        <span style="background:#ecfdf5; padding:2px 6px; border-radius:999px; margin-right:4px;">正常</span>
-        <span style="background:#fee2e2; padding:2px 6px; border-radius:999px;">超用</span>
-      </div>`;
-      html += `<table class="calendar-table">
-        <thead>
-          <tr>
-            <th>日</th><th>一</th><th>二</th><th>三</th><th>四</th><th>五</th><th>六</th>
-          </tr>
-        </thead>
-        <tbody>
-      `;
-
-      let day = 1;
-      for (let week = 0; week < 6 && day <= daysInMonth; week++) {
-        html += "<tr>";
-        for (let wd = 0; wd < 7; wd++) {
-          if (week === 0 && wd < firstDay || day > daysInMonth) {
-            html += "<td></td>";
-          } else {
-            let usedQty = 0;
-            projects.forEach((p) => {
-              if (!overlapsDate(p, year, monthIndex, day)) return;
-              if (!p.equipmentLines || !p.equipmentLines.length) return;
-              p.equipmentLines.forEach((line) => {
-                if (line.equipmentId === eqId) {
-                  usedQty += Number(line.quantity || 0);
-                }
-              });
-            });
-            const isOver = usedQty > totalQty;
-            const cellClass = isOver ? "calendar-over" : "calendar-ok";
-            html += `<td class="${cellClass}">
-              <div class="calendar-day-number">${day}</div>
-              <div class="calendar-day-usage">
-                使用：${usedQty} 台<br/>總數：${totalQty}
+          <div class="field full">
+            <label>本案使用設備（最多 10 筆，只能填設備清單中的名稱）</label>
+            <div class="equip-usage-table">
+              <div class="equip-usage-header">
+                <span>設備名稱</span>
+                <span>數量</span>
               </div>
-            </td>`;
-            day++;
-          }
-        }
-        html += "</tr>";
-      }
+              <div id="equipUsageBody">
+                <!-- JS 會自動產 10 行 -->
+              </div>
+              <p class="helper-text">
+                設備名稱請與「設備清單」內一致，行事曆會用來檢查檔期是否超用。
+              </p>
+            </div>
+          </div>
 
-      html += "</tbody></table>";
-      container.innerHTML = html;
-    }
+          <div class="actions full">
+            <button type="submit" class="btn primary">儲存專案</button>
+            <button type="reset" id="projectReset" class="btn ghost">清空表單</button>
+          </div>
+        </form>
+      </div>
 
-    window.addEventListener("DOMContentLoaded", () => {
-      const form = document.getElementById("project-form");
-      const monthFilter = document.getElementById("month-filter");
-      const resetBtn = document.getElementById("reset-btn");
-      const tabProject = document.getElementById("tab-project");
-      const tabResource = document.getElementById("tab-resource");
-      const tabEquipment = document.getElementById("tab-equipment");
-      const loginBtn = document.getElementById("login-btn");
-      const logoutBtn = document.getElementById("logout-btn");
-      const userInfoText = document.getElementById("user-info-text");
-      const userRolePill = document.getElementById("user-role-pill");
-      const eqForm = document.getElementById("equipment-form");
-      const eqResetBtn = document.getElementById("eq-reset-btn");
-      const calEqSelect = document.getElementById("calendar-equipment-select");
+      <div class="card">
+        <div class="card-header">
+          <h2>專案總覽</h2>
+          <div class="card-actions">
+            <select id="projectFilterStatus">
+              <option value="">全部狀態</option>
+              <option value="planning">規劃中</option>
+              <option value="confirmed">已簽約 / 確認</option>
+              <option value="executing">執行中</option>
+              <option value="closed">已結案</option>
+              <option value="lost">流標 / 未成案</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>專案</th>
+                <th>客戶</th>
+                <th>期間</th>
+                <th>狀態</th>
+                <th class="num">營收</th>
+                <th class="num">成本</th>
+                <th class="num">淨利</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="projectTableBody">
+              <!-- JS render -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
 
-      const today = new Date();
-      const monthString =
-        today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0");
-      monthFilter.value = monthString;
+    <!-- 📌 設備清單 -->
+    <section class="tab-panel" id="tab-equipments">
+      <div class="card">
+        <h2>設備清單</h2>
+        <form id="equipment-form" class="grid-form">
+          <input type="hidden" id="equipmentId" />
+          <div class="field">
+            <label for="equipmentName">設備名稱</label>
+            <input id="equipmentName" type="text" placeholder="例：火山噴射機 4m" required />
+          </div>
+          <div class="field">
+            <label for="equipmentQty">總數量</label>
+            <input id="equipmentQty" type="number" min="0" step="1" placeholder="例：12" required />
+          </div>
+          <div class="field">
+            <label for="equipmentNote">備註</label>
+            <input id="equipmentNote" type="text" placeholder="例：4 台維修中" />
+          </div>
+          <div class="actions">
+            <button type="submit" class="btn primary">儲存設備</button>
+            <button type="reset" id="equipmentReset" class="btn ghost">清空表單</button>
+          </div>
+        </form>
+      </div>
 
-      renderEquipmentLines([]);
-      renderEquipmentListTable();
-      renderEquipmentSelectForCalendar();
-      renderEquipmentCalendar();
+      <div class="card">
+        <h2>設備總覽</h2>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>設備名稱</th>
+                <th class="num">總數量</th>
+                <th>備註</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="equipmentTableBody">
+              <!-- JS render -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
 
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
+    <!-- 📌 行事曆 & 設備超用提示 -->
+    <section class="tab-panel" id="tab-calendar">
+      <div class="card">
+        <div class="card-header">
+          <h2>檔期 & 設備行事曆</h2>
+          <div class="card-actions">
+            <label class="inline-label">
+              月份：
+              <input type="month" id="calendarMonth" />
+            </label>
+          </div>
+        </div>
+        <p class="helper-text">
+          紅框日期代表「至少一種設備超出可用數量」，請檢查同日專案設備配置。
+        </p>
+        <div id="calendarGrid" class="calendar-grid">
+          <!-- JS render -->
+        </div>
+      </div>
+    </section>
 
-        const canEdit =
-          currentUser &&
-          (currentRole === "admin" ||
-            currentRole === "manager" ||
-            currentRole === "staff");
-        if (!canEdit) {
-          alert("你目前沒有權限新增或編輯專案。");
-          return;
-        }
+    <!-- 📌 每月營收 / 淨利月報表 -->
+    <section class="tab-panel" id="tab-report">
+      <div class="card">
+        <div class="card-header">
+          <h2>每月營收 & 淨利報表（依專案）</h2>
+          <div class="card-actions">
+            <label class="inline-label">
+              月份：
+              <input type="month" id="reportMonth" />
+            </label>
+            <button id="exportCsv" class="btn ghost small">匯出 CSV</button>
+          </div>
+        </div>
 
-        const name = document.getElementById("project-name").value.trim();
-        const client = document.getElementById("client").value.trim();
-        const startDate = document.getElementById("start-date").value;
-        const endDate = document.getElementById("end-date").value;
-        const equipmentSource =
-          document.getElementById("equipment-source").value || "own";
-        const equipmentOwnCost =
-          document.getElementById("equipment-own-cost").value || "0";
-        const equipmentRentalCost =
-          document.getElementById("equipment-rental-cost").value || "0";
-        const manTech = document.getElementById("man-tech").value || "0";
-        const manAssistant =
-          document.getElementById("man-assistant").value || "0";
-        const manDriver = document.getElementById("man-driver").value || "0";
-        const manNight = document.getElementById("man-night").value || "0";
-        const manOvertime = document.getElementById("man-overtime").value || "0";
-        const quoteAmount =
-          document.getElementById("quote-amount").value || "0";
-        const budget = document.getElementById("budget").value || "0";
-        const expenses = document.getElementById("expenses").value || "0";
-        const taxType = document.getElementById("tax-type").value || "na";
-        const invoiceNumber =
-          document.getElementById("invoice-number").value.trim();
-        const invoiceDate =
-          document.getElementById("invoice-date").value || "";
-        const expectedPaymentDate =
-          document.getElementById("expected-payment-date").value || "";
-        const actualPaymentDate =
-          document.getElementById("actual-payment-date").value || "";
-        const billingStatus =
-          document.getElementById("billing-status").value || "none";
-        const projectStatus =
-          document.getElementById("project-status").value || "booked";
-        const notes = document.getElementById("notes").value.trim();
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>專案</th>
+                <th>客戶</th>
+                <th>期間</th>
+                <th>狀態</th>
+                <th class="num">營收</th>
+                <th class="num">成本</th>
+                <th class="num">淨利</th>
+              </tr>
+            </thead>
+            <tbody id="reportTableBody">
+              <!-- JS render -->
+            </tbody>
+            <tfoot>
+              <tr>
+                <th colspan="4" class="num">合計</th>
+                <th class="num" id="reportTotalRevenue">0</th>
+                <th class="num" id="reportTotalCost">0</th>
+                <th class="num" id="reportTotalProfit">0</th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
 
-        if (!name || !startDate) {
-          alert("至少請輸入專案名稱與檔期開始日期。");
-          return;
-        }
-
-        const equipmentLines = collectEquipmentLinesFromForm();
-        const equipmentSummary =
-          equipmentLines.length > 0
-            ? equipmentLines
-                .map((l) => (l.equipmentName || "設備") + " x" + l.quantity)
-                .join(" / ")
-            : "";
-
-        const payload = {
-          name,
-          client,
-          startDate,
-          endDate,
-          equipmentSource,
-          equipmentOwnCost,
-          equipmentRentalCost,
-          manTech,
-          manAssistant,
-          manDriver,
-          manNight,
-          manOvertime,
-          quoteAmount,
-          budget,
-          expenses,
-          taxType,
-          invoiceNumber,
-          invoiceDate,
-          expectedPaymentDate,
-          actualPaymentDate,
-          billingStatus,
-          projectStatus,
-          notes,
-          equipmentLines,
-          equipmentSummary,
-          ownerUid: currentUser ? currentUser.uid : null,
-          ownerEmail: currentUser ? currentUser.email : "",
-          ownerName: currentUser ? (currentUser.displayName || "") : "",
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        };
-
-        if (!editingId) {
-          payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
-          const docRef = await db.collection(PROJECTS_COLLECTION).add(payload);
-          selectedId = docRef.id;
-        } else {
-          await db.collection(PROJECTS_COLLECTION).doc(editingId).update(payload);
-          selectedId = editingId;
-        }
-
-        resetForm();
-      });
-
-      resetBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        resetForm();
-      });
-
-      monthFilter.addEventListener("change", () => {
-        render();
-        renderEquipmentCalendar();
-      });
-
-      if (calEqSelect) {
-        calEqSelect.addEventListener("change", () => {
-          renderEquipmentCalendar();
-        });
-      }
-
-      tabProject.addEventListener("click", () => switchView("project"));
-      tabResource.addEventListener("click", () => switchView("resource"));
-      tabEquipment.addEventListener("click", () => switchView("equipment"));
-
-      if (eqForm) {
-        eqForm.addEventListener("submit", async (e) => {
-          e.preventDefault();
-          if (!currentUser) {
-            alert("請先登入再儲存設備。");
-            return;
-          }
-
-          const name = document.getElementById("eq-name").value.trim();
-          if (!name) {
-            alert("請輸入設備名稱。");
-            return;
-          }
-
-          const payload = {
-            name,
-            code: document.getElementById("eq-code").value.trim(),
-            category: document.getElementById("eq-category").value.trim(),
-            totalQuantity: Number(document.getElementById("eq-total").value || "0"),
-            isActive: document.getElementById("eq-active").value === "false" ? false : true,
-            notes: document.getElementById("eq-notes").value.trim(),
-            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-          };
-
-          try {
-            if (!editingEquipmentId) {
-              payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
-              await db.collection(EQUIPMENT_COLLECTION).add(payload);
-            } else {
-              await db.collection(EQUIPMENT_COLLECTION).doc(editingEquipmentId).update(payload);
-            }
-            resetEquipmentForm();
-          } catch (err) {
-            console.error(err);
-            alert("儲存設備失敗：" + err.message);
-          }
-        });
-
-        eqResetBtn.addEventListener("click", (e) => {
-          e.preventDefault();
-          resetEquipmentForm();
-        });
-      }
-
-      loginBtn.addEventListener("click", async () => {
-        try {
-          const provider = new firebase.auth.GoogleAuthProvider();
-          await auth.signInWithPopup(provider);
-        } catch (err) {
-          console.error(err);
-          alert("登入失敗：" + err.message);
-        }
-      });
-
-      logoutBtn.addEventListener("click", async () => {
-        await auth.signOut();
-      });
-
-      auth.onAuthStateChanged(async (user) => {
-        currentUser = user || null;
-
-        if (!user) {
-          currentRole = "viewer";
-          userInfoText.textContent = "尚未登入";
-          userRolePill.style.display = "none";
-          loginBtn.style.display = "inline-flex";
-          logoutBtn.style.display = "none";
-
-          projects = [];
-          equipmentList = [];
-          render();
-          renderEquipmentListTable();
-          renderEquipmentSelectForCalendar();
-          renderEquipmentLines([]);
-          renderEquipmentCalendar();
-          updateFormPermission();
-
-          if (unsubscribeProjects) {
-            unsubscribeProjects();
-            unsubscribeProjects = null;
-          }
-          if (unsubscribeEquipment) {
-            unsubscribeEquipment();
-            unsubscribeEquipment = null;
-          }
-          return;
-        }
-
-        userInfoText.textContent =
-          user.displayName || user.email || "已登入使用者";
-        loginBtn.style.display = "none";
-        logoutBtn.style.display = "inline-flex";
-
-        const role = await ensureUserDoc(user);
-        currentRole = role || "viewer";
-        userRolePill.textContent = role.toUpperCase();
-        userRolePill.style.display = "inline-block";
-
-        updateFormPermission();
-        subscribeProjects();
-        subscribeEquipment();
-      });
-
-      render();
-      renderEquipmentListTable();
-      renderEquipmentSelectForCalendar();
-      renderEquipmentCalendar();
-      updateFormPermission();
-    });
-  </script>
+  <!-- 外部 JS -->
+  <script src="app.js" defer></script>
 </body>
 </html>
