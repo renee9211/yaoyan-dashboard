@@ -48,9 +48,6 @@ function pad2(n) { return String(n).padStart(2, "0"); }
 function toISODate(d) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
-function isBetweenInclusive(dateISO, startISO, endISO) {
-  return dateISO >= startISO && dateISO <= endISO;
-}
 
 function statusLabel(v) {
   const map = {
@@ -64,8 +61,7 @@ function statusLabel(v) {
 }
 
 // =======================
-// Money (unit digit allowed, no rounding)
-// Inputs are type="number", so we DO NOT set commas into inputs.
+// Money
 // =======================
 function parseMoney(v) {
   if (v === "" || v === null || v === undefined) return 0;
@@ -80,7 +76,7 @@ function formatMoney(n) {
 }
 
 // =======================
-// DOM (match your HTML IDs)
+// DOM (match your HTML)
 // =======================
 const dom = {
   todayLabel: () => $("#todayLabel"),
@@ -88,7 +84,7 @@ const dom = {
   tabButtons: () => $all(".tab-button"),
   tabPanels: () => $all(".tab-panel"),
 
-  // project form
+  // project
   projectForm: () => $("#project-form"),
   projectId: () => $("#projectId"),
   projectName: () => $("#projectName"),
@@ -104,7 +100,7 @@ const dom = {
   projectFilterStatus: () => $("#projectFilterStatus"),
   projectTableBody: () => $("#projectTableBody"),
 
-  // equipment form
+  // equipment
   equipmentForm: () => $("#equipment-form"),
   equipmentId: () => $("#equipmentId"),
   equipmentName: () => $("#equipmentName"),
@@ -132,7 +128,7 @@ const dom = {
 };
 
 // =======================
-// Normalize + migration
+// Normalize + migrate
 // =======================
 function normalizeProject(p) {
   return {
@@ -146,10 +142,9 @@ function normalizeProject(p) {
     revenue: parseMoney(p.revenue),
     quote: parseMoney(p.quote),
     cost: parseMoney(p.cost),
-    equipmentsUsed: Array.isArray(p.equipmentsUsed) ? p.equipmentsUsed.map(x => ({
-      name: String(x.name ?? "").trim(),
-      qty: Number(x.qty) || 0
-    })) : []
+    equipmentsUsed: Array.isArray(p.equipmentsUsed)
+      ? p.equipmentsUsed.map(x => ({ name: String(x.name ?? "").trim(), qty: Number(x.qty) || 0 }))
+      : []
   };
 }
 
@@ -157,7 +152,7 @@ function normalizeEquipment(e) {
   return {
     id: e.id || uid("e"),
     name: e.name ?? "",
-    qty: Number(e.qty ?? e.total) || 0, // support old key
+    qty: Number(e.qty ?? e.total) || 0,
     note: e.note ?? ""
   };
 }
@@ -169,7 +164,7 @@ function migrateState() {
 }
 
 // =======================
-// Equip usage rows (10)
+// Equip usage (10 rows)
 // =======================
 function renderEquipUsageRows(project = null) {
   const body = dom.equipUsageBody();
@@ -207,7 +202,7 @@ function readEquipUsageRows() {
 }
 
 // =======================
-// Projects CRUD
+// CRUD - Projects
 // =======================
 function resetProjectForm() {
   dom.projectId().value = "";
@@ -279,7 +274,7 @@ function deleteProject(id) {
 }
 
 // =======================
-// Equipments CRUD
+// CRUD - Equipments
 // =======================
 function resetEquipmentForm() {
   dom.equipmentId().value = "";
@@ -324,7 +319,7 @@ function deleteEquipment(id) {
 }
 
 // =======================
-// Render tables
+// Render - Tables
 // =======================
 function renderProjectsTable() {
   const body = dom.projectTableBody();
@@ -378,8 +373,12 @@ function renderEquipmentsTable() {
 }
 
 // =======================
-// Calendar overuse
+// Calendar - overuse + show projects
 // =======================
+function isBetweenInclusive(dateISO, startISO, endISO) {
+  return dateISO >= startISO && dateISO <= endISO;
+}
+
 function buildInventoryMap() {
   const map = new Map();
   state.equipments.forEach(e => {
@@ -407,7 +406,7 @@ function computeUsageForDate(dateISO) {
     });
   });
 
-  return usage;
+  return { usage, activeProjects };
 }
 
 let monthOveruseCache = { month: "", byDate: new Map() };
@@ -424,7 +423,7 @@ function buildMonthOveruse(monthValue) {
 
   for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
     const dateISO = toISODate(d);
-    const usage = computeUsageForDate(dateISO);
+    const { usage } = computeUsageForDate(dateISO);
 
     const overList = [];
     for (const [equip, u] of usage.entries()) {
@@ -433,7 +432,6 @@ function buildMonthOveruse(monthValue) {
         overList.push({ equip, required: u.required, available, projects: u.projects });
       }
     }
-
     if (overList.length) byDate.set(dateISO, { over: overList });
   }
 
@@ -460,27 +458,52 @@ function renderCalendar() {
   const startDow = first.getDay(); // 0..6
   for (let i = 0; i < startDow; i++) {
     const pad = document.createElement("div");
-    pad.className = "calendar-cell muted";
+    pad.className = "calendar-day muted";
     grid.appendChild(pad);
   }
 
   for (let day = 1; day <= last.getDate(); day++) {
     const d = new Date(y, m - 1, day);
     const dateISO = toISODate(d);
+
+    const { activeProjects } = computeUsageForDate(dateISO);
     const hasOver = monthOveruseCache.byDate.has(dateISO);
 
     const cell = document.createElement("div");
-    cell.className = "calendar-cell" + (hasOver ? " overuse" : "");
+    cell.className = "calendar-day" + (hasOver ? " overbooked" : "");
     cell.dataset.date = dateISO;
 
-    const btn = hasOver
+    const badge = hasOver
+      ? `<span class="calendar-badge">超用</span>`
+      : `<span class="calendar-badge ok">OK</span>`;
+
+    const overBtn = hasOver
       ? `<button type="button" class="btn ghost small overuse-btn" data-date="${escapeHtml(dateISO)}">查看超用</button>`
       : "";
 
+    // Projects chips
+    const chips = (activeProjects || [])
+      .slice(0, 6)
+      .map(p => {
+        const status = p.status || "planning";
+        return `<div class="calendar-project status-${escapeHtml(status)}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</div>`;
+      })
+      .join("");
+
+    const more = (activeProjects?.length || 0) > 6
+      ? `<div class="calendar-project" title="更多">+${activeProjects.length - 6} more</div>`
+      : "";
+
     cell.innerHTML = `
-      <div class="calendar-date">${day}</div>
-      ${hasOver ? `<div class="calendar-badge">超用</div>` : `<div class="calendar-badge ok">OK</div>`}
-      <div class="calendar-actions">${btn}</div>
+      <div class="calendar-day-header">
+        <span>${day}</span>
+        <span style="display:flex; align-items:center; gap:6px;">
+          ${badge}
+          ${overBtn}
+        </span>
+      </div>
+      ${chips}
+      ${more}
     `;
 
     grid.appendChild(cell);
@@ -488,12 +511,10 @@ function renderCalendar() {
 }
 
 // =======================
-// Modal (overuse detail + jump to project)
+// Modal - overuse detail + jump
 // =======================
 function closeOveruseModal() {
-  const modal = dom.overuseModal();
-  if (!modal) return;
-  modal.classList.add("hidden");
+  dom.overuseModal()?.classList.add("hidden");
 }
 
 function openOveruseModal(dateISO) {
@@ -546,8 +567,7 @@ function openOveruseModal(dateISO) {
 }
 
 // =======================
-// Report + CSV (match your report column order)
-// Report columns: 專案 / 客戶 / 地點 / 報價 / 期間 / 狀態 / 營收 / 成本 / 淨利
+// Report + CSV
 // =======================
 function getMonthRange(monthValue) {
   const [y, m] = monthValue.split("-").map(Number);
@@ -648,7 +668,7 @@ function exportReportCsv() {
 }
 
 // =======================
-// Tabs + Today label
+// Tabs + Today
 // =======================
 function bindTabs() {
   dom.tabButtons().forEach(btn => {
@@ -687,7 +707,7 @@ function renderAll() {
 // Bind Events
 // =======================
 function bindEvents() {
-  // projects
+  // project form
   dom.projectForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
     upsertProjectFromForm();
@@ -719,7 +739,7 @@ function bindEvents() {
     }
   });
 
-  // equipments
+  // equipment form
   dom.equipmentForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
     upsertEquipmentFromForm();
@@ -742,7 +762,7 @@ function bindEvents() {
     }
   });
 
-  // calendar month
+  // calendar month init + change
   const cm = dom.calendarMonth();
   if (cm) {
     const now = new Date();
@@ -750,7 +770,7 @@ function bindEvents() {
     cm.addEventListener("change", renderCalendar);
   }
 
-  // report month
+  // report month init + change
   const rm = dom.reportMonth();
   if (rm) {
     const now = new Date();
@@ -763,7 +783,7 @@ function bindEvents() {
     exportReportCsv();
   });
 
-  // calendar overuse
+  // calendar "查看超用"
   dom.calendarGrid()?.addEventListener("click", (e) => {
     const btn = e.target.closest(".overuse-btn");
     if (!btn) return;
@@ -778,7 +798,7 @@ function bindEvents() {
     if (e.target === dom.overuseModal()) closeOveruseModal();
   });
 
-  // ✅ modal "前往調整" (jump back to project + scroll to equipment rows)
+  // modal "前往調整"
   dom.overuseModalBody()?.addEventListener("click", (e) => {
     const btn = e.target.closest(".jump-project-btn");
     if (!btn) return;
@@ -791,13 +811,13 @@ function bindEvents() {
 
     closeOveruseModal();
 
-    // switch to Projects tab
+    // switch to projects tab
     document.querySelector(`button.tab-button[data-tab="projects"]`)?.click();
 
     // fill form
     fillProjectForm(p);
 
-    // scroll to equipment usage
+    // scroll to equipment usage area
     setTimeout(() => {
       dom.equipUsageBody()?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 50);
