@@ -1,7 +1,6 @@
 * {
   box-sizing: border-box;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 body {
@@ -278,7 +277,7 @@ tr:last-child td {
   display: block;
 }
 
-/* Calendar */
+/* Calendar (existing - if you still use these classes somewhere) */
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -330,24 +329,81 @@ tr:last-child td {
   white-space: nowrap;
 }
 
-.calendar-project.status-executing {
-  background: #dcfce7;
+.calendar-project.status-executing { background: #dcfce7; }
+.calendar-project.status-confirmed { background: #e0f2fe; }
+.calendar-project.status-planning { background: #fef9c3; }
+.calendar-project.status-closed { background: #e5e7eb; }
+.calendar-project.status-lost { background: #fee2e2; }
+
+/* Calendar (NEW - for current app.js calendar cell UI) */
+.calendar-cell {
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  padding: 6px;
+  min-height: 78px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.calendar-project.status-confirmed {
-  background: #e0f2fe;
+.calendar-cell.muted {
+  background: transparent;
+  border: none;
+  min-height: 78px;
 }
 
-.calendar-project.status-planning {
-  background: #fef9c3;
+.calendar-cell.overuse {
+  border-color: #f97373;
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.4);
 }
 
-.calendar-project.status-closed {
-  background: #e5e7eb;
+.calendar-date {
+  font-weight: 700;
+  font-size: 12px;
+  color: #4b5563;
 }
 
-.calendar-project.status-lost {
-  background: #fee2e2;
+.calendar-actions {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Modal (overuse detail) */
+.modal.hidden { display: none; }
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.modal-card {
+  width: min(920px, 92vw);
+  max-height: 86vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 /* Misc */
@@ -365,27 +421,4 @@ tr:last-child td {
   .calendar-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .modal.hidden { display: none; }
-.modal {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,.4);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 9999;
 }
-.modal-card{
-  width: min(920px, 92vw);
-  max-height: 86vh;
-  overflow: auto;
-  background: #fff;
-  border-radius: 14px;
-  padding: 14px;
-}
-.modal-header{
-  display:flex; align-items:center; justify-content:space-between;
-  gap: 10px; margin-bottom: 10px;
-}
-.modal-body{ display:flex; flex-direction:column; gap: 12px; }
-  
-}
-
