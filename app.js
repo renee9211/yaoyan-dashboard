@@ -1,22 +1,101 @@
-// ===== 狀態儲存 =====
-const STORAGE_KEY = "yaoyan-dashboard-state";
+// ===== Firebase / Firestore =====
+import { db } from "./firebase.js";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  onSnapshot
+} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+// ===== 狀態儲存（改成 Firestore）=====
+const STORAGE_KEY = "yaoyan-dashboard-state"; // 保留（不再使用 localStorage，但你原本有定義就留著）
+const STATE_DOC = { col: "appState", id: "main" };
 
 let state = {
   projects: [],
   equipments: []
 };
 
-function loadState() {
+// 避免 onSnapshot 造成自己寫入又觸發自己重繪（簡單防抖）
+let isApplyingRemote = false;
+let unsubscribeState = null;
+
+// 從 Firestore 載入共用 state
+async function loadState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) state = JSON.parse(raw);
+    const ref = doc(db, STATE_DOC.col, STATE_DOC.id);
+    const snap = await getDoc(ref);
+
+    if (snap.exists()) {
+      const data = snap.data() || {};
+      state.projects = Array.isArray(data.projects) ? data.projects : [];
+      state.equipments = Array.isArray(data.equipments) ? data.equipments : [];
+    } else {
+      // 第一次沒有資料：把初始 state 建起來
+      await setDoc(ref, state);
+    }
   } catch (e) {
     console.error("Load state error", e);
+    alert("載入資料失敗：請確認 Firestore 已建立、權限允許、網路正常");
   }
 }
 
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+// 存到 Firestore（同步到所有電腦）
+async function saveState() {
+  try {
+    const ref = doc(db, STATE_DOC.col, STATE_DOC.id);
+    await setDoc(ref, state, { merge: true });
+  } catch (e) {
+    console.error("Save state error", e);
+    alert("儲存失敗：請確認 Firestore 權限設定");
+  }
+}
+
+// 即時訂閱：別台改了，這台自動更新（不用重整）
+function subscribeState() {
+  try {
+    const ref = doc(db, STATE_DOC.col, STATE_DOC.id);
+
+    if (unsubscribeState) unsubscribeState();
+
+    unsubscribeState = onSnapshot(
+      ref,
+      (snap) => {
+        if (!snap.exists()) return;
+
+        // 避免跟本地正在套用造成閃動
+        if (isApplyingRemote) return;
+
+        const data = snap.data() || {};
+        const nextProjects = Array.isArray(data.projects) ? data.projects : [];
+        const nextEquipments = Array.isArray(data.equipments) ? data.equipments : [];
+
+        // 簡單比較（用 JSON 字串比較，資料量不大時很好用）
+        const changed =
+          JSON.stringify(nextProjects) !== JSON.stringify(state.projects) ||
+          JSON.stringify(nextEquipments) !== JSON.stringify(state.equipments);
+
+        if (!changed) return;
+
+        isApplyingRemote = true;
+        state.projects = nextProjects;
+        state.equipments = nextEquipments;
+
+        // 重新渲染
+        renderProjects();
+        renderEquipments();
+        renderCalendar();
+        renderReport();
+
+        isApplyingRemote = false;
+      },
+      (err) => {
+        console.error("onSnapshot error", err);
+      }
+    );
+  } catch (e) {
+    console.error("subscribeState error", e);
+  }
 }
 
 // ===== 工具函式 =====
@@ -64,7 +143,6 @@ function escapeHtml(str) {
 // CSV 文字安全處理（防公式注入）
 function safeForCsv(cell) {
   const s = String(cell ?? "");
-  // 如果第一個字是 = + - @，前面加一個 '
   if (/^[=+\-@]/.test(s)) {
     return "'" + s;
   }
@@ -211,7 +289,9 @@ function handleProjectSubmit(e) {
     state.projects.push(payload);
   }
 
-  saveState();
+  // Firestore 同步儲存（不阻塞 UI）
+  void saveState();
+
   renderProjects();
   renderCalendar();
   renderReport();
@@ -251,7 +331,6 @@ function renderProjects() {
       els.projectTableBody.appendChild(tr);
     });
 
-  // 綁定操作按鈕
   els.projectTableBody.querySelectorAll("button").forEach((btn) => {
     const id = btn.dataset.id;
     const action = btn.dataset.action;
@@ -272,7 +351,7 @@ function renderProjects() {
       } else if (action === "delete") {
         if (confirm("確定要刪除這個專案嗎？")) {
           state.projects = state.projects.filter((p) => p.id !== id);
-          saveState();
+          void saveState();
           renderProjects();
           renderCalendar();
           renderReport();
@@ -306,9 +385,9 @@ function handleEquipmentSubmit(e) {
     state.equipments.push(payload);
   }
 
-  saveState();
+  void saveState();
   renderEquipments();
-  renderCalendar(); // 設備容量變動 → 重新算超用
+  renderCalendar();
   els.equipmentForm.reset();
 }
 
@@ -348,7 +427,7 @@ function renderEquipments() {
       } else if (action === "delete") {
         if (confirm("確定要刪除這個設備嗎？")) {
           state.equipments = state.equipments.filter((x) => x.id !== id);
-          saveState();
+          void saveState();
           renderEquipments();
           renderCalendar();
         }
@@ -368,13 +447,11 @@ function buildEquipmentMap() {
 
 function computeDailyUsage(year, month) {
   const equipmentTotals = buildEquipmentMap();
-  const result = {}; // dateStr -> { usage: {name: qty}, overbooked: bool }
+  const result = {};
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
   for (let day = 1; day <= daysInMonth; day++) {
-    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(
-      day
-    ).padStart(2, "0")}`;
+    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     result[dateStr] = { usage: {}, overbooked: false };
   }
 
@@ -383,9 +460,7 @@ function computeDailyUsage(year, month) {
     const usages = Array.isArray(p.equipmentsUsed) ? p.equipmentsUsed : [];
 
     for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(
-        day
-      ).padStart(2, "0")}`;
+      const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       if (!isDateInRange(dateStr, p.startDate, p.endDate)) continue;
 
       usages.forEach((u) => {
@@ -413,34 +488,25 @@ function renderCalendar() {
   let monthValue = els.calendarMonth.value;
   const today = new Date();
   if (!monthValue) {
-    // default: 本月
-    const defaultMonth = `${today.getFullYear()}-${String(
-      today.getMonth() + 1
-    ).padStart(2, "0")}`;
+    const defaultMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
     els.calendarMonth.value = defaultMonth;
     monthValue = defaultMonth;
   }
   const [yearStr, monthStr] = monthValue.split("-");
   const year = Number(yearStr);
-  const month = Number(monthStr) - 1; // JS month 0-based
+  const month = Number(monthStr) - 1;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
   const dailyUsage = computeDailyUsage(year, month);
-
   els.calendarGrid.innerHTML = "";
 
   for (let day = 1; day <= daysInMonth; day++) {
-    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(
-      day
-    ).padStart(2, "0")}`;
+    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     const info = dailyUsage[dateStr];
     const div = document.createElement("div");
     div.className = "calendar-day";
-    if (info && info.overbooked) {
-      div.classList.add("overbooked");
-    }
+    if (info && info.overbooked) div.classList.add("overbooked");
 
-    // 當日有哪些專案
     const projectsToday = state.projects.filter((p) =>
       isDateInRange(dateStr, p.startDate, p.endDate)
     );
@@ -448,11 +514,7 @@ function renderCalendar() {
     div.innerHTML = `
       <div class="calendar-day-header">
         <span>${day}</span>
-        ${
-          info && info.overbooked
-            ? '<span class="calendar-badge">超用警示</span>'
-            : ""
-        }
+        ${info && info.overbooked ? '<span class="calendar-badge">超用警示</span>' : ""}
       </div>
       <div class="calendar-day-body"></div>
     `;
@@ -461,7 +523,6 @@ function renderCalendar() {
     projectsToday.forEach((p) => {
       const span = document.createElement("div");
       span.className = `calendar-project status-${p.status || "planning"}`;
-      // 這裡用 textContent，本身就會自動轉義
       span.textContent = p.name;
       body.appendChild(span);
     });
@@ -475,9 +536,7 @@ function renderReport() {
   let monthValue = els.reportMonth.value;
   const today = new Date();
   if (!monthValue) {
-    const defaultMonth = `${today.getFullYear()}-${String(
-      today.getMonth() + 1
-    ).padStart(2, "0")}`;
+    const defaultMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
     els.reportMonth.value = defaultMonth;
     monthValue = defaultMonth;
   }
@@ -486,19 +545,12 @@ function renderReport() {
   const year = Number(yearStr);
   const month = Number(monthStr) - 1;
 
-  // 定義：有「任一天」落在本月就算這個月的專案
   const firstDay = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-  const lastDay = `${year}-${String(month + 1).padStart(
-    2,
-    "0"
-  )}-${String(new Date(year, month + 1, 0).getDate()).padStart(2, "0")}`;
+  const lastDay = `${year}-${String(month + 1).padStart(2, "0")}-${String(new Date(year, month + 1, 0).getDate()).padStart(2, "0")}`;
 
   const filtered = state.projects.filter((p) => {
     if (!p.startDate || !p.endDate) return false;
-    return !(
-      p.endDate < firstDay || // 完全在本月前
-      p.startDate > lastDay // 完全在本月後
-    );
+    return !(p.endDate < firstDay || p.startDate > lastDay);
   });
 
   els.reportTableBody.innerHTML = "";
@@ -541,31 +593,16 @@ function exportCsv() {
   const month = Number(monthStr) - 1;
 
   const firstDay = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-  const lastDay = `${year}-${String(month + 1).padStart(
-    2,
-    "0"
-  )}-${String(new Date(year, month + 1, 0).getDate()).padStart(2, "0")}`;
+  const lastDay = `${year}-${String(month + 1).padStart(2, "0")}-${String(new Date(year, month + 1, 0).getDate()).padStart(2, "0")}`;
 
   const filtered = state.projects.filter((p) => {
     if (!p.startDate || !p.endDate) return false;
-    return !(
-      p.endDate < firstDay || // 完全在本月前
-      p.startDate > lastDay // 完全在本月後
-    );
+    return !(p.endDate < firstDay || p.startDate > lastDay);
   });
 
-  const rows = [
-    [
-      "專案名稱",
-      "客戶名稱",
-      "開始日期",
-      "結束日期",
-      "狀態",
-      "營收",
-      "成本",
-      "淨利"
-    ]
-  ];
+  const rows = [[
+    "專案名稱", "客戶名稱", "開始日期", "結束日期", "狀態", "營收", "成本", "淨利"
+  ]];
 
   filtered.forEach((p) => {
     rows.push([
@@ -581,9 +618,7 @@ function exportCsv() {
   });
 
   const csvContent = rows
-    .map((row) =>
-      row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
-    )
+    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
     .join("\r\n");
 
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -639,15 +674,19 @@ function renderTodayLabel() {
   els.todayLabel.textContent = `今天：${d}`;
 }
 
-function init() {
-  loadState();
+async function init() {
+  await loadState();
   cacheDom();
   bindEvents();
+
   renderProjects();
   renderEquipments();
   renderCalendar();
   renderReport();
   renderTodayLabel();
+
+  // 最後才訂閱即時更新，避免初始化時閃動
+  subscribeState();
 }
 
 document.addEventListener("DOMContentLoaded", init);
