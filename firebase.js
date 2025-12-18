@@ -1,9 +1,12 @@
-// firebase.js (Google Login + Custom Claims role)
+// firebase.js（CDN 版本，適用於純 HTML / GitHub Pages）
 
-import { initializeApp } from "firebase/app";
-import { getAnalytics, isSupported as analyticsSupported } from "firebase/analytics";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-analytics.js";
 
-import { getFirestore } from "firebase/firestore";
+import {
+  getFirestore
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
 import {
   getAuth,
   GoogleAuthProvider,
@@ -11,8 +14,9 @@ import {
   signOut,
   onAuthStateChanged,
   getIdTokenResult
-} from "firebase/auth";
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
+// 🔐 Firebase 設定
 const firebaseConfig = {
   apiKey: "AIzaSyDBF3pBxsjJx_VJF4_GHDvY6OQe7U4SCIc",
   authDomain: "yaoyan-fb9cb.firebaseapp.com",
@@ -23,37 +27,18 @@ const firebaseConfig = {
   measurementId: "G-XYYM91DRLX"
 };
 
+// 🔧 初始化
 export const app = initializeApp(firebaseConfig);
-
-// Analytics（避免某些環境報錯）
-try {
-  if (await analyticsSupported()) getAnalytics(app);
-} catch (_) {}
-
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
+try {
+  getAnalytics(app);
+} catch (_) {}
+
+// 🔑 Google 登入
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({ prompt: "select_account" });
 
 export function watchAuth(cb) {
-  return onAuthStateChanged(auth, cb);
-}
-
-export async function loginWithGoogle() {
-  return await signInWithPopup(auth, provider);
-}
-
-export async function logout() {
-  return await signOut(auth);
-}
-
-/**
- * 從 custom claims 取得 role（admin/editor/viewer）
- * 你的 Firestore rules 使用 request.auth.token.role，所以這裡也用同一把來源。
- */
-export async function getUserRole(user) {
-  if (!user) return null;
-  const tokenResult = await getIdTokenResult(user, true);
-  return tokenResult?.claims?.role ?? null;
-}
+  return
