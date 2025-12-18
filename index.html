@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- 外部樣式 -->
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -32,6 +31,7 @@
     <section class="tab-panel active" id="tab-projects">
       <div class="card">
         <h2>新增 / 編輯專案</h2>
+
         <form id="project-form" class="grid-form">
           <input type="hidden" id="projectId" />
 
@@ -45,7 +45,6 @@
             <input id="projectClient" type="text" placeholder="例：〇〇活動整合公司" />
           </div>
 
-          <!-- ✅ 新增：專案地點（手動輸入） -->
           <div class="field">
             <label for="projectLocation">專案地點</label>
             <input id="projectLocation" type="text" placeholder="例：台北小巨蛋 / 南港展覽館" />
@@ -73,18 +72,16 @@
 
           <div class="field">
             <label for="projectRevenue">專案營收（未稅）</label>
-            <!-- ✅ 移除 step=1000，讓你可輸入到個位數 -->
             <input id="projectRevenue" type="number" min="0" step="1" placeholder="例：26667" />
           </div>
-          
+
           <div class="field">
             <label for="projectQuote">報價金額</label>
             <input id="projectQuote" type="number" min="0" step="1" placeholder="例：300000" />
           </div>
-          
+
           <div class="field">
             <label for="projectCost">專案成本（估算 or 實際）</label>
-            <!-- ✅ 移除 step=1000，讓你可輸入到個位數 -->
             <input id="projectCost" type="number" min="0" step="1" placeholder="例：12345" />
           </div>
 
@@ -125,13 +122,13 @@
             </select>
           </div>
         </div>
+
         <div class="table-wrapper">
           <table>
             <thead>
               <tr>
                 <th>專案</th>
                 <th>客戶</th>
-                <!-- ✅ 新增：地點欄 -->
                 <th>地點</th>
                 <th>期間</th>
                 <th>狀態</th>
@@ -142,9 +139,7 @@
                 <th>操作</th>
               </tr>
             </thead>
-            <tbody id="projectTableBody">
-              <!-- JS render -->
-            </tbody>
+            <tbody id="projectTableBody"></tbody>
           </table>
         </div>
       </div>
@@ -154,20 +149,25 @@
     <section class="tab-panel" id="tab-equipments">
       <div class="card">
         <h2>設備清單</h2>
+
         <form id="equipment-form" class="grid-form">
           <input type="hidden" id="equipmentId" />
+
           <div class="field">
             <label for="equipmentName">設備名稱</label>
             <input id="equipmentName" type="text" placeholder="例：火山噴射機 4m" required />
           </div>
+
           <div class="field">
             <label for="equipmentQty">總數量</label>
             <input id="equipmentQty" type="number" min="0" step="1" placeholder="例：12" required />
           </div>
+
           <div class="field">
             <label for="equipmentNote">備註</label>
             <input id="equipmentNote" type="text" placeholder="例：4 台維修中" />
           </div>
+
           <div class="actions">
             <button type="submit" class="btn primary">儲存設備</button>
             <button type="reset" id="equipmentReset" class="btn ghost">清空表單</button>
@@ -187,9 +187,7 @@
                 <th>操作</th>
               </tr>
             </thead>
-            <tbody id="equipmentTableBody">
-              <!-- JS render -->
-            </tbody>
+            <tbody id="equipmentTableBody"></tbody>
           </table>
         </div>
       </div>
@@ -207,12 +205,12 @@
             </label>
           </div>
         </div>
+
         <p class="helper-text">
-          紅框日期代表「至少一種設備超出可用數量」，請檢查同日專案設備配置。
+          紅框日期代表「至少一種設備超出可用數量」，點「查看超用」可看明細與場次用量。
         </p>
-        <div id="calendarGrid" class="calendar-grid">
-          <!-- JS render -->
-        </div>
+
+        <div id="calendarGrid" class="calendar-grid"></div>
       </div>
     </section>
 
@@ -236,7 +234,6 @@
               <tr>
                 <th>專案</th>
                 <th>客戶</th>
-                <!-- ✅ 新增：地點欄 -->
                 <th>地點</th>
                 <th class="num">報價</th>
                 <th>期間</th>
@@ -246,9 +243,9 @@
                 <th class="num">淨利</th>
               </tr>
             </thead>
-            <tbody id="reportTableBody">
-              <!-- JS render -->
-            </tbody>
+
+            <tbody id="reportTableBody"></tbody>
+
             <tfoot>
               <tr>
                 <th colspan="6" class="num">合計</th>
@@ -263,22 +260,18 @@
     </section>
   </main>
 
-  <!-- 外部 JS -->
+  <!-- ✅ 設備超用明細 Modal -->
+  <div id="overuseModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="overuseModalTitle">設備超用明細</h3>
+        <button id="overuseModalClose" class="btn ghost small" type="button">關閉</button>
+      </div>
+      <div id="overuseModalBody" class="modal-body"></div>
+    </div>
+  </div>
+
   <script type="module" src="./firebase.js"></script>
   <script type="module" src="./app.js"></script>
-
-    <!-- ✅ 設備超用明細 Modal -->
-    <div id="overuseModal" class="modal hidden">
-      <div class="modal-card">
-      <div class="modal-header">
-          <h3 id="overuseModalTitle">設備超用明細</h3>
-          <button id="overuseModalClose" class="btn ghost small" type="button">關閉</button>
-    </div>
-    <div id="overuseModalBody" class="modal-body"></div>
-  </div>
-      
-</div>
 </body>
 </html>
-
-
