@@ -76,7 +76,12 @@
             <!-- ✅ 移除 step=1000，讓你可輸入到個位數 -->
             <input id="projectRevenue" type="number" min="0" step="1" placeholder="例：26667" />
           </div>
-
+          
+          <div class="field">
+            <label for="projectQuote">報價金額</label>
+            <input id="projectQuote" type="number" min="0" step="1" placeholder="例：300000" />
+          </div>
+          
           <div class="field">
             <label for="projectCost">專案成本（估算 or 實際）</label>
             <!-- ✅ 移除 step=1000，讓你可輸入到個位數 -->
@@ -130,6 +135,7 @@
                 <th>地點</th>
                 <th>期間</th>
                 <th>狀態</th>
+                <th class="num">報價</th>
                 <th class="num">營收</th>
                 <th class="num">成本</th>
                 <th class="num">淨利</th>
@@ -232,6 +238,7 @@
                 <th>客戶</th>
                 <!-- ✅ 新增：地點欄 -->
                 <th>地點</th>
+                <th class="num">報價</th>
                 <th>期間</th>
                 <th>狀態</th>
                 <th class="num">營收</th>
@@ -259,5 +266,18 @@
   <!-- 外部 JS -->
   <script type="module" src="./firebase.js"></script>
   <script type="module" src="./app.js"></script>
+
+    <!-- ✅ 設備超用明細 Modal -->
+    <div id="overuseModal" class="modal hidden">
+      <div class="modal-card">
+      <div class="modal-header">
+          <h3 id="overuseModalTitle">設備超用明細</h3>
+          <button id="overuseModalClose" class="btn ghost small" type="button">關閉</button>
+    </div>
+    <div id="overuseModalBody" class="modal-body"></div>
+  </div>
+      
+</div>
 </body>
 </html>
+
