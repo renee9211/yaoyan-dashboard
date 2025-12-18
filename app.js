@@ -1,39 +1,16 @@
-// =======================
-// Storage
-// =======================
-const STORAGE_KEY = "yaoyan-dashboard-state";
+// app.js (Firestore cloud sync version)
 
-let state = {
-  projects: [],
-  equipments: []
-};
-
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) state = JSON.parse(raw);
-    if (!state || typeof state !== "object") state = { projects: [], equipments: [] };
-    if (!Array.isArray(state.projects)) state.projects = [];
-    if (!Array.isArray(state.equipments)) state.equipments = [];
-  } catch (e) {
-    console.error("loadState error", e);
-    state = { projects: [], equipments: [] };
-  }
-}
-
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
+import { db, ensureSignedIn } from "./firebase.js";
+import {
+  collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
+  onSnapshot, query, orderBy, serverTimestamp, getDocs
+} from "firebase/firestore";
 
 // =======================
 // Helpers
 // =======================
 const $ = (sel, root = document) => root.querySelector(sel);
 const $all = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-
-function uid(prefix = "id") {
-  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-}
 
 function escapeHtml(str) {
   return String(str ?? "")
@@ -43,11 +20,8 @@ function escapeHtml(str) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
-
 function pad2(n) { return String(n).padStart(2, "0"); }
-function toISODate(d) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
+function toISODate(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
 
 function statusLabel(v) {
   const map = {
@@ -60,9 +34,6 @@ function statusLabel(v) {
   return map[v] || v || "";
 }
 
-// =======================
-// Money
-// =======================
 function parseMoney(v) {
   if (v === "" || v === null || v === undefined) return 0;
   const n = Number(String(v).replace(/,/g, "").trim());
@@ -76,7 +47,7 @@ function formatMoney(n) {
 }
 
 // =======================
-// DOM (match your HTML)
+// DOM
 // =======================
 const dom = {
   todayLabel: () => $("#todayLabel"),
@@ -128,11 +99,23 @@ const dom = {
 };
 
 // =======================
-// Normalize + migrate
+// Cloud state (from Firestore)
 // =======================
-function normalizeProject(p) {
+let state = {
+  projects: [],
+  equipments: []
+};
+
+// Firestore collections
+const projectsCol = collection(db, "projects");
+const equipmentsCol = collection(db, "equipments");
+
+// =======================
+// Normalize
+// =======================
+function normalizeProject(id, p) {
   return {
-    id: p.id || uid("p"),
+    id,
     name: p.name ?? "",
     client: p.client ?? "",
     location: p.location ?? "",
@@ -148,23 +131,17 @@ function normalizeProject(p) {
   };
 }
 
-function normalizeEquipment(e) {
+function normalizeEquipment(id, e) {
   return {
-    id: e.id || uid("e"),
+    id,
     name: e.name ?? "",
-    qty: Number(e.qty ?? e.total) || 0,
+    qty: Number(e.qty ?? 0) || 0,
     note: e.note ?? ""
   };
 }
 
-function migrateState() {
-  state.projects = state.projects.map(p => normalizeProject(p));
-  state.equipments = state.equipments.map(e => normalizeEquipment(e));
-  saveState();
-}
-
 // =======================
-// Equip usage (10 rows)
+// Equip usage rows (10)
 // =======================
 function renderEquipUsageRows(project = null) {
   const body = dom.equipUsageBody();
@@ -202,7 +179,7 @@ function readEquipUsageRows() {
 }
 
 // =======================
-// CRUD - Projects
+// Forms
 // =======================
 function resetProjectForm() {
   dom.projectId().value = "";
@@ -232,50 +209,6 @@ function fillProjectForm(p) {
   renderEquipUsageRows(p);
 }
 
-function calcProfit(p) {
-  return parseMoney(p.revenue) - parseMoney(p.cost);
-}
-
-function upsertProjectFromForm() {
-  const id = dom.projectId().value.trim();
-  const p = {
-    id: id || uid("p"),
-    name: dom.projectName().value.trim(),
-    client: dom.projectClient().value.trim(),
-    location: dom.projectLocation().value.trim(),
-    start: dom.projectStart().value,
-    end: dom.projectEnd().value,
-    status: dom.projectStatus().value,
-    revenue: parseMoney(dom.projectRevenue().value),
-    quote: parseMoney(dom.projectQuote().value),
-    cost: parseMoney(dom.projectCost().value),
-    equipmentsUsed: readEquipUsageRows()
-  };
-
-  if (!p.name) return alert("請填寫專案名稱");
-  if (!p.start || !p.end) return alert("請填寫專案期間");
-  if (p.end < p.start) return alert("結束日期不能早於開始日期");
-
-  const normalized = normalizeProject(p);
-  const idx = state.projects.findIndex(x => x.id === normalized.id);
-  if (idx >= 0) state.projects[idx] = normalized;
-  else state.projects.unshift(normalized);
-
-  saveState();
-  renderAll();
-  resetProjectForm();
-}
-
-function deleteProject(id) {
-  if (!confirm("確定要刪除此專案？")) return;
-  state.projects = state.projects.filter(p => p.id !== id);
-  saveState();
-  renderAll();
-}
-
-// =======================
-// CRUD - Equipments
-// =======================
 function resetEquipmentForm() {
   dom.equipmentId().value = "";
   dom.equipmentName().value = "";
@@ -290,36 +223,94 @@ function fillEquipmentForm(e) {
   dom.equipmentNote().value = e.note ?? "";
 }
 
-function upsertEquipmentFromForm() {
-  const id = dom.equipmentId().value.trim();
-  const e = {
-    id: id || uid("e"),
-    name: dom.equipmentName().value.trim(),
-    qty: Math.max(0, parseInt(String(dom.equipmentQty().value).replace(/[^\d-]/g, ""), 10) || 0),
-    note: dom.equipmentNote().value.trim()
-  };
-
-  if (!e.name) return alert("請填寫設備名稱");
-
-  const normalized = normalizeEquipment(e);
-  const idx = state.equipments.findIndex(x => x.id === normalized.id);
-  if (idx >= 0) state.equipments[idx] = normalized;
-  else state.equipments.unshift(normalized);
-
-  saveState();
-  renderAll();
-  resetEquipmentForm();
-}
-
-function deleteEquipment(id) {
-  if (!confirm("確定要刪除此設備？")) return;
-  state.equipments = state.equipments.filter(e => e.id !== id);
-  saveState();
-  renderAll();
+function calcProfit(p) {
+  return parseMoney(p.revenue) - parseMoney(p.cost);
 }
 
 // =======================
-// Render - Tables
+// Firestore CRUD
+// =======================
+async function upsertProjectFromForm() {
+  const id = dom.projectId().value.trim();
+
+  const payload = {
+    name: dom.projectName().value.trim(),
+    client: dom.projectClient().value.trim(),
+    location: dom.projectLocation().value.trim(),
+    start: dom.projectStart().value,
+    end: dom.projectEnd().value,
+    status: dom.projectStatus().value,
+    revenue: parseMoney(dom.projectRevenue().value),
+    quote: parseMoney(dom.projectQuote().value),
+    cost: parseMoney(dom.projectCost().value),
+    equipmentsUsed: readEquipUsageRows(),
+    updatedAt: serverTimestamp()
+  };
+
+  if (!payload.name) return alert("請填寫專案名稱");
+  if (!payload.start || !payload.end) return alert("請填寫專案期間");
+  if (payload.end < payload.start) return alert("結束日期不能早於開始日期");
+
+  try {
+    if (id) {
+      await updateDoc(doc(db, "projects", id), payload);
+    } else {
+      await addDoc(projectsCol, { ...payload, createdAt: serverTimestamp() });
+    }
+    resetProjectForm();
+  } catch (e) {
+    console.error(e);
+    alert("儲存專案失敗（請確認 Firestore / 權限設定）");
+  }
+}
+
+async function deleteProject(id) {
+  if (!confirm("確定要刪除此專案？")) return;
+  try {
+    await deleteDoc(doc(db, "projects", id));
+  } catch (e) {
+    console.error(e);
+    alert("刪除專案失敗（請確認 Firestore / 權限設定）");
+  }
+}
+
+async function upsertEquipmentFromForm() {
+  const id = dom.equipmentId().value.trim();
+
+  const payload = {
+    name: dom.equipmentName().value.trim(),
+    qty: Math.max(0, parseInt(String(dom.equipmentQty().value).replace(/[^\d-]/g, ""), 10) || 0),
+    note: dom.equipmentNote().value.trim(),
+    updatedAt: serverTimestamp()
+  };
+
+  if (!payload.name) return alert("請填寫設備名稱");
+
+  try {
+    if (id) {
+      await updateDoc(doc(db, "equipments", id), payload);
+    } else {
+      await addDoc(equipmentsCol, { ...payload, createdAt: serverTimestamp() });
+    }
+    resetEquipmentForm();
+  } catch (e) {
+    console.error(e);
+    alert("儲存設備失敗（請確認 Firestore / 權限設定）");
+  }
+}
+
+async function deleteEquipment(id) {
+  if (!confirm("確定要刪除此設備？")) return;
+  try {
+    await deleteDoc(doc(db, "equipments", id));
+  } catch (e) {
+    console.error(e);
+    alert("刪除設備失敗（請確認 Firestore / 權限設定）");
+  }
+}
+
+// =======================
+// Render tables
 // =======================
 function renderProjectsTable() {
   const body = dom.projectTableBody();
@@ -373,7 +364,7 @@ function renderEquipmentsTable() {
 }
 
 // =======================
-// Calendar - overuse + show projects
+// Calendar (show projects + overuse)
 // =======================
 function isBetweenInclusive(dateISO, startISO, endISO) {
   return dateISO >= startISO && dateISO <= endISO;
@@ -455,7 +446,7 @@ function renderCalendar() {
 
   grid.innerHTML = "";
 
-  const startDow = first.getDay(); // 0..6
+  const startDow = first.getDay();
   for (let i = 0; i < startDow; i++) {
     const pad = document.createElement("div");
     pad.className = "calendar-day muted";
@@ -481,7 +472,6 @@ function renderCalendar() {
       ? `<button type="button" class="btn ghost small overuse-btn" data-date="${escapeHtml(dateISO)}">查看超用</button>`
       : "";
 
-    // Projects chips
     const chips = (activeProjects || [])
       .slice(0, 6)
       .map(p => {
@@ -511,7 +501,7 @@ function renderCalendar() {
 }
 
 // =======================
-// Modal - overuse detail + jump
+// Modal
 // =======================
 function closeOveruseModal() {
   dom.overuseModal()?.classList.add("hidden");
@@ -593,7 +583,6 @@ function renderReport() {
   if (!mv) return;
 
   const list = state.projects.filter(p => isProjectInMonth(p, mv));
-
   body.innerHTML = "";
 
   let totalR = 0, totalC = 0, totalP = 0;
@@ -663,7 +652,6 @@ function exportReportCsv() {
   document.body.appendChild(a);
   a.click();
   a.remove();
-
   URL.revokeObjectURL(url);
 }
 
@@ -694,6 +682,30 @@ function renderToday() {
 }
 
 // =======================
+// Firestore listeners (realtime sync)
+// =======================
+function attachRealtimeListeners() {
+  // 專案：用 updatedAt 排序，沒有 updatedAt 的也能顯示
+  const pq = query(projectsCol, orderBy("updatedAt", "desc"));
+  onSnapshot(pq, (snap) => {
+    state.projects = snap.docs.map(d => normalizeProject(d.id, d.data()));
+    renderAll();
+  }, (err) => {
+    console.error(err);
+    alert("讀取專案失敗（請確認 Firestore / 權限設定）");
+  });
+
+  const eq = query(equipmentsCol, orderBy("updatedAt", "desc"));
+  onSnapshot(eq, (snap) => {
+    state.equipments = snap.docs.map(d => normalizeEquipment(d.id, d.data()));
+    renderAll();
+  }, (err) => {
+    console.error(err);
+    alert("讀取設備失敗（請確認 Firestore / 權限設定）");
+  });
+}
+
+// =======================
 // Render All
 // =======================
 function renderAll() {
@@ -707,7 +719,7 @@ function renderAll() {
 // Bind Events
 // =======================
 function bindEvents() {
-  // project form
+  // projects
   dom.projectForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
     upsertProjectFromForm();
@@ -739,7 +751,7 @@ function bindEvents() {
     }
   });
 
-  // equipment form
+  // equipments
   dom.equipmentForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
     upsertEquipmentFromForm();
@@ -811,13 +823,9 @@ function bindEvents() {
 
     closeOveruseModal();
 
-    // switch to projects tab
     document.querySelector(`button.tab-button[data-tab="projects"]`)?.click();
-
-    // fill form
     fillProjectForm(p);
 
-    // scroll to equipment usage area
     setTimeout(() => {
       dom.equipUsageBody()?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 50);
@@ -827,16 +835,19 @@ function bindEvents() {
 // =======================
 // Init
 // =======================
-function init() {
-  loadState();
-  migrateState();
-
-  bindTabs();
+async function init() {
   renderToday();
-
+  bindTabs();
   renderEquipUsageRows(null);
-  renderAll();
   bindEvents();
+
+  try {
+    await ensureSignedIn();
+    attachRealtimeListeners();
+  } catch (e) {
+    console.error(e);
+    alert("Firebase 登入失敗（請確認 Authentication 已啟用匿名登入）");
+  }
 }
 
 document.addEventListener("DOMContentLoaded", init);
