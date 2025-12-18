@@ -762,10 +762,12 @@ function renderAll() {
 
 // --------------------- Bind events ---------------------
 function bindEvents() {
+  // --- Projects ---
   dom.projectForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
     upsertProjectFromForm();
   });
+
   dom.projectFilterStatus()?.addEventListener("change", renderProjectsTable);
 
   dom.projectTableBody()?.addEventListener("click", (e) => {
@@ -784,6 +786,7 @@ function bindEvents() {
     }
   });
 
+  // --- Equipments ---
   dom.equipmentForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
     upsertEquipmentFromForm();
@@ -805,6 +808,7 @@ function bindEvents() {
     }
   });
 
+  // --- Calendar month ---
   const cm = dom.calendarMonth();
   if (cm) {
     const now = new Date();
@@ -812,6 +816,7 @@ function bindEvents() {
     cm.addEventListener("change", renderCalendar);
   }
 
+  // --- Report month ---
   const rm = dom.reportMonth();
   if (rm) {
     const now = new Date();
@@ -824,15 +829,43 @@ function bindEvents() {
     exportReportCsv();
   });
 
+  // --- Calendar: open modal ---
   dom.calendarGrid()?.addEventListener("click", (e) => {
     const btn = e.target.closest(".overuse-btn");
     if (!btn) return;
     openOveruseModal(btn.dataset.date);
   });
 
+  // --- Modal: close ---
   dom.overuseModalClose()?.addEventListener("click", closeOveruseModal);
   dom.overuseModal()?.addEventListener("click", (e) => {
     if (e.target === dom.overuseModal()) closeOveruseModal();
+  });
+
+  // ✅✅✅ Modal: Jump to project edit (你現在缺的就是這段)
+  dom.overuseModalBody()?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".jump-project-btn");
+    if (!btn) return;
+
+    const pid = btn.dataset.projectId;
+    if (!pid) return;
+
+    const p = state.projects.find(x => x.id === pid);
+    if (!p) return;
+
+    // 1) 關閉 modal
+    closeOveruseModal();
+
+    // 2) 切回「專案管理」tab
+    document.querySelector(`button.tab-button[data-tab="projects"]`)?.click();
+
+    // 3) 帶入專案到表單
+    fillProjectForm(p);
+
+    // 4) 捲到「本案使用設備」區塊方便你直接改
+    setTimeout(() => {
+      dom.equipUsageBody()?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
   });
 }
 
