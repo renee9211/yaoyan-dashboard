@@ -51,6 +51,7 @@ function calcProfit(p) {
 // --------------------- DOM ---------------------
 const dom = {
   todayLabel: () => $("#todayLabel"),
+  topbarRight: () => $(".topbar-right"),
 
   tabButtons: () => $all(".tab-button"),
   tabPanels: () => $all(".tab-panel"),
@@ -104,6 +105,90 @@ let unsubProjects = null;
 let unsubEquipments = null;
 
 let state = { projects: [], equipments: [] };
+
+// --------------------- Auth UI (Login/Logout) ---------------------
+let authEls = { btn: null, rolePill: null, who: null };
+
+function ensureAuthUI() {
+  const host = dom.topbarRight();
+  if (!host) return;
+
+  // already created?
+  if (authEls.btn && authEls.rolePill && authEls.who) return;
+
+  // 保留原本 Admin tag 的位置，但我們會用動態顯示取代
+  // 新增：角色 pill + email + login/logout btn
+  const wrap = document.createElement("div");
+  wrap.style.display = "inline-flex";
+  wrap.style.flexDirection = "column";
+  wrap.style.alignItems = "flex-end";
+  wrap.style.gap = "6px";
+
+  const row = document.createElement("div");
+  row.style.display = "inline-flex";
+  row.style.alignItems = "center";
+  row.style.gap = "8px";
+  row.style.justifyContent = "flex-end";
+
+  const rolePill = document.createElement("span");
+  rolePill.className = "tag";
+  rolePill.textContent = "未登入";
+
+  const btn = document.createElement("button");
+  btn.className = "btn ghost small";
+  btn.type = "button";
+  btn.textContent = "Google 登入";
+
+  const who = document.createElement("div");
+  who.style.fontSize = "12px";
+  who.style.color = "#6b7280";
+  who.textContent = "";
+
+  row.appendChild(rolePill);
+  row.appendChild(btn);
+  wrap.appendChild(row);
+  wrap.appendChild(who);
+
+  // 把原本 topbar-right 的內容保留（todayLabel 等），放到下方
+  // 先把原先 children 抓出來
+  const existing = Array.from(host.childNodes);
+  host.innerHTML = "";
+  host.appendChild(wrap);
+
+  // 再把原本的東西接回來
+  existing.forEach(n => host.appendChild(n));
+
+  authEls = { btn, rolePill, who };
+
+  btn.addEventListener("click", async () => {
+    try {
+      if (currentUser) {
+        await logout();
+      } else {
+        await loginWithGoogle();
+      }
+    } catch (e) {
+      console.error(e);
+      alert("登入/登出失敗，請看 Console");
+    }
+  });
+}
+
+function updateAuthUI() {
+  ensureAuthUI();
+  if (!authEls.btn) return;
+
+  if (!currentUser) {
+    authEls.rolePill.textContent = "未登入";
+    authEls.who.textContent = "請先登入才可寫入（admin/editor）";
+    authEls.btn.textContent = "Google 登入";
+  } else {
+    const email = currentUser.email || "(unknown)";
+    authEls.rolePill.textContent = (currentRole || "viewer").toUpperCase();
+    authEls.who.textContent = email;
+    authEls.btn.textContent = "登出";
+  }
+}
 
 // --------------------- Equip usage rows (10) ---------------------
 function renderEquipUsageRows(project = null) {
@@ -192,6 +277,9 @@ function isAdmin() {
 
 // --------------------- CRUD ---------------------
 async function upsertProjectFromForm() {
+  if (!currentUser) return alert("請先登入再儲存（右上角 Google 登入）");
+  if (!canEdit()) return alert("你目前是 viewer，沒有編輯權限（需要 admin 或 editor）");
+
   const id = dom.projectId().value.trim();
 
   const name = dom.projectName().value.trim();
@@ -236,21 +324,27 @@ async function upsertProjectFromForm() {
     resetProjectForm();
   } catch (e) {
     console.error(e);
-    alert("儲存失敗：你可能是 viewer（需 admin/editor）或資料不符合 rules（日期/金額）");
+    alert("儲存失敗：權限不足或資料不符合 Firestore rules");
   }
 }
 
 async function deleteProject(projectId) {
+  if (!currentUser) return alert("請先登入");
+  if (!isAdmin()) return alert("只有 admin 可以刪除");
   if (!confirm("確定要刪除此專案？")) return;
+
   try {
     await deleteDoc(doc(db, "projects", projectId));
   } catch (e) {
     console.error(e);
-    alert("刪除失敗：只有 admin 可以刪除");
+    alert("刪除失敗：請確認權限");
   }
 }
 
 async function upsertEquipmentFromForm() {
+  if (!currentUser) return alert("請先登入再儲存（右上角 Google 登入）");
+  if (!canEdit()) return alert("你目前是 viewer，沒有編輯權限（需要 admin 或 editor）");
+
   const id = dom.equipmentId().value.trim();
   const name = dom.equipmentName().value.trim();
   const qty = Math.max(0, Math.trunc(Number(dom.equipmentQty().value) || 0));
@@ -269,17 +363,20 @@ async function upsertEquipmentFromForm() {
     resetEquipmentForm();
   } catch (e) {
     console.error(e);
-    alert("儲存失敗：你可能是 viewer（需 admin/editor）或資料不符合 rules（name/qty）");
+    alert("儲存失敗：權限不足或資料不符合 Firestore rules");
   }
 }
 
 async function deleteEquipment(equipmentId) {
+  if (!currentUser) return alert("請先登入");
+  if (!isAdmin()) return alert("只有 admin 可以刪除");
   if (!confirm("確定要刪除此設備？")) return;
+
   try {
     await deleteDoc(doc(db, "equipment", equipmentId));
   } catch (e) {
     console.error(e);
-    alert("刪除失敗：只有 admin 可以刪除");
+    alert("刪除失敗：請確認權限");
   }
 }
 
@@ -667,7 +764,6 @@ function renderAll() {
 function bindEvents() {
   dom.projectForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
-    if (!canEdit()) return alert("你目前是 viewer，沒有編輯權限（需要 admin 或 editor）");
     upsertProjectFromForm();
   });
   dom.projectFilterStatus()?.addEventListener("change", renderProjectsTable);
@@ -684,14 +780,12 @@ function bindEvents() {
       if (p) fillProjectForm(p);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } else if (act === "del") {
-      if (!isAdmin()) return alert("只有 admin 可以刪除");
       deleteProject(id);
     }
   });
 
   dom.equipmentForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
-    if (!canEdit()) return alert("你目前是 viewer，沒有編輯權限（需要 admin 或 editor）");
     upsertEquipmentFromForm();
   });
 
@@ -707,7 +801,6 @@ function bindEvents() {
       if (eq) fillEquipmentForm(eq);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } else if (act === "del-eq") {
-      if (!isAdmin()) return alert("只有 admin 可以刪除");
       deleteEquipment(id);
     }
   });
@@ -741,28 +834,12 @@ function bindEvents() {
   dom.overuseModal()?.addEventListener("click", (e) => {
     if (e.target === dom.overuseModal()) closeOveruseModal();
   });
-
-  dom.overuseModalBody()?.addEventListener("click", (e) => {
-    const btn = e.target.closest(".jump-project-btn");
-    if (!btn) return;
-
-    const pid = btn.dataset.projectId;
-    const p = state.projects.find(x => x.id === pid);
-    if (!p) return;
-
-    closeOveruseModal();
-    document.querySelector(`button.tab-button[data-tab="projects"]`)?.click();
-    fillProjectForm(p);
-
-    setTimeout(() => {
-      dom.equipUsageBody()?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 50);
-  });
 }
 
 // --------------------- Init ---------------------
 function init() {
   renderToday();
+  ensureAuthUI();
   bindTabs();
   renderEquipUsageRows(null);
   bindEvents();
@@ -772,6 +849,7 @@ function init() {
 
     if (!user) {
       currentRole = null;
+      updateAuthUI();
       detachListeners();
       return;
     }
@@ -783,6 +861,7 @@ function init() {
       currentRole = "viewer";
     }
 
+    updateAuthUI();
     detachListeners();
     attachRealtimeListeners();
   });
