@@ -45,6 +45,12 @@
             <input id="projectClient" type="text" placeholder="例：〇〇活動整合公司" />
           </div>
 
+          <!-- ✅ 新增：專案地點（手動輸入） -->
+          <div class="field">
+            <label for="projectLocation">專案地點</label>
+            <input id="projectLocation" type="text" placeholder="例：台北小巨蛋 / 南港展覽館" />
+          </div>
+
           <div class="field">
             <label>專案期間</label>
             <div class="field-inline">
@@ -67,12 +73,14 @@
 
           <div class="field">
             <label for="projectRevenue">專案營收（未稅）</label>
-            <input id="projectRevenue" type="number" min="0" step="1000" placeholder="例：500000" />
+            <!-- ✅ 移除 step=1000，讓你可輸入到個位數 -->
+            <input id="projectRevenue" type="number" min="0" step="1" placeholder="例：26667" />
           </div>
 
           <div class="field">
             <label for="projectCost">專案成本（估算 or 實際）</label>
-            <input id="projectCost" type="number" min="0" step="1000" placeholder="例：320000" />
+            <!-- ✅ 移除 step=1000，讓你可輸入到個位數 -->
+            <input id="projectCost" type="number" min="0" step="1" placeholder="例：12345" />
           </div>
 
           <div class="field full">
@@ -118,6 +126,8 @@
               <tr>
                 <th>專案</th>
                 <th>客戶</th>
+                <!-- ✅ 新增：地點欄 -->
+                <th>地點</th>
                 <th>期間</th>
                 <th>狀態</th>
                 <th class="num">營收</th>
@@ -220,6 +230,8 @@
               <tr>
                 <th>專案</th>
                 <th>客戶</th>
+                <!-- ✅ 新增：地點欄 -->
+                <th>地點</th>
                 <th>期間</th>
                 <th>狀態</th>
                 <th class="num">營收</th>
@@ -232,7 +244,7 @@
             </tbody>
             <tfoot>
               <tr>
-                <th colspan="4" class="num">合計</th>
+                <th colspan="5" class="num">合計</th>
                 <th class="num" id="reportTotalRevenue">0</th>
                 <th class="num" id="reportTotalCost">0</th>
                 <th class="num" id="reportTotalProfit">0</th>
@@ -249,5 +261,3 @@
   <script type="module" src="./app.js"></script>
 </body>
 </html>
-
-
