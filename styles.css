@@ -16,6 +16,7 @@ body {
   justify-content: space-between;
   align-items: flex-end;
   margin-bottom: 16px;
+  gap: 12px;
 }
 
 h1 {
@@ -29,7 +30,13 @@ h1 {
   font-size: 14px;
 }
 
+/* ✅ topbar-right 改成 flex：登入鈕/角色/日期不會亂掉 */
 .topbar-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
   text-align: right;
   font-size: 12px;
   color: #6b7280;
@@ -42,7 +49,7 @@ h1 {
   background: #e5f2ff;
   color: #1d4ed8;
   font-size: 11px;
-  margin-right: 8px;
+  margin-right: 0;
 }
 
 /* Tabs */
@@ -51,6 +58,7 @@ h1 {
   gap: 8px;
   margin-bottom: 16px;
   border-bottom: 1px solid #e5e7eb;
+  flex-wrap: wrap;
 }
 
 .tab-button {
@@ -90,6 +98,7 @@ main {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
 .card-header h2 {
@@ -101,6 +110,7 @@ main {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 /* Forms */
@@ -137,6 +147,7 @@ select {
   padding: 6px 8px;
   font-size: 13px;
   width: 100%;
+  background: #fff;
 }
 
 input:focus,
@@ -149,14 +160,14 @@ select:focus {
 .field-inline {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .inline-label {
   font-size: 13px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 /* Buttons */
@@ -164,6 +175,7 @@ select:focus {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .btn {
@@ -172,6 +184,7 @@ select:focus {
   padding: 6px 12px;
   font-size: 13px;
   cursor: pointer;
+  background: #fff;
 }
 
 .btn.primary {
@@ -196,6 +209,11 @@ select:focus {
   color: #b91c1c;
 }
 
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Tables */
 .table-wrapper {
   width: 100%;
@@ -206,7 +224,14 @@ table {
   border-collapse: collapse;
   width: 100%;
   font-size: 13px;
+  table-layout: auto;
 }
+
+/* ✅ 關鍵：不要把 thead/tbody/tr 改成奇怪的 display，維持 table 的原生行為 */
+thead { display: table-header-group; }
+tbody { display: table-row-group; }
+tfoot { display: table-footer-group; }
+tr { display: table-row; }
 
 th,
 td {
@@ -214,6 +239,7 @@ td {
   padding: 6px 8px;
   text-align: left;
   white-space: nowrap;
+  vertical-align: middle;
 }
 
 th {
@@ -238,14 +264,14 @@ td.num {
 .equip-usage-row {
   display: grid;
   grid-template-columns: 2fr 1fr;
-  gap: 4px;
+  gap: 6px;
   font-size: 12px;
 }
 
 .equip-usage-header {
   font-weight: 600;
   color: #6b7280;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .equip-usage-row input {
@@ -254,7 +280,7 @@ td.num {
 }
 
 .helper-text {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   color: #6b7280;
   font-size: 11px;
 }
@@ -317,12 +343,6 @@ td.num {
   color: #166534;
 }
 
-.calendar-actions {
-  margin-top: auto;
-  display: flex;
-  justify-content: flex-end;
-}
-
 .calendar-project {
   border-radius: 4px;
   background: #f3f4f6;
@@ -382,46 +402,15 @@ td.num {
   .topbar {
     flex-direction: column;
     align-items: flex-start;
-    gap: 4px;
+    gap: 8px;
+  }
+
+  .topbar-right {
+    justify-content: flex-start;
+    text-align: left;
   }
 
   .calendar-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-}
-
-/* ===== FIX: table split / header-body separated ===== */
-.table-wrapper {
-  width: 100%;
-  overflow-x: auto;
-  overflow-y: visible;
-  max-height: none !important;
-  height: auto !important;
-  display: block !important;   /* 千萬不要是 flex */
-}
-
-/* 確保 table 正常排版 */
-.table-wrapper table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: auto;
-}
-
-/* 避免 thead / tbody 被變成 block 造成分裂 */
-table thead,
-table tbody,
-table tfoot,
-table tr {
-  display: table-row-group;
-}
-
-/* 你的表頭、表身仍然正常顯示 */
-table thead {
-  display: table-header-group;
-}
-table tbody {
-  display: table-row-group;
-}
-table tfoot {
-  display: table-footer-group;
 }
