@@ -34,7 +34,6 @@ export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
-// analytics（GitHub Pages 有時不支援，包 try）
 (async () => {
   try {
     const ok = await isSupported();
@@ -57,10 +56,6 @@ export async function logout() {
   return await signOut(auth);
 }
 
-/**
- * 若你未來改用 redirect 登入，這個可以處理 redirect 回來的結果
- * 目前你用 popup 也沒關係，呼叫它只會回 null
- */
 export async function handleRedirectResult() {
   try {
     return await getRedirectResult(auth);
@@ -69,10 +64,6 @@ export async function handleRedirectResult() {
   }
 }
 
-/**
- * 確保 users/{uid} 存在（第一次登入會寫入）
- * role 預設 viewer（之後你在 Console 改 editor/admin）
- */
 export async function ensureUserDoc(user) {
   if (!user) return;
 
@@ -92,14 +83,10 @@ export async function ensureUserDoc(user) {
       { merge: true }
     );
   } else {
-    // 只更新 updatedAt，避免覆蓋 role
     await setDoc(ref, { updatedAt: serverTimestamp() }, { merge: true });
   }
 }
 
-/**
- * 角色從 Firestore users/{uid}.role 取得（對齊你新的 rules）
- */
 export async function getUserRole(user) {
   if (!user) return "viewer";
   const ref = doc(db, "users", user.uid);
