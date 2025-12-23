@@ -15,25 +15,6 @@ import {
   onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
-import { watchAuth, ensureUserDoc } from "./firebase.js";
-
-watchAuth(async (user) => {
-  console.log("🔥 watchAuth fired:", user);
-
-  if (!user) {
-    console.log("⛔ no user (logged out state)");
-    return;
-  }
-
-  try {
-    console.log("➡️ calling ensureUserDoc");
-    await ensureUserDoc(user);
-    console.log("✅ ensureUserDoc success");
-  } catch (e) {
-    console.error("❌ ensureUserDoc error", e);
-  }
-});
-
 // --------------------- Helpers ---------------------
 const $ = (sel, root = document) => root.querySelector(sel);
 const $all = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -141,11 +122,8 @@ function ensureAuthUI() {
   const host = dom.topbarRight();
   if (!host) return;
 
-  // already created?
   if (authEls.btn && authEls.rolePill && authEls.who) return;
 
-  // 保留原本 Admin tag 的位置，但我們會用動態顯示取代
-  // 新增：角色 pill + email + login/logout btn
   const wrap = document.createElement("div");
   wrap.style.display = "inline-flex";
   wrap.style.flexDirection = "column";
@@ -177,13 +155,9 @@ function ensureAuthUI() {
   wrap.appendChild(row);
   wrap.appendChild(who);
 
-  // 把原本 topbar-right 的內容保留（todayLabel 等），放到下方
-  // 先把原先 children 抓出來
   const existing = Array.from(host.childNodes);
   host.innerHTML = "";
   host.appendChild(wrap);
-
-  // 再把原本的東西接回來
   existing.forEach(n => host.appendChild(n));
 
   authEls = { btn, rolePill, who };
@@ -638,6 +612,7 @@ function openOveruseModal(dateISO) {
 }
 
 // --------------------- Report + CSV ---------------------
+// （以下維持你原本的內容不變）
 function getMonthRange(monthValue) {
   const [y, m] = monthValue.split("-").map(Number);
   if (!y || !m) return null;
@@ -790,7 +765,6 @@ function renderAll() {
 
 // --------------------- Bind events ---------------------
 function bindEvents() {
-  // --- Projects ---
   dom.projectForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
     upsertProjectFromForm();
@@ -814,7 +788,6 @@ function bindEvents() {
     }
   });
 
-  // --- Equipments ---
   dom.equipmentForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
     upsertEquipmentFromForm();
@@ -836,7 +809,6 @@ function bindEvents() {
     }
   });
 
-  // --- Calendar month ---
   const cm = dom.calendarMonth();
   if (cm) {
     const now = new Date();
@@ -844,7 +816,6 @@ function bindEvents() {
     cm.addEventListener("change", renderCalendar);
   }
 
-  // --- Report month ---
   const rm = dom.reportMonth();
   if (rm) {
     const now = new Date();
@@ -857,20 +828,17 @@ function bindEvents() {
     exportReportCsv();
   });
 
-  // --- Calendar: open modal ---
   dom.calendarGrid()?.addEventListener("click", (e) => {
     const btn = e.target.closest(".overuse-btn");
     if (!btn) return;
     openOveruseModal(btn.dataset.date);
   });
 
-  // --- Modal: close ---
   dom.overuseModalClose()?.addEventListener("click", closeOveruseModal);
   dom.overuseModal()?.addEventListener("click", (e) => {
     if (e.target === dom.overuseModal()) closeOveruseModal();
   });
 
-  // ✅✅✅ Modal: Jump to project edit (你現在缺的就是這段)
   dom.overuseModalBody()?.addEventListener("click", (e) => {
     const btn = e.target.closest(".jump-project-btn");
     if (!btn) return;
@@ -881,16 +849,10 @@ function bindEvents() {
     const p = state.projects.find(x => x.id === pid);
     if (!p) return;
 
-    // 1) 關閉 modal
     closeOveruseModal();
-
-    // 2) 切回「專案管理」tab
     document.querySelector(`button.tab-button[data-tab="projects"]`)?.click();
-
-    // 3) 帶入專案到表單
     fillProjectForm(p);
 
-    // 4) 捲到「本案使用設備」區塊方便你直接改
     setTimeout(() => {
       dom.equipUsageBody()?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 60);
@@ -905,7 +867,10 @@ function init() {
   renderEquipUsageRows(null);
   bindEvents();
 
+  // ✅✅✅ 只有這裡保留一個 auth watcher（登入後先補 users doc）
   watchAuth(async (user) => {
+    console.log("🔥 watchAuth fired:", user?.email || user);
+
     currentUser = user;
 
     if (!user) {
@@ -913,6 +878,14 @@ function init() {
       updateAuthUI();
       detachListeners();
       return;
+    }
+
+    // ✅ 關鍵：登入後先確保 Firestore users/{uid} 存在
+    try {
+      await ensureUserDoc(user);
+    } catch (e) {
+      console.error("❌ ensureUserDoc error", e);
+      // 如果這裡出現 permission-denied，表示 Firestore Rules 需要加 allow create
     }
 
     try {
