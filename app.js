@@ -307,7 +307,12 @@ function canDelete() {
 // --------------------- CRUD ---------------------
 async function upsertProjectFromForm() {
   if (!currentUser) return alert("請先登入再儲存（右上角 Google 登入）");
-  if (!canEdit()) return alert("你目前是 viewer，沒有編輯權限（需要 admin 或 editor）");
+  const id = dom.projectId().value.trim();
+if (id) {
+  if (!canUpdate()) return alert("你目前是 editor/viewer，不能編輯既有專案（只有 admin 可以編輯）");
+} else {
+  if (!canCreate()) return alert("你目前是 viewer，不能新增（需要 admin 或 editor）");
+}
 
   const id = dom.projectId().value.trim();
 
@@ -372,7 +377,12 @@ async function deleteProject(projectId) {
 
 async function upsertEquipmentFromForm() {
   if (!currentUser) return alert("請先登入再儲存（右上角 Google 登入）");
-  if (!canEdit()) return alert("你目前是 viewer，沒有編輯權限（需要 admin 或 editor）");
+  const id = dom.equipmentId().value.trim();
+if (id) {
+  if (!canUpdate()) return alert("你目前是 editor/viewer，不能編輯既有設備（只有 admin 可以編輯）");
+} else {
+  if (!canCreate()) return alert("你目前是 viewer，不能新增（需要 admin 或 editor）");
+}
 
   const id = dom.equipmentId().value.trim();
   const name = dom.equipmentName().value.trim();
