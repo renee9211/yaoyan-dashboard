@@ -15,6 +15,8 @@ import {
   onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
+import { handleRedirectResult } from "./firebase.js";
+
 // --------------------- Helpers ---------------------
 const $ = (sel, root = document) => root.querySelector(sel);
 const $all = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -883,6 +885,8 @@ function bindEvents() {
 }
 
 // --------------------- Init ---------------------
+await handleRedirectResult();
+
 function init() {
   renderToday();
   ensureAuthUI();
