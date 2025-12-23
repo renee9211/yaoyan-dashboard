@@ -1,10 +1,31 @@
 // app.js (Static-site friendly, imports ONLY from ./firebase.js)
 
-import { db, watchAuth, loginWithGoogle, logout, getUserRole } from "./firebase.js";
+import {
+  db,
+  watchAuth,
+  loginWithGoogle,
+  logout,
+  getUserRole,
+  ensureUserDoc
+} from "./firebase.js";
+
 import {
   collection, doc, addDoc, updateDoc, deleteDoc,
   onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+watchAuth(async (user) => {
+  if (!user) return;
+
+  // ✅ 這行是關鍵：確保 Firestore users/{uid} 一定存在
+  await ensureUserDoc(user);
+
+  // 你原本的 role 邏輯可以繼續放這裡
+  const role = await getUserRole(user);
+  console.log("role:", role);
+
+  // ...你原本的 UI/render/載入資料等
+});
 
 // --------------------- Helpers ---------------------
 const $ = (sel, root = document) => root.querySelector(sel);
