@@ -13,6 +13,278 @@
       <p class="subtitle">專案檔期、特效設備、行事曆與月報表一站管理</p>
     </div>
     <div class="topbar-right">
+      <span id="todayLabel"></span>
+    </div>
+  </header>
+
+  <main>
+    <!-- 分頁切換 -->
+    <nav class="tabs">
+      <button class="tab-button active" data-tab="projects">專案管理</button>
+      <button class="tab-button" data-tab="equipments">設備清單</button>
+      <button class="tab-button" data-tab="calendar">檔期 & 設備行事曆</button>
+      <button class="tab-button" data-tab="report">每月營收淨利報表</button>
+    </nav>
+
+    <!-- 📌 專案管理 -->
+    <section class="tab-panel active" id="tab-projects">
+      <div class="card">
+        <h2>新增 / 編輯專案</h2>
+
+        <form id="project-form" class="grid-form">
+          <input type="hidden" id="projectId" />
+
+          <div class="field">
+            <label for="projectName">專案名稱</label>
+            <input id="projectName" type="text" placeholder="例：跨年煙火特效" required />
+          </div>
+
+          <div class="field">
+            <label for="projectClient">客戶名稱</label>
+            <input id="projectClient" type="text" placeholder="例：〇〇活動整合公司" />
+          </div>
+
+          <div class="field">
+            <label for="projectLocation">專案地點</label>
+            <input id="projectLocation" type="text" placeholder="例：台北小巨蛋 / 南港展覽館" />
+          </div>
+
+          <div class="field">
+            <label>專案期間</label>
+            <div class="field-inline">
+              <input id="projectStart" type="date" required />
+              <span>～</span>
+              <input id="projectEnd" type="date" required />
+            </div>
+          </div>
+
+          <div class="field">
+            <label>專案狀態</label>
+            <select id="projectStatus">
+              <option value="planning">規劃中</option>
+              <option value="confirmed">已簽約 / 確認</option>
+              <option value="executing">執行中</option>
+              <option value="closed">已結案</option>
+              <option value="lost">流標 / 未成案</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="projectRevenue">專案營收（未稅）</label>
+            <input id="projectRevenue" type="number" min="0" step="1" placeholder="例：26667" />
+          </div>
+
+          <div class="field">
+            <label for="projectQuote">報價金額</label>
+            <input id="projectQuote" type="number" min="0" step="1" placeholder="例：300000" />
+          </div>
+
+          <div class="field">
+            <label for="projectCost">專案成本（估算 or 實際）</label>
+            <input id="projectCost" type="number" min="0" step="1" placeholder="例：12345" />
+          </div>
+
+          <div class="field full">
+            <label>本案使用設備（最多 10 筆，只能填設備清單中的名稱）</label>
+            <div class="equip-usage-table">
+              <div class="equip-usage-header">
+                <span>設備名稱</span>
+                <span>數量</span>
+              </div>
+              <div id="equipUsageBody">
+                <!-- JS 會自動產 10 行 -->
+              </div>
+              <p class="helper-text">
+                設備名稱請與「設備清單」內一致，行事曆會用來檢查檔期是否超用。
+              </p>
+            </div>
+          </div>
+
+          <div class="actions full">
+            <button type="submit" class="btn primary">儲存專案</button>
+            <button type="reset" id="projectReset" class="btn ghost">清空表單</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>專案總覽</h2>
+          <div class="card-actions">
+            <select id="projectFilterStatus">
+              <option value="">全部狀態</option>
+              <option value="planning">規劃中</option>
+              <option value="confirmed">已簽約 / 確認</option>
+              <option value="executing">執行中</option>
+              <option value="closed">已結案</option>
+              <option value="lost">流標 / 未成案</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>專案</th>
+                <th>客戶</th>
+                <th>地點</th>
+                <th>期間</th>
+                <th>狀態</th>
+                <th class="num">報價</th>
+                <th class="num">營收</th>
+                <th class="num">成本</th>
+                <th class="num">淨利</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="projectTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 📌 設備清單 -->
+    <section class="tab-panel" id="tab-equipments">
+      <div class="card">
+        <h2>設備清單</h2>
+
+        <form id="equipment-form" class="grid-form">
+          <input type="hidden" id="equipmentId" />
+
+          <div class="field">
+            <label for="equipmentName">設備名稱</label>
+            <input id="equipmentName" type="text" placeholder="例：火山噴射機 4m" required />
+          </div>
+
+          <div class="field">
+            <label for="equipmentQty">總數量</label>
+            <input id="equipmentQty" type="number" min="0" step="1" placeholder="例：12" required />
+          </div>
+
+          <div class="field">
+            <label for="equipmentNote">備註</label>
+            <input id="equipmentNote" type="text" placeholder="例：4 台維修中" />
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="btn primary">儲存設備</button>
+            <button type="reset" id="equipmentReset" class="btn ghost">清空表單</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>設備總覽</h2>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>設備名稱</th>
+                <th class="num">總數量</th>
+                <th>備註</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="equipmentTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 📌 行事曆 & 設備超用提示 -->
+    <section class="tab-panel" id="tab-calendar">
+      <div class="card">
+        <div class="card-header">
+          <h2>檔期 & 設備行事曆</h2>
+          <div class="card-actions">
+            <label class="inline-label">
+              月份：
+              <input type="month" id="calendarMonth" />
+            </label>
+          </div>
+        </div>
+
+        <p class="helper-text">
+          紅框日期代表「至少一種設備超出可用數量」，點「查看超用」可看明細與場次用量。
+        </p>
+
+        <div id="calendarGrid" class="calendar-grid"></div>
+      </div>
+    </section>
+
+    <!-- 📌 每月營收 / 淨利月報表 -->
+    <section class="tab-panel" id="tab-report">
+      <div class="card">
+        <div class="card-header">
+          <h2>每月營收 & 淨利報表（依專案）</h2>
+          <div class="card-actions">
+            <label class="inline-label">
+              月份：
+              <input type="month" id="reportMonth" />
+            </label>
+            <button id="exportCsv" class="btn ghost small">匯出 CSV</button>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>專案</th>
+                <th>客戶</th>
+                <th>地點</th>
+                <th class="num">報價</th>
+                <th>期間</th>
+                <th>狀態</th>
+                <th class="num">營收</th>
+                <th class="num">成本</th>
+                <th class="num">淨利</th>
+              </tr>
+            </thead>
+
+            <tbody id="reportTableBody"></tbody>
+
+            <tfoot>
+              <tr>
+                <th colspan="6" class="num">合計</th>
+                <th class="num" id="reportTotalRevenue">0</th>
+                <th class="num" id="reportTotalCost">0</th>
+                <th class="num" id="reportTotalProfit">0</th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ✅ 設備超用明細 Modal -->
+  <div id="overuseModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="overuseModalTitle">設備超用明細</h3>
+        <button id="overuseModalClose" class="btn ghost small" type="button">關閉</button>
+      </div>
+      <div id="overuseModalBody" class="modal-body"></div>
+    </div>
+  </div>
+
+    <!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>曜炎創意娛樂 Dashboard</h1>
+      <p class="subtitle">專案檔期、特效設備、行事曆與月報表一站管理</p>
+    </div>
+    <div class="topbar-right">
       <span class="tag">Admin</span>
       <span id="todayLabel"></span>
     </div>
@@ -271,7 +543,13 @@
     </div>
   </div>
 
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=20251223-101"></script>
 </body>
 </html>
+
+
+
+</body>
+</html>
+
 
