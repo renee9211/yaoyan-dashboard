@@ -60,7 +60,10 @@ function calcProfit(p) {
 // --------------------- DOM ---------------------
 const dom = {
   todayLabel: () => $("#todayLabel"),
-  topbarRight: () => $(".topbar-right"),
+  topbarRight: () =>
+    document.querySelector(".topbar-right") ||
+    document.querySelector(".topbar") ||
+    document.body,
 
   tabButtons: () => $all(".tab-button"),
   tabPanels: () => $all(".tab-panel"),
@@ -119,10 +122,30 @@ let state = { projects: [], equipments: [] };
 let authEls = { btn: null, rolePill: null, who: null };
 
 function ensureAuthUI() {
-  const host = dom.topbarRight();
+  let host = dom.topbarRight();
+
+  // 如果不是放在 topbar-right，就用固定右上角容器，避免 UI 跑版或看不到
+  if (!document.querySelector(".topbar-right")) {
+    let floating = document.getElementById("auth-fallback");
+    if (!floating) {
+      floating = document.createElement("div");
+      floating.id = "auth-fallback";
+      floating.style.position = "fixed";
+      floating.style.top = "12px";
+      floating.style.right = "12px";
+      floating.style.zIndex = "9999";
+      document.body.appendChild(floating);
+    }
+    host = floating;
+  }
+
   if (!host) return;
 
+  // already created?
   if (authEls.btn && authEls.rolePill && authEls.who) return;
+
+  // ...下面維持你原本的 ensureAuthUI 內容
+}
 
   const wrap = document.createElement("div");
   wrap.style.display = "inline-flex";
