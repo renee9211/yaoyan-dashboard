@@ -91,13 +91,13 @@ export async function ensureUserDoc(user) {
   }
 }
 
-/**
- * 你的原本 getUserRole：用 token claims 讀 role
- * - 如果你目前沒有在後台設定 custom claims，會永遠是 viewer
- * - 你也可以之後改成讀 Firestore users/{uid}.role（需要我再幫你改）
- */
+import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+// ...
+
 export async function getUserRole(user) {
   if (!user) return "viewer";
-  const token = await getIdTokenResult(user, true);
-  return token?.claims?.role ?? "viewer";
+  const ref = doc(db, "users", user.uid);
+  const snap = await getDoc(ref);
+  return snap.exists() ? (snap.data().role || "viewer") : "viewer";
 }
