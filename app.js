@@ -7,15 +7,14 @@ import {
   loginWithGoogle,
   logout,
   getUserRole,
-  ensureUserDoc
+  ensureUserDoc,
+  handleRedirectResult
 } from "./firebase.js";
 
 import {
   collection, doc, addDoc, updateDoc, deleteDoc,
   onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-
-import { handleRedirectResult } from "./firebase.js";
 
 // --------------------- Helpers ---------------------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -110,7 +109,7 @@ const dom = {
 
 // --------------------- Firestore collections ---------------------
 const projectsCol = collection(db, "projects");
-const equipmentCol = collection(db, "equipment"); // rules: /equipment
+const equipmentCol = collection(db, "equipment");
 
 // --------------------- State ---------------------
 let currentUser = null;
@@ -120,13 +119,13 @@ let unsubEquipments = null;
 
 let state = { projects: [], equipments: [] };
 
-// --------------------- Auth UI (Login/Logout) ---------------------
+// --------------------- Auth UI ---------------------
 let authEls = { btn: null, rolePill: null, who: null };
 
 function ensureAuthUI() {
   let host = dom.topbarRight();
 
-  // 如果不是放在 topbar-right，就用固定右上角容器，避免 UI 跑版或看不到
+  // 如果沒有 .topbar-right，就用固定右上角容器，避免跑版或看不到
   if (!document.querySelector(".topbar-right")) {
     let floating = document.getElementById("auth-fallback");
     if (!floating) {
@@ -142,12 +141,7 @@ function ensureAuthUI() {
   }
 
   if (!host) return;
-
-  // already created?
   if (authEls.btn && authEls.rolePill && authEls.who) return;
-
-  // ...下面維持你原本的 ensureAuthUI 內容
-}
 
   const wrap = document.createElement("div");
   wrap.style.display = "inline-flex";
@@ -189,11 +183,8 @@ function ensureAuthUI() {
 
   btn.addEventListener("click", async () => {
     try {
-      if (currentUser) {
-        await logout();
-      } else {
-        await loginWithGoogle();
-      }
+      if (currentUser) await logout();
+      else await loginWithGoogle();
     } catch (e) {
       console.error(e);
       alert("登入/登出失敗，請看 Console");
@@ -201,66 +192,29 @@ function ensureAuthUI() {
   });
 }
 
-function ensureAuthUI() {
-  const host = dom.topbarRight();
-  if (!host) return;
+function updateAuthUI() {
+  ensureAuthUI();
+  if (!authEls.btn) return;
 
-  // already created?
-  if (authEls.btn && authEls.rolePill && authEls.who) return;
-
-  const wrap = document.createElement("div");
-  wrap.style.display = "inline-flex";
-  wrap.style.flexDirection = "column";
-  wrap.style.alignItems = "flex-end";
-  wrap.style.gap = "6px";
-
-  const row = document.createElement("div");
-  row.style.display = "inline-flex";
-  row.style.alignItems = "center";
-  row.style.gap = "8px";
-  row.style.justifyContent = "flex-end";
-
-  const rolePill = document.createElement("span");
-  rolePill.className = "tag";
-  rolePill.textContent = "未登入";
-
-  const btn = document.createElement("button");
-  btn.className = "btn ghost small";
-  btn.type = "button";
-  btn.textContent = "Google 登入";
-
-  const who = document.createElement("div");
-  who.style.fontSize = "12px";
-  who.style.color = "#6b7280";
-  who.textContent = "";
-
-  row.appendChild(rolePill);
-  row.appendChild(btn);
-  wrap.appendChild(row);
-  wrap.appendChild(who);
-
-  // 保留原本 topbar-right 的內容（todayLabel 等）
-  const existing = Array.from(host.childNodes);
-  host.innerHTML = "";
-  host.appendChild(wrap);
-  existing.forEach(n => host.appendChild(n));
-
-  authEls = { btn, rolePill, who };
-
-  btn.addEventListener("click", async () => {
-    try {
-      if (currentUser) {
-        await logout();
-      } else {
-        await loginWithGoogle();
-      }
-    } catch (e) {
-      console.error(e);
-      alert("登入/登出失敗，請看 Console");
-    }
-  });
+  if (!currentUser) {
+    authEls.rolePill.textContent = "未登入";
+    authEls.who.textContent = "請先登入（admin/editor 才能新增）";
+    authEls.btn.textContent = "Google 登入";
+  } else {
+    authEls.rolePill.textContent = (currentRole || "viewer").toUpperCase();
+    authEls.who.textContent = currentUser.email || "(unknown)";
+    authEls.btn.textContent = "登出";
+  }
 }
 
+// --------------------- Permissions ---------------------
+// admin: create/update/delete
+// editor: create only
+// viewer: read only
+function canCreate() { return currentRole === "admin" || currentRole === "editor"; }
+function canUpdate() { return currentRole === "admin"; }
+function canDelete() { return currentRole === "admin"; }
+function isAdmin() { return currentRole === "admin"; }
 
 // --------------------- Equip usage rows (10) ---------------------
 function renderEquipUsageRows(project = null) {
@@ -340,40 +294,26 @@ function fillEquipmentForm(e) {
   dom.equipmentNote().value = e.note ?? "";
 }
 
-function canCreate() {
-  return currentRole === "admin" || currentRole === "editor";
-}
-function canUpdate() {
-  return currentRole === "admin";
-}
-function canDelete() {
-  return currentRole === "admin";
-
 // --------------------- CRUD ---------------------
 async function upsertProjectFromForm() {
   if (!currentUser) return alert("請先登入再儲存（右上角 Google 登入）");
-  const id = dom.projectId().value.trim();
-if (id) {
-  if (!canUpdate()) return alert("你目前是 editor/viewer，不能編輯既有專案（只有 admin 可以編輯）");
-} else {
-  if (!canCreate()) return alert("你目前是 viewer，不能新增（需要 admin 或 editor）");
-}
 
   const id = dom.projectId().value.trim();
+  if (id) {
+    if (!canUpdate()) return alert("你目前是 editor/viewer，不能編輯既有專案（只有 admin 可以編輯）");
+  } else {
+    if (!canCreate()) return alert("你目前是 viewer，不能新增（需要 admin 或 editor）");
+  }
 
   const name = dom.projectName().value.trim();
   const client = dom.projectClient().value.trim();
   const location = dom.projectLocation().value.trim();
-
   const startDate = dom.projectStart().value;
   const endDate = dom.projectEnd().value;
-
   const status = dom.projectStatus().value;
-
   const revenue = parseIntSafe(dom.projectRevenue().value);
   const cost = parseIntSafe(dom.projectCost().value);
   const quote = parseIntSafe(dom.projectQuote().value);
-
   const equipmentsUsed = readEquipUsageRows();
 
   if (!name) return alert("請填寫專案名稱");
@@ -381,25 +321,16 @@ if (id) {
   if (endDate < startDate) return alert("結束日期不能早於開始日期");
 
   const payload = {
-    name,
-    client,
-    location,
-    startDate,
-    endDate,
-    status,
-    revenue,
-    cost,
-    quote,
+    name, client, location,
+    startDate, endDate, status,
+    revenue, cost, quote,
     equipmentsUsed,
     updatedAt: serverTimestamp()
   };
 
   try {
-    if (id) {
-      await updateDoc(doc(db, "projects", id), payload);
-    } else {
-      await addDoc(projectsCol, { ...payload, createdAt: serverTimestamp() });
-    }
+    if (id) await updateDoc(doc(db, "projects", id), payload);
+    else await addDoc(projectsCol, { ...payload, createdAt: serverTimestamp() });
     resetProjectForm();
   } catch (e) {
     console.error(e);
@@ -409,7 +340,7 @@ if (id) {
 
 async function deleteProject(projectId) {
   if (!currentUser) return alert("請先登入");
-  if (!isAdmin()) return alert("只有 admin 可以刪除");
+  if (!canDelete()) return alert("只有 admin 可以刪除");
   if (!confirm("確定要刪除此專案？")) return;
 
   try {
@@ -422,14 +353,14 @@ async function deleteProject(projectId) {
 
 async function upsertEquipmentFromForm() {
   if (!currentUser) return alert("請先登入再儲存（右上角 Google 登入）");
-  const id = dom.equipmentId().value.trim();
-if (id) {
-  if (!canUpdate()) return alert("你目前是 editor/viewer，不能編輯既有設備（只有 admin 可以編輯）");
-} else {
-  if (!canCreate()) return alert("你目前是 viewer，不能新增（需要 admin 或 editor）");
-}
 
   const id = dom.equipmentId().value.trim();
+  if (id) {
+    if (!canUpdate()) return alert("你目前是 editor/viewer，不能編輯既有設備（只有 admin 可以編輯）");
+  } else {
+    if (!canCreate()) return alert("你目前是 viewer，不能新增（需要 admin 或 editor）");
+  }
+
   const name = dom.equipmentName().value.trim();
   const qty = Math.max(0, Math.trunc(Number(dom.equipmentQty().value) || 0));
   const note = dom.equipmentNote().value.trim();
@@ -439,11 +370,8 @@ if (id) {
   const payload = { name, qty, note, updatedAt: serverTimestamp() };
 
   try {
-    if (id) {
-      await updateDoc(doc(db, "equipment", id), payload);
-    } else {
-      await addDoc(equipmentCol, { ...payload, createdAt: serverTimestamp() });
-    }
+    if (id) await updateDoc(doc(db, "equipment", id), payload);
+    else await addDoc(equipmentCol, { ...payload, createdAt: serverTimestamp() });
     resetEquipmentForm();
   } catch (e) {
     console.error(e);
@@ -453,7 +381,7 @@ if (id) {
 
 async function deleteEquipment(equipmentId) {
   if (!currentUser) return alert("請先登入");
-  if (!isAdmin()) return alert("只有 admin 可以刪除");
+  if (!canDelete()) return alert("只有 admin 可以刪除");
   if (!confirm("確定要刪除此設備？")) return;
 
   try {
@@ -489,8 +417,8 @@ function renderProjectsTable() {
       <td class="num">${escapeHtml(formatMoney(p.cost || 0))}</td>
       <td class="num">${escapeHtml(formatMoney(profit))}</td>
       <td>
-        <button class="btn ghost small" type="button" data-act="edit" data-id="${escapeHtml(p.id)}">編輯</button>
-        <button class="btn ghost small" type="button" data-act="del" data-id="${escapeHtml(p.id)}" ${isAdmin() ? "" : "disabled"}>刪除</button>
+        <button class="btn ghost small" type="button" data-act="edit" data-id="${escapeHtml(p.id)}" ${canUpdate() ? "" : "disabled"}>編輯</button>
+        <button class="btn ghost small" type="button" data-act="del" data-id="${escapeHtml(p.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
       </td>
     `;
     body.appendChild(tr);
@@ -509,8 +437,8 @@ function renderEquipmentsTable() {
       <td class="num">${escapeHtml(String(e.qty ?? 0))}</td>
       <td>${escapeHtml(e.note ?? "")}</td>
       <td>
-        <button class="btn ghost small" type="button" data-act="edit-eq" data-id="${escapeHtml(e.id)}">編輯</button>
-        <button class="btn ghost small" type="button" data-act="del-eq" data-id="${escapeHtml(e.id)}" ${isAdmin() ? "" : "disabled"}>刪除</button>
+        <button class="btn ghost small" type="button" data-act="edit-eq" data-id="${escapeHtml(e.id)}" ${canUpdate() ? "" : "disabled"}>編輯</button>
+        <button class="btn ghost small" type="button" data-act="del-eq" data-id="${escapeHtml(e.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
       </td>
     `;
     body.appendChild(tr);
@@ -694,7 +622,6 @@ function openOveruseModal(dateISO) {
 }
 
 // --------------------- Report + CSV ---------------------
-// （以下維持你原本的內容不變）
 function getMonthRange(monthValue) {
   const [y, m] = monthValue.split("-").map(Number);
   if (!y || !m) return null;
@@ -942,19 +869,17 @@ function bindEvents() {
 }
 
 // --------------------- Init ---------------------
-await handleRedirectResult();
-
-function init() {
+async function init() {
   renderToday();
   ensureAuthUI();
   bindTabs();
   renderEquipUsageRows(null);
   bindEvents();
 
-  // ✅✅✅ 只有這裡保留一個 auth watcher（登入後先補 users doc）
-  watchAuth(async (user) => {
-    console.log("🔥 watchAuth fired:", user?.email || user);
+  // 如果你有用 redirect 登入，這裡安全處理（沒有也不會爆）
+  try { await handleRedirectResult?.(); } catch (_) {}
 
+  watchAuth(async (user) => {
     currentUser = user;
 
     if (!user) {
@@ -964,20 +889,11 @@ function init() {
       return;
     }
 
-    // ✅ 關鍵：登入後先確保 Firestore users/{uid} 存在
-    try {
-      await ensureUserDoc(user);
-    } catch (e) {
-      console.error("❌ ensureUserDoc error", e);
-      // 如果這裡出現 permission-denied，表示 Firestore Rules 需要加 allow create
-    }
+    // 登入後先確保 users/{uid} 存在
+    try { await ensureUserDoc(user); } catch (e) { console.error("❌ ensureUserDoc", e); }
 
-    try {
-      currentRole = await getUserRole(user);
-    } catch (e) {
-      console.error(e);
-      currentRole = "viewer";
-    }
+    try { currentRole = await getUserRole(user); }
+    catch (e) { console.error(e); currentRole = "viewer"; }
 
     updateAuthUI();
     detachListeners();
