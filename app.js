@@ -15,17 +15,23 @@ import {
   onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
+import { watchAuth, ensureUserDoc } from "./firebase.js";
+
 watchAuth(async (user) => {
-  if (!user) return;
+  console.log("🔥 watchAuth fired:", user);
 
-  // ✅ 這行是關鍵：確保 Firestore users/{uid} 一定存在
-  await ensureUserDoc(user);
+  if (!user) {
+    console.log("⛔ no user (logged out state)");
+    return;
+  }
 
-  // 你原本的 role 邏輯可以繼續放這裡
-  const role = await getUserRole(user);
-  console.log("role:", role);
-
-  // ...你原本的 UI/render/載入資料等
+  try {
+    console.log("➡️ calling ensureUserDoc");
+    await ensureUserDoc(user);
+    console.log("✅ ensureUserDoc success");
+  } catch (e) {
+    console.error("❌ ensureUserDoc error", e);
+  }
 });
 
 // --------------------- Helpers ---------------------
