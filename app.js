@@ -295,12 +295,14 @@ function fillEquipmentForm(e) {
   dom.equipmentNote().value = e.note ?? "";
 }
 
-function canEdit() {
+function canCreate() {
   return currentRole === "admin" || currentRole === "editor";
 }
-function isAdmin() {
+function canUpdate() {
   return currentRole === "admin";
 }
+function canDelete() {
+  return currentRole === "admin";
 
 // --------------------- CRUD ---------------------
 async function upsertProjectFromForm() {
