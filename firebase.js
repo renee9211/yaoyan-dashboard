@@ -2,7 +2,13 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-analytics.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -30,7 +36,8 @@ try {
   getAnalytics(app);
 } catch (_) {}
 
-const provider = new GoogleAuthProvider();
+// ✅ 讓外部也可以用（如果你 app.js 需要）
+export const provider = new GoogleAuthProvider();
 provider.setCustomParameters({ prompt: "select_account" });
 
 export function watchAuth(cb) {
@@ -45,6 +52,36 @@ export async function logout() {
   return await signOut(auth);
 }
 
+/**
+ * ✅ 確保 Firestore 有 /users/{uid}
+ * - 第一次登入：建立一筆 role=viewer
+ * - 之後登入：更新 lastLoginAt
+ */
+export async function ensureUserDoc(user) {
+  if (!user) return;
+
+  const ref = doc(db, "users", user.uid);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) {
+    await setDoc(ref, {
+      uid: user.uid,
+      email: user.email || "",
+      name: user.displayName || "",
+      role: "viewer",
+      createdAt: serverTimestamp(),
+      lastLoginAt: serverTimestamp()
+    });
+  } else {
+    await setDoc(ref, { lastLoginAt: serverTimestamp() }, { merge: true });
+  }
+}
+
+/**
+ * 你的原本 getUserRole：用 token claims 讀 role
+ * - 如果你目前沒有在後台設定 custom claims，會永遠是 viewer
+ * - 你也可以之後改成讀 Firestore users/{uid}.role（需要我再幫你改）
+ */
 export async function getUserRole(user) {
   if (!user) return "viewer";
   const token = await getIdTokenResult(user, true);
