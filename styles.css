@@ -389,3 +389,39 @@ td.num {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ===== FIX: table split / header-body separated ===== */
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  max-height: none !important;
+  height: auto !important;
+  display: block !important;   /* 千萬不要是 flex */
+}
+
+/* 確保 table 正常排版 */
+.table-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+/* 避免 thead / tbody 被變成 block 造成分裂 */
+table thead,
+table tbody,
+table tfoot,
+table tr {
+  display: table-row-group;
+}
+
+/* 你的表頭、表身仍然正常顯示 */
+table thead {
+  display: table-header-group;
+}
+table tbody {
+  display: table-row-group;
+}
+table tfoot {
+  display: table-footer-group;
+}
