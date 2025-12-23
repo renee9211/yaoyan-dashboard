@@ -44,8 +44,22 @@ export function watchAuth(cb) {
   return onAuthStateChanged(auth, cb);
 }
 
+import { signInWithRedirect, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+// ...
+
 export async function loginWithGoogle() {
-  return await signInWithPopup(auth, provider);
+  await signInWithRedirect(auth, provider);
+  return null;
+}
+
+export async function handleRedirectResult() {
+  try {
+    return await getRedirectResult(auth);
+  } catch (e) {
+    console.error("getRedirectResult error", e);
+    return null;
+  }
 }
 
 export async function logout() {
