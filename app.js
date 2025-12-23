@@ -1,4 +1,5 @@
 // app.js (Static-site friendly, imports ONLY from ./firebase.js)
+console.log("✅ app.js loaded");
 
 import {
   db,
