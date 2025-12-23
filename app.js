@@ -201,21 +201,66 @@ function ensureAuthUI() {
   });
 }
 
-function updateAuthUI() {
-  ensureAuthUI();
-  if (!authEls.btn) return;
+function ensureAuthUI() {
+  const host = dom.topbarRight();
+  if (!host) return;
 
-  if (!currentUser) {
-    authEls.rolePill.textContent = "未登入";
-    authEls.who.textContent = "請先登入才可寫入（admin/editor）";
-    authEls.btn.textContent = "Google 登入";
-  } else {
-    const email = currentUser.email || "(unknown)";
-    authEls.rolePill.textContent = (currentRole || "viewer").toUpperCase();
-    authEls.who.textContent = email;
-    authEls.btn.textContent = "登出";
-  }
+  // already created?
+  if (authEls.btn && authEls.rolePill && authEls.who) return;
+
+  const wrap = document.createElement("div");
+  wrap.style.display = "inline-flex";
+  wrap.style.flexDirection = "column";
+  wrap.style.alignItems = "flex-end";
+  wrap.style.gap = "6px";
+
+  const row = document.createElement("div");
+  row.style.display = "inline-flex";
+  row.style.alignItems = "center";
+  row.style.gap = "8px";
+  row.style.justifyContent = "flex-end";
+
+  const rolePill = document.createElement("span");
+  rolePill.className = "tag";
+  rolePill.textContent = "未登入";
+
+  const btn = document.createElement("button");
+  btn.className = "btn ghost small";
+  btn.type = "button";
+  btn.textContent = "Google 登入";
+
+  const who = document.createElement("div");
+  who.style.fontSize = "12px";
+  who.style.color = "#6b7280";
+  who.textContent = "";
+
+  row.appendChild(rolePill);
+  row.appendChild(btn);
+  wrap.appendChild(row);
+  wrap.appendChild(who);
+
+  // 保留原本 topbar-right 的內容（todayLabel 等）
+  const existing = Array.from(host.childNodes);
+  host.innerHTML = "";
+  host.appendChild(wrap);
+  existing.forEach(n => host.appendChild(n));
+
+  authEls = { btn, rolePill, who };
+
+  btn.addEventListener("click", async () => {
+    try {
+      if (currentUser) {
+        await logout();
+      } else {
+        await loginWithGoogle();
+      }
+    } catch (e) {
+      console.error(e);
+      alert("登入/登出失敗，請看 Console");
+    }
+  });
 }
+
 
 // --------------------- Equip usage rows (10) ---------------------
 function renderEquipUsageRows(project = null) {
