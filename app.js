@@ -34,7 +34,7 @@ function toISODate(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${p
 function statusLabel(v) {
   const map = {
     planning: "規劃中",
-    confirmed: "已簽約 / 確認",
+    confirmed: "已請款",
     executing: "執行中",
     closed: "已結案",
     lost: "流標 / 未成案"
