@@ -87,15 +87,19 @@
           </div>
 
           <div class="field full">
-            <label>本案使用設備（最多 10 筆，只能填設備清單中的名稱）</label>
+            <label>本案使用設備（最多 10 筆，只能從「設備清單」下拉選）</label>
             <div class="equip-usage-table">
               <div class="equip-usage-header">
                 <span>設備名稱</span>
                 <span>數量</span>
               </div>
+
+              <!-- app.js 會在這裡動態產生 10 行：
+                   [select.equip-name] + [input.equip-qty] -->
               <div id="equipUsageBody"></div>
+
               <p class="helper-text">
-                設備名稱請與「設備清單」內一致，行事曆會用來檢查檔期是否超用。
+                設備名稱將以「設備清單」為準（下拉選單）。行事曆會依此計算檔期是否超用。
               </p>
             </div>
           </div>
@@ -271,4 +275,3 @@
   <script type="module" src="./app.js?v=20251223-104"></script>
 </body>
 </html>
-
