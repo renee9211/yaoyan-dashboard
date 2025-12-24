@@ -216,6 +216,72 @@ function canUpdate() { return currentRole === "admin"; }
 function canDelete() { return currentRole === "admin"; }
 function isAdmin() { return currentRole === "admin"; }
 
+// --------------------- Equip dropdown helpers (NEW) ---------------------
+function getEquipmentNameList() {
+  return (state.equipments || [])
+    .map(e => String(e?.name || "").trim())
+    .filter(Boolean);
+}
+
+function buildEquipNameSelect(selectedValue = "") {
+  const sel = document.createElement("select");
+  sel.className = "equip-name"; // 保留原 class，避免其他 CSS/JS 依賴壞掉
+
+  const opt0 = document.createElement("option");
+  opt0.value = "";
+  opt0.textContent = "請選擇設備";
+  sel.appendChild(opt0);
+
+  const names = getEquipmentNameList();
+  const hasSelected = selectedValue && names.includes(selectedValue);
+
+  // 若專案原本填的設備已不存在，也保留顯示（避免資料消失）
+  if (selectedValue && !hasSelected) {
+    const optMissing = document.createElement("option");
+    optMissing.value = selectedValue;
+    optMissing.textContent = `${selectedValue}（已刪除）`;
+    sel.appendChild(optMissing);
+  }
+
+  names.forEach(name => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    sel.appendChild(opt);
+  });
+
+  sel.value = selectedValue || "";
+  return sel;
+}
+
+// 只更新現有 10 行的下拉選項，不動 qty、不重建整列（避免使用中被清空）
+function refreshEquipUsageDropdowns() {
+  const body = dom.equipUsageBody();
+  if (!body) return;
+
+  const rows = $all(".equip-usage-row", body);
+  rows.forEach(r => {
+    const currentNameEl = r.querySelector(".equip-name");
+    if (!currentNameEl) return;
+
+    const currentValue =
+      (currentNameEl.tagName === "SELECT")
+        ? (currentNameEl.value || "").trim()
+        : (currentNameEl.value || "").trim();
+
+    // 如果已經是 select：重建 options（保留選取值）
+    if (currentNameEl.tagName === "SELECT") {
+      const newSel = buildEquipNameSelect(currentValue);
+      currentNameEl.replaceWith(newSel);
+      return;
+    }
+
+    // 如果還是 input：替換成 select
+    const newSel = buildEquipNameSelect(currentValue);
+    currentNameEl.replaceWith(newSel);
+  });
+}
+
 // --------------------- Equip usage rows (10) ---------------------
 function renderEquipUsageRows(project = null) {
   const body = dom.equipUsageBody();
@@ -227,10 +293,20 @@ function renderEquipUsageRows(project = null) {
   for (let i = 0; i < 10; i++) {
     const row = document.createElement("div");
     row.className = "equip-usage-row";
-    row.innerHTML = `
-      <input class="equip-name" type="text" placeholder="設備名稱" value="${escapeHtml(used[i]?.name ?? "")}" />
-      <input class="equip-qty" type="number" min="0" step="1" placeholder="數量" value="${escapeHtml(used[i]?.qty ?? "")}" />
-    `;
+
+    // NEW: name 用 read-only dropdown，選項來自設備清單
+    const nameSel = buildEquipNameSelect(String(used[i]?.name ?? "").trim());
+
+    const qtyInput = document.createElement("input");
+    qtyInput.className = "equip-qty";
+    qtyInput.type = "number";
+    qtyInput.min = "0";
+    qtyInput.step = "1";
+    qtyInput.placeholder = "數量";
+    qtyInput.value = String(used[i]?.qty ?? "");
+
+    row.appendChild(nameSel);
+    row.appendChild(qtyInput);
     body.appendChild(row);
   }
 }
@@ -242,7 +318,8 @@ function readEquipUsageRows() {
   const result = [];
 
   rows.forEach(r => {
-    const name = r.querySelector(".equip-name")?.value?.trim() ?? "";
+    const nameEl = r.querySelector(".equip-name");
+    const name = (nameEl?.value || "").trim(); // input/select 都吃得到
     const qtyRaw = r.querySelector(".equip-qty")?.value ?? "";
     const qty = Math.max(0, Math.trunc(Number(qtyRaw) || 0));
     if (name) result.push({ name, qty });
@@ -770,6 +847,9 @@ function renderAll() {
   renderEquipmentsTable();
   renderCalendar();
   renderReport();
+
+  // NEW: 設備清單有變動時，同步更新專案表單中的下拉選單選項
+  refreshEquipUsageDropdowns();
 }
 
 // --------------------- Bind events ---------------------
