@@ -118,10 +118,15 @@
             <select id="projectFilterStatus">
               <option value="">全部狀態</option>
               <option value="planning">規劃中</option>
-              <option value="confirmed">已請款</option>        
+              <option value="confirmed">已請款</option>
               <option value="executing">執行中</option>
               <option value="closed">已結案</option>
               <option value="lost">流標 / 未成案</option>
+            </select>
+
+            <select id="projectSortBy" title="排序方式">
+              <option value="updatedDesc" selected>排序：最後更新（新→舊）</option>
+              <option value="startAsc">排序：開始日期（近→遠）</option>
             </select>
           </div>
         </div>
@@ -272,7 +277,7 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=20251223-104"></script>
+  <!-- 建議：版本號每次改一下避免快取 -->
+  <script type="module" src="./app.js?v=20251224-001"></script>
 </body>
 </html>
-
