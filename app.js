@@ -82,6 +82,7 @@ const dom = {
   projectCost: () => $("#projectCost"),
   equipUsageBody: () => $("#equipUsageBody"),
   projectFilterStatus: () => $("#projectFilterStatus"),
+  projectSortBy: () => $("#projectSortBy"),
   projectTableBody: () => $("#projectTableBody"),
 
   equipmentForm: () => $("#equipment-form"),
@@ -208,15 +209,11 @@ function updateAuthUI() {
 }
 
 // --------------------- Permissions ---------------------
-// admin: create/update/delete
-// editor: create only
-// viewer: read only
 function canCreate() { return currentRole === "admin" || currentRole === "editor"; }
 function canUpdate() { return currentRole === "admin"; }
 function canDelete() { return currentRole === "admin"; }
-function isAdmin() { return currentRole === "admin"; }
 
-// --------------------- Equip dropdown helpers (NEW) ---------------------
+// --------------------- Equip dropdown helpers ---------------------
 function getEquipmentNameList() {
   return (state.equipments || [])
     .map(e => String(e?.name || "").trim())
@@ -225,7 +222,7 @@ function getEquipmentNameList() {
 
 function buildEquipNameSelect(selectedValue = "") {
   const sel = document.createElement("select");
-  sel.className = "equip-name"; // 保留原 class，避免其他 CSS/JS 依賴壞掉
+  sel.className = "equip-name";
 
   const opt0 = document.createElement("option");
   opt0.value = "";
@@ -254,7 +251,7 @@ function buildEquipNameSelect(selectedValue = "") {
   return sel;
 }
 
-// 只更新現有 10 行的下拉選項，不動 qty、不重建整列（避免使用中被清空）
+// 只更新現有 10 行的下拉選項，不動 qty、不重建整列
 function refreshEquipUsageDropdowns() {
   const body = dom.equipUsageBody();
   if (!body) return;
@@ -264,19 +261,7 @@ function refreshEquipUsageDropdowns() {
     const currentNameEl = r.querySelector(".equip-name");
     if (!currentNameEl) return;
 
-    const currentValue =
-      (currentNameEl.tagName === "SELECT")
-        ? (currentNameEl.value || "").trim()
-        : (currentNameEl.value || "").trim();
-
-    // 如果已經是 select：重建 options（保留選取值）
-    if (currentNameEl.tagName === "SELECT") {
-      const newSel = buildEquipNameSelect(currentValue);
-      currentNameEl.replaceWith(newSel);
-      return;
-    }
-
-    // 如果還是 input：替換成 select
+    const currentValue = (currentNameEl.value || "").trim();
     const newSel = buildEquipNameSelect(currentValue);
     currentNameEl.replaceWith(newSel);
   });
@@ -294,7 +279,6 @@ function renderEquipUsageRows(project = null) {
     const row = document.createElement("div");
     row.className = "equip-usage-row";
 
-    // NEW: name 用 read-only dropdown，選項來自設備清單
     const nameSel = buildEquipNameSelect(String(used[i]?.name ?? "").trim());
 
     const qtyInput = document.createElement("input");
@@ -318,8 +302,7 @@ function readEquipUsageRows() {
   const result = [];
 
   rows.forEach(r => {
-    const nameEl = r.querySelector(".equip-name");
-    const name = (nameEl?.value || "").trim(); // input/select 都吃得到
+    const name = (r.querySelector(".equip-name")?.value || "").trim();
     const qtyRaw = r.querySelector(".equip-qty")?.value ?? "";
     const qty = Math.max(0, Math.trunc(Number(qtyRaw) || 0));
     if (name) result.push({ name, qty });
@@ -475,7 +458,16 @@ function renderProjectsTable() {
   if (!body) return;
 
   const filter = dom.projectFilterStatus()?.value ?? "";
-  const list = filter ? state.projects.filter(p => p.status === filter) : state.projects;
+  let list = filter ? state.projects.filter(p => p.status === filter) : [...state.projects];
+
+  const sortBy = dom.projectSortBy()?.value ?? "updatedDesc";
+  if (sortBy === "startAsc") {
+    // 開始日期：近到遠
+    list.sort((a, b) =>
+      String(a.startDate || "9999-12-31").localeCompare(String(b.startDate || "9999-12-31"))
+    );
+  }
+  // updatedDesc：維持 Firestore query updatedAt desc 的順序（不處理）
 
   body.innerHTML = "";
   list.forEach(p => {
@@ -847,8 +839,6 @@ function renderAll() {
   renderEquipmentsTable();
   renderCalendar();
   renderReport();
-
-  // NEW: 設備清單有變動時，同步更新專案表單中的下拉選單選項
   refreshEquipUsageDropdowns();
 }
 
@@ -860,6 +850,7 @@ function bindEvents() {
   });
 
   dom.projectFilterStatus()?.addEventListener("change", renderProjectsTable);
+  dom.projectSortBy()?.addEventListener("change", renderProjectsTable);
 
   dom.projectTableBody()?.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-act]");
@@ -956,7 +947,6 @@ async function init() {
   renderEquipUsageRows(null);
   bindEvents();
 
-  // 如果你有用 redirect 登入，這裡安全處理（沒有也不會爆）
   try { await handleRedirectResult?.(); } catch (_) {}
 
   watchAuth(async (user) => {
@@ -969,7 +959,6 @@ async function init() {
       return;
     }
 
-    // 登入後先確保 users/{uid} 存在
     try { await ensureUserDoc(user); } catch (e) { console.error("❌ ensureUserDoc", e); }
 
     try { currentRole = await getUserRole(user); }
