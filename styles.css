@@ -46,7 +46,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   gap:10px;
   flex-wrap:wrap;
 }
-#todayLabel{ color:var(--muted); font-weight:700; font-size:12px; }
+#todayLabel{ color:var(--muted); font-weight:800; font-size:12px; }
 
 /* ===== Tabs ===== */
 .tabs{
@@ -62,7 +62,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   padding:10px 12px;
   border-radius:999px;
   cursor:pointer;
-  font-weight:800;
+  font-weight:900;
   font-size:13px;
   transition:.15s ease;
   box-shadow:0 1px 0 rgba(0,0,0,.03);
@@ -110,7 +110,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
 .field-inline > span{
   font-size:12px;
   color:var(--muted);
-  font-weight:800;
+  font-weight:900;
 }
 
 /* ===== Card ===== */
@@ -122,14 +122,6 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
 }
 .form-card{ padding:14px; }
 .table-card{ padding:10px; }
-
-.empty{
-  background:var(--card);
-  border:1px dashed rgba(17,24,39,.18);
-  border-radius:var(--radius);
-  padding:16px;
-  color:var(--muted);
-}
 
 /* ===== Inputs / Buttons ===== */
 .input, .select, .textarea{
@@ -158,7 +150,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
 .field > span{
   font-size:12px;
   color:var(--muted);
-  font-weight:800;
+  font-weight:900;
 }
 .field-full{ grid-column:1 / -1; }
 
@@ -186,7 +178,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   border:1px solid var(--line);
   background:#fff;
   cursor:pointer;
-  font-weight:900;
+  font-weight:950;
   font-size:13px;
   transition:.15s ease;
   box-shadow:0 1px 0 rgba(0,0,0,.03);
@@ -197,14 +189,9 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   color:#fff;
   border-color:rgba(255,126,0,.38);
 }
-.btn.ghost{
-  background:#fff;
-}
+.btn.ghost{ background:#fff; }
 .btn.small{ height:32px; padding:0 12px; font-size:12px; }
-.btn:disabled{
-  opacity:.45;
-  cursor:not-allowed;
-}
+.btn:disabled{ opacity:.45; cursor:not-allowed; }
 
 /* Tag pill for role */
 .tag{
@@ -213,7 +200,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   height:26px;
   padding:0 10px;
   border-radius:999px;
-  font-weight:900;
+  font-weight:950;
   font-size:12px;
   border:1px solid var(--line2);
   background:rgba(255,255,255,.75);
@@ -227,7 +214,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   border:1px solid var(--line2);
   background:#fff;
   cursor:pointer;
-  font-weight:900;
+  font-weight:950;
 }
 
 /* ===== Segmented Toggle ===== */
@@ -246,7 +233,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   padding:8px 12px;
   border-radius:999px;
   cursor:pointer;
-  font-weight:900;
+  font-weight:950;
   font-size:12px;
   color:var(--muted);
 }
@@ -290,7 +277,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   text-align:left;
   font-size:12px;
   color:var(--muted);
-  font-weight:900;
+  font-weight:950;
   padding:10px 10px;
   border-bottom:1px solid var(--line2);
 }
@@ -300,35 +287,112 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   vertical-align:top;
 }
 .table .num{ text-align:right; font-variant-numeric: tabular-nums; }
+.num{ text-align:right; font-variant-numeric: tabular-nums; }
 
 /* =========================================================
-   ✅ Project master-detail table (你要的第4種)
+   ✅ Report KPI (左大右小)
+========================================================= */
+.report-kpi{
+  display:grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-areas:
+    "big c1 c2"
+    "big c3 c3";
+  gap:12px;
+  margin: 10px 0 14px;
+}
+
+.kpi-card{
+  background:#fff;
+  border:1px solid rgba(0,0,0,.06);
+  border-radius:18px;
+  box-shadow:0 1px 2px rgba(0,0,0,.06);
+  padding:14px;
+}
+
+.kpi-card.big{ grid-area: big; padding:18px; }
+.kpi-card.c1{ grid-area: c1; }
+.kpi-card.c2{ grid-area: c2; }
+.kpi-card.c3{ grid-area: c3; }
+
+.kpi-label{
+  font-size:12px;
+  color:var(--muted);
+  font-weight:950;
+  letter-spacing:.01em;
+}
+
+.kpi-value{
+  margin-top:6px;
+  font-size:22px;
+  font-weight:1000;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-card.big .kpi-value{
+  font-size:34px;
+  line-height:1.05;
+}
+
+.kpi-sub{
+  margin-top:10px;
+  display:flex;
+  gap:14px;
+  flex-wrap:wrap;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:900;
+}
+.kpi-dot{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
+.kpi-dot::before{
+  content:"";
+  width:8px;
+  height:8px;
+  border-radius:99px;
+  background:var(--orange);
+  box-shadow:0 0 0 3px rgba(255,126,0,.18);
+}
+
+@media (max-width: 1000px){
+  .report-kpi{
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "big"
+      "c1"
+      "c2"
+      "c3";
+  }
+  .kpi-card.big .kpi-value{ font-size:30px; }
+}
+
+/* =========================================================
+   ✅ Project master-detail table (第4種)
 ========================================================= */
 .projects-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0 10px;
 }
-
 .projects-table thead th {
   text-align: left;
   font-size: 12px;
   letter-spacing: .02em;
   color: var(--muted);
-  font-weight: 900;
+  font-weight: 950;
   padding: 0 12px 6px;
 }
-
 .projects-table tbody tr.project-row {
   background: #fff;
   box-shadow: 0 1px 2px rgba(0,0,0,.05);
 }
-
 .projects-table tbody tr.project-row td {
   padding: 14px 12px;
   vertical-align: middle;
 }
-
 .projects-table tbody tr.project-row td:first-child {
   border-top-left-radius: 14px;
   border-bottom-left-radius: 14px;
@@ -337,14 +401,13 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   border-top-right-radius: 14px;
   border-bottom-right-radius: 14px;
 }
-
 .project-title {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 .project-title .name {
-  font-weight: 900;
+  font-weight: 950;
   font-size: 14px;
   color: var(--text);
   line-height: 1.2;
@@ -362,7 +425,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   padding: 0 10px;
   border-radius: 999px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 950;
   border: 1px solid rgba(0,0,0,.06);
   white-space: nowrap;
 }
@@ -378,7 +441,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   font-variant-numeric: tabular-nums;
 }
 .money .big {
-  font-weight: 950;
+  font-weight: 1000;
   font-size: 14px;
 }
 .money .muted {
@@ -417,9 +480,8 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   grid-template-columns: 1.1fr 1fr;
   gap: 12px;
 }
-@media (max-width: 900px) {
-  .details-grid { grid-template-columns: 1fr; }
-}
+@media (max-width: 900px) { .details-grid { grid-template-columns: 1fr; } }
+
 .kv {
   display: grid;
   grid-template-columns: 90px 1fr;
@@ -427,7 +489,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   align-items: start;
   font-size: 13px;
 }
-.kv .k { color: var(--muted); font-weight: 900; }
+.kv .k { color: var(--muted); font-weight: 950; }
 .kv .v { color: var(--text); }
 
 .details-actions {
@@ -436,7 +498,6 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   flex-wrap: wrap;
   margin-top: 10px;
 }
-
 .btn-sm {
   height: 34px;
   padding: 0 12px;
@@ -444,7 +505,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   border: 1px solid rgba(0,0,0,.10);
   background: #fff;
   cursor: pointer;
-  font-weight: 900;
+  font-weight: 950;
   font-size: 12px;
 }
 .btn-sm.primary {
@@ -479,11 +540,11 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   justify-content:space-between;
   gap:8px;
   margin-bottom:8px;
-  font-weight:900;
+  font-weight:950;
 }
 .calendar-badge{
   font-size:11px;
-  font-weight:950;
+  font-weight:1000;
   padding:4px 8px;
   border-radius:999px;
   background:rgba(239,68,68,.14);
@@ -538,8 +599,5 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   padding:12px 14px;
   border-bottom:1px solid var(--line2);
 }
-.modal-title{ font-weight:950; }
+.modal-title{ font-weight:1000; }
 .modal-body{ padding:14px; max-height:70vh; overflow:auto; }
-
-/* Small polish */
-.num{ text-align:right; font-variant-numeric: tabular-nums; }
