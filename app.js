@@ -48,7 +48,7 @@ function parseIntSafe(v) {
   if (v === "" || v === null || v === undefined) return 0;
   const n = Number(String(v).replace(/,/g, "").trim());
   if (Number.isNaN(n)) return 0;
-  return Math.max(0, Math.trunc(n)); // rules 要 int
+  return Math.max(0, Math.trunc(n));
 }
 
 function formatMoney(n) {
@@ -64,30 +64,22 @@ function formatMoney(n) {
 const TAX_RATE = 0.05;
 
 function normalizeTaxMode(v) {
-  return (v === "untaxed") ? "untaxed" : "taxed"; // 預設含稅
+  return (v === "untaxed") ? "untaxed" : "taxed";
 }
 
-// taxed -> untaxed
 function toUntaxedFromTaxed(taxedInt) {
   const taxed = parseIntSafe(taxedInt);
   if (!taxed) return 0;
   return Math.round(taxed / (1 + TAX_RATE));
 }
 
-function getTaxModeFromProject(p) {
-  return normalizeTaxMode(p?.quoteTaxMode);
-}
-function getTaxModeFromForm() {
-  return normalizeTaxMode(dom.projectQuoteTaxMode()?.value);
-}
+function getTaxModeFromProject(p) { return normalizeTaxMode(p?.quoteTaxMode); }
+function getTaxModeFromForm() { return normalizeTaxMode(dom.projectQuoteTaxMode()?.value); }
 
-// 專案顯示/報表用：回傳「營收(未稅)」
 function getRevenueUntaxed(p) {
   const quote = parseIntSafe(p?.quote);
   const mode = getTaxModeFromProject(p);
   if (quote > 0) return (mode === "taxed") ? toUntaxedFromTaxed(quote) : quote;
-
-  // fallback：舊資料可能有 revenue
   return parseIntSafe(p?.revenue);
 }
 
@@ -95,7 +87,6 @@ function calcProfit(p) {
   return getRevenueUntaxed(p) - parseIntSafe(p.cost);
 }
 
-// 表單即時同步：報價 + 模式 → 營收(未稅)
 function syncRevenueFromQuoteToInput() {
   const quote = parseIntSafe(dom.projectQuote()?.value);
   const mode = getTaxModeFromForm();
@@ -104,12 +95,9 @@ function syncRevenueFromQuoteToInput() {
     ? (mode === "taxed" ? toUntaxedFromTaxed(quote) : quote)
     : 0;
 
-  if (dom.projectRevenue()) {
-    dom.projectRevenue().value = quote ? formatMoney(untaxed) : "";
-  }
+  if (dom.projectRevenue()) dom.projectRevenue().value = quote ? formatMoney(untaxed) : "";
 }
 
-// blur 時自動加千分位
 function bindMoneyAutoFormat(inputEl) {
   if (!inputEl) return;
   inputEl.addEventListener("blur", () => {
@@ -170,6 +158,13 @@ const dom = {
   reportTotalCost: () => $("#reportTotalCost"),
   reportTotalProfit: () => $("#reportTotalProfit"),
 
+  // KPI (左大右小)
+  kpiMonthRevenue: () => $("#kpiMonthRevenue"),
+  kpiMonthProfit: () => $("#kpiMonthProfit"),
+  kpiConfirmedQuote: () => $("#kpiConfirmedQuote"),
+  kpiClosedRevenue: () => $("#kpiClosedRevenue"),
+  kpiMonthProjects: () => $("#kpiMonthProjects"),
+
   overuseModal: () => $("#overuseModal"),
   overuseModalTitle: () => $("#overuseModalTitle"),
   overuseModalBody: () => $("#overuseModalBody"),
@@ -199,7 +194,6 @@ let authEls = { btn: null, rolePill: null, who: null };
 function ensureAuthUI() {
   let host = dom.topbarRight();
 
-  // 如果沒有 .topbar-right，就用固定右上角容器，避免跑版或看不到
   if (!document.querySelector(".topbar-right")) {
     let floating = document.getElementById("auth-fallback");
     if (!floating) {
@@ -308,7 +302,7 @@ function setupQuoteTaxModeSegmented() {
   seg.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-value]");
     if (!btn) return;
-    sel.value = btn.dataset.value; // taxed / untaxed
+    sel.value = btn.dataset.value;
     renderSegState();
     syncRevenueFromQuoteToInput();
   });
@@ -500,9 +494,7 @@ async function upsertProjectFromForm() {
 
   const quote = parseIntSafe(dom.projectQuote().value);
   const quoteTaxMode = getTaxModeFromForm();
-  const revenue = quote
-    ? (quoteTaxMode === "taxed" ? toUntaxedFromTaxed(quote) : quote)
-    : 0;
+  const revenue = quote ? (quoteTaxMode === "taxed" ? toUntaxedFromTaxed(quote) : quote) : 0;
 
   const cost = parseIntSafe(dom.projectCost().value);
   const equipmentsUsed = readEquipUsageRows();
@@ -537,12 +529,8 @@ async function deleteProject(projectId) {
   if (!canDelete()) return alert("只有 admin 可以刪除");
   if (!confirm("確定要刪除此專案？")) return;
 
-  try {
-    await deleteDoc(doc(db, "projects", projectId));
-  } catch (e) {
-    console.error(e);
-    alert("刪除失敗：請確認權限");
-  }
+  try { await deleteDoc(doc(db, "projects", projectId)); }
+  catch (e) { console.error(e); alert("刪除失敗：請確認權限"); }
 }
 
 async function upsertEquipmentFromForm() {
@@ -578,20 +566,14 @@ async function deleteEquipment(equipmentId) {
   if (!canDelete()) return alert("只有 admin 可以刪除");
   if (!confirm("確定要刪除此設備？")) return;
 
-  try {
-    await deleteDoc(doc(db, "equipment", equipmentId));
-  } catch (e) {
-    console.error(e);
-    alert("刪除失敗：請確認權限");
-  }
+  try { await deleteDoc(doc(db, "equipment", equipmentId)); }
+  catch (e) { console.error(e); alert("刪除失敗：請確認權限"); }
 }
 
 /* =========================================================
-   12) Renders - Projects / Equipments
-   ✅ Projects 改為 Master-Detail (主表＋展開)
+   12) Renders - Projects / Equipments (Master-Detail)
 ========================================================= */
 function statusToBadgeClass(statusKey) {
-  // 對應你目前的狀態 key：planning/confirmed/executing/closed/lost
   if (statusKey === "closed") return "green";
   if (statusKey === "confirmed") return "orange";
   if (statusKey === "executing") return "blue";
@@ -651,7 +633,6 @@ function renderProjectsTable() {
     const badgeClass = statusToBadgeClass(p.status);
     const statusText = statusLabel(p.status);
 
-    // 主列：專案/檔期/狀態/淨利/展開
     const trMain = document.createElement("tr");
     trMain.className = "project-row";
     trMain.dataset.id = p.id;
@@ -663,18 +644,12 @@ function renderProjectsTable() {
           <div class="client">${escapeHtml(p.client || "—")}</div>
         </div>
       </td>
-
       <td>${escapeHtml(period)}</td>
-
-      <td>
-        <span class="badge ${badgeClass}">${escapeHtml(statusText)}</span>
-      </td>
-
+      <td><span class="badge ${badgeClass}">${escapeHtml(statusText)}</span></td>
       <td class="money">
         <div class="big">${escapeHtml(formatMoney(profit))}</div>
         <div class="muted">營收 ${escapeHtml(formatMoney(revenueUntaxed))}｜成本 ${escapeHtml(formatMoney(cost))}</div>
       </td>
-
       <td style="width:56px; text-align:right;">
         <button class="expand-btn" type="button" data-act="toggle" data-id="${escapeHtml(p.id)}" aria-label="展開">
           <span class="chev">⌄</span>
@@ -682,7 +657,6 @@ function renderProjectsTable() {
       </td>
     `;
 
-    // 細節列：位置/報價/設備/操作
     const trDetail = document.createElement("tr");
     trDetail.className = "details-row";
     trDetail.dataset.detailsFor = p.id;
@@ -698,7 +672,6 @@ function renderProjectsTable() {
               <div class="kv"><div class="k">營收(未稅)</div><div class="v"><b>${escapeHtml(formatMoney(revenueUntaxed))}</b></div></div>
               <div class="kv"><div class="k">成本</div><div class="v">${escapeHtml(formatMoney(cost))}</div></div>
             </div>
-
             <div>
               <div class="kv"><div class="k">設備</div><div class="v">${renderEquipmentsUsedHtml(p)}</div></div>
             </div>
@@ -873,9 +846,8 @@ function renderCalendar() {
 /* =========================================================
    14) Modal
 ========================================================= */
-function closeOveruseModal() {
-  dom.overuseModal()?.classList.add("hidden");
-}
+function closeOveruseModal() { dom.overuseModal()?.classList.add("hidden"); }
+
 function openOveruseModal(dateISO) {
   const modal = dom.overuseModal();
   const title = dom.overuseModalTitle();
@@ -899,13 +871,13 @@ function openOveruseModal(dateISO) {
 
       return `
         <div class="card" style="border:1px solid #e5e7eb; padding:12px; border-radius:12px;">
-          <div style="font-weight:800; font-size:16px;">${escapeHtml(o.equip)}</div>
+          <div style="font-weight:950; font-size:16px;">${escapeHtml(o.equip)}</div>
           <div style="color:#6b7280; font-size:13px; margin-top:4px;">
             需求：<b>${escapeHtml(String(o.required))}</b>　可用：<b>${escapeHtml(String(o.available))}</b>
-            　<span style="color:#b91c1c; font-weight:800;">缺口：${escapeHtml(String(shortage))}</span>
+            　<span style="color:#b91c1c; font-weight:950;">缺口：${escapeHtml(String(shortage))}</span>
           </div>
           <div style="margin-top:10px;">
-            <div style="font-weight:700; margin-bottom:6px;">使用場次（專案 → 數量）</div>
+            <div style="font-weight:900; margin-bottom:6px;">使用場次（專案 → 數量）</div>
             <ul style="margin:0; padding-left:18px; line-height:1.8;">
               ${projLines || "<li>（沒有明細）</li>"}
             </ul>
@@ -919,7 +891,7 @@ function openOveruseModal(dateISO) {
 }
 
 /* =========================================================
-   15) Report + CSV
+   15) Report + CSV (欄位順序已調整)
 ========================================================= */
 function getMonthRange(monthValue) {
   const [y, m] = monthValue.split("-").map(Number);
@@ -947,13 +919,20 @@ function renderReport() {
   body.innerHTML = "";
 
   let totalR = 0, totalC = 0, totalP = 0;
+  let confirmedQuote = 0;
+  let closedRevenue = 0;
 
   list.forEach(p => {
     const revenueUntaxed = getRevenueUntaxed(p);
-    const profit = revenueUntaxed - parseIntSafe(p.cost);
+    const cost = parseIntSafe(p.cost);
+    const profit = revenueUntaxed - cost;
+
     totalR += revenueUntaxed;
-    totalC += parseIntSafe(p.cost);
+    totalC += cost;
     totalP += profit;
+
+    if (p.status === "confirmed") confirmedQuote += parseIntSafe(p.quote);
+    if (p.status === "closed") closedRevenue += revenueUntaxed;
 
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
     const quoteModeLabel = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
@@ -963,20 +942,28 @@ function renderReport() {
       <td>${escapeHtml(p.name)}</td>
       <td>${escapeHtml(p.client || "")}</td>
       <td>${escapeHtml(p.location || "")}</td>
-      <td class="num">${escapeHtml(formatMoney(p.quote || 0))}</td>
-      <td>${escapeHtml(quoteModeLabel)}</td>
       <td>${escapeHtml(period)}</td>
       <td>${escapeHtml(statusLabel(p.status))}</td>
+      <td class="num">${escapeHtml(formatMoney(p.quote || 0))}</td>
+      <td>${escapeHtml(quoteModeLabel)}</td>
       <td class="num">${escapeHtml(formatMoney(revenueUntaxed || 0))}</td>
-      <td class="num">${escapeHtml(formatMoney(p.cost || 0))}</td>
+      <td class="num">${escapeHtml(formatMoney(cost || 0))}</td>
       <td class="num">${escapeHtml(formatMoney(profit))}</td>
     `;
     body.appendChild(tr);
   });
 
+  // 表格合計
   dom.reportTotalRevenue().textContent = formatMoney(totalR);
   dom.reportTotalCost().textContent = formatMoney(totalC);
   dom.reportTotalProfit().textContent = formatMoney(totalP);
+
+  // KPI（左大右小）
+  dom.kpiMonthRevenue() && (dom.kpiMonthRevenue().textContent = formatMoney(totalR));
+  dom.kpiMonthProfit() && (dom.kpiMonthProfit().textContent = formatMoney(totalP));
+  dom.kpiConfirmedQuote() && (dom.kpiConfirmedQuote().textContent = formatMoney(confirmedQuote));
+  dom.kpiClosedRevenue() && (dom.kpiClosedRevenue().textContent = formatMoney(closedRevenue));
+  dom.kpiMonthProjects() && (dom.kpiMonthProjects().textContent = String(list.length));
 }
 
 function exportReportCsv() {
@@ -984,29 +971,33 @@ function exportReportCsv() {
   if (!mv) return alert("請先選擇月份");
 
   const list = state.projects.filter(p => isProjectInMonth(p, mv));
+
+  // ✅ 欄位順序：期間/狀態 在前；報價/模式 靠近營收前
   const rows = [[
-    "專案", "客戶", "地點",
-    "報價金額", "報價模式",
-    "開始", "結束", "狀態",
-    "營收(未稅)", "成本", "淨利"
+    "專案","客戶","地點",
+    "期間","狀態",
+    "報價金額","報價模式",
+    "營收(未稅)","成本","淨利"
   ]];
 
   list.forEach(p => {
     const revenueUntaxed = getRevenueUntaxed(p);
     const mode = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
+    const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
+    const cost = parseIntSafe(p.cost);
+    const profit = revenueUntaxed - cost;
 
     rows.push([
       p.name || "",
       p.client || "",
       p.location || "",
+      period,
+      statusLabel(p.status),
       String(parseIntSafe(p.quote)),
       mode,
-      p.startDate || "",
-      p.endDate || "",
-      statusLabel(p.status),
       String(revenueUntaxed),
-      String(parseIntSafe(p.cost)),
-      String(revenueUntaxed - parseIntSafe(p.cost))
+      String(cost),
+      String(profit)
     ]);
   });
 
@@ -1098,26 +1089,21 @@ function renderAll() {
    18) Bind events
 ========================================================= */
 function bindEvents() {
-  // readonly：營收(未稅) 自動算
   if (dom.projectRevenue()) {
     dom.projectRevenue().setAttribute("readonly", "readonly");
     dom.projectRevenue().setAttribute("title", "營收（未稅）會依報價(含稅/未稅)自動換算");
   }
 
-  // Money blur auto-format
   bindMoneyAutoFormat(dom.projectQuote());
   bindMoneyAutoFormat(dom.projectCost());
 
-  // 報價/模式變動 → 即時計算未稅營收
   dom.projectQuote()?.addEventListener("input", syncRevenueFromQuoteToInput);
   dom.projectQuote()?.addEventListener("change", syncRevenueFromQuoteToInput);
   dom.projectQuoteTaxMode()?.addEventListener("change", syncRevenueFromQuoteToInput);
 
-  // 清空表單
   dom.projectReset()?.addEventListener("click", () => resetProjectForm());
   dom.equipmentReset()?.addEventListener("click", () => resetEquipmentForm());
 
-  // Project form
   dom.projectForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
     upsertProjectFromForm();
@@ -1126,7 +1112,6 @@ function bindEvents() {
   dom.projectFilterStatus()?.addEventListener("change", renderProjectsTable);
   dom.projectSortBy()?.addEventListener("change", renderProjectsTable);
 
-  // ✅ Projects table click (toggle / edit / del)
   dom.projectTableBody()?.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
@@ -1135,27 +1120,18 @@ function bindEvents() {
     const id = btn.dataset.id;
     if (!id) return;
 
-    if (act === "toggle") {
-      toggleProjectDetails(id);
-      return;
-    }
-    if (act === "collapse") {
-      toggleProjectDetails(id, false);
-      return;
-    }
+    if (act === "toggle") return toggleProjectDetails(id);
+    if (act === "collapse") return toggleProjectDetails(id, false);
+
     if (act === "edit") {
       const p = state.projects.find(x => x.id === id);
       if (p) fillProjectForm(p);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
-    if (act === "del") {
-      deleteProject(id);
-      return;
-    }
+    if (act === "del") return deleteProject(id);
   });
 
-  // Equipment form
   dom.equipmentForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
     upsertEquipmentFromForm();
@@ -1177,7 +1153,6 @@ function bindEvents() {
     }
   });
 
-  // Calendar month
   const cm = dom.calendarMonth();
   if (cm) {
     const now = new Date();
@@ -1185,7 +1160,6 @@ function bindEvents() {
     cm.addEventListener("change", renderCalendar);
   }
 
-  // Report month
   const rm = dom.reportMonth();
   if (rm) {
     const now = new Date();
@@ -1198,20 +1172,17 @@ function bindEvents() {
     exportReportCsv();
   });
 
-  // Calendar overuse click
   dom.calendarGrid()?.addEventListener("click", (e) => {
     const btn = e.target.closest(".overuse-btn");
     if (!btn) return;
     openOveruseModal(btn.dataset.date);
   });
 
-  // Modal close
   dom.overuseModalClose()?.addEventListener("click", closeOveruseModal);
   dom.overuseModal()?.addEventListener("click", (e) => {
     if (e.target === dom.overuseModal()) closeOveruseModal();
   });
 
-  // Jump to project from modal
   dom.overuseModalBody()?.addEventListener("click", (e) => {
     const btn = e.target.closest(".jump-project-btn");
     if (!btn) return;
