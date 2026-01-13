@@ -71,14 +71,22 @@
             </select>
           </div>
 
+          <!-- ✅ 改：營收（未稅）由 app.js 自動算，所以改 readonly -->
           <div class="field">
             <label for="projectRevenue">專案營收（未稅）</label>
-            <input id="projectRevenue" type="number" min="0" step="1" placeholder="例：26667" />
+            <input id="projectRevenue" type="number" min="0" step="1" placeholder="自動計算" readonly />
           </div>
 
+          <!-- ✅ 改：報價金額旁邊加「含稅/未稅」 -->
           <div class="field">
             <label for="projectQuote">報價金額</label>
-            <input id="projectQuote" type="number" min="0" step="1" placeholder="例：300000" />
+            <div class="field-inline" style="gap:8px;">
+              <input id="projectQuote" type="number" min="0" step="1" placeholder="例：300000" />
+              <select id="projectQuoteTaxMode" title="報價金額是否含稅">
+                <option value="taxed" selected>含稅</option>
+                <option value="untaxed">未稅</option>
+              </select>
+            </div>
           </div>
 
           <div class="field">
@@ -141,6 +149,8 @@
                 <th>期間</th>
                 <th>狀態</th>
                 <th class="num">報價</th>
+                <!-- ✅ 新增 -->
+                <th>報價模式</th>
                 <th class="num">營收</th>
                 <th class="num">成本</th>
                 <th class="num">淨利</th>
@@ -244,6 +254,8 @@
                 <th>客戶</th>
                 <th>地點</th>
                 <th class="num">報價</th>
+                <!-- ✅ 新增 -->
+                <th>報價模式</th>
                 <th>期間</th>
                 <th>狀態</th>
                 <th class="num">營收</th>
@@ -254,7 +266,7 @@
             <tbody id="reportTableBody"></tbody>
             <tfoot>
               <tr>
-                <th colspan="6" class="num">合計</th>
+                <th colspan="7" class="num">合計</th>
                 <th class="num" id="reportTotalRevenue">0</th>
                 <th class="num" id="reportTotalCost">0</th>
                 <th class="num" id="reportTotalProfit">0</th>
@@ -277,7 +289,7 @@
     </div>
   </div>
 
-  <!-- 建議：版本號每次改一下避免快取 -->
-  <script type="module" src="./app.js?v=20251224-001"></script>
+  <!-- ✅ 版本號更新：避免快取 -->
+  <script type="module" src="./app.js?v=20260113-001"></script>
 </body>
 </html>
