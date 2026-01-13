@@ -17,7 +17,13 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 /* =========================================================
-   0) Helpers
+   0) Config
+========================================================= */
+const TAX_RATE = 0.05;              // 5%
+const DEFAULT_TAX_MODE = "taxed";   // 舊資料沒填時預設：含稅（taxed）/ 未稅（untaxed）
+
+/* =========================================================
+   1) Helpers
 ========================================================= */
 const $ = (sel, root = document) => root.querySelector(sel);
 const $all = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -59,19 +65,19 @@ function formatMoney(n) {
 }
 
 /* =========================================================
-   1) Tax mode (含稅/未稅) + Revenue(未稅) 計算
+   2) Tax mode + Revenue(未稅) 計算
 ========================================================= */
-const TAX_RATE = 0.05;
+function normalizeTaxMode(v) {
+  if (v === "untaxed") return "untaxed";
+  if (v === "taxed") return "taxed";
+  return DEFAULT_TAX_MODE;
+}
 
-// taxed → untaxed
+// 含稅 → 未稅（四捨五入）
 function toUntaxedFromTaxed(taxedInt) {
   const taxed = parseIntSafe(taxedInt);
   if (!taxed) return 0;
   return Math.round(taxed / (1 + TAX_RATE));
-}
-
-function normalizeTaxMode(v) {
-  return (v === "untaxed") ? "untaxed" : "taxed"; // 預設含稅
 }
 
 function getTaxModeFromProject(p) {
@@ -81,22 +87,21 @@ function getTaxModeFromForm() {
   return normalizeTaxMode(dom.projectQuoteTaxMode()?.value);
 }
 
-// 專案顯示/報表用：回傳「營收(未稅)」
+// 專案營收（未稅）：統一從 quote + taxMode 推導；舊資料 fallback revenue
 function getRevenueUntaxed(p) {
   const quote = parseIntSafe(p?.quote);
   const mode = getTaxModeFromProject(p);
 
   if (quote > 0) return (mode === "taxed") ? toUntaxedFromTaxed(quote) : quote;
-
-  // fallback：舊資料可能有 revenue
-  return parseIntSafe(p?.revenue);
+  return parseIntSafe(p?.revenue); // 舊資料 fallback
 }
 
 function calcProfit(p) {
-  return getRevenueUntaxed(p) - parseIntSafe(p.cost);
+  return getRevenueUntaxed(p) - parseIntSafe(p?.cost);
 }
 
 // 表單即時同步：報價 + 模式 → 營收(未稅)
+// ⚠️ 表單 input 是 type=number，所以不要塞千分位字串
 function syncRevenueFromQuoteToInput() {
   const quote = parseIntSafe(dom.projectQuote()?.value);
   const mode = getTaxModeFromForm();
@@ -106,21 +111,12 @@ function syncRevenueFromQuoteToInput() {
     : 0;
 
   if (dom.projectRevenue()) {
-    dom.projectRevenue().value = quote ? formatMoney(untaxed) : "";
+    dom.projectRevenue().value = quote ? String(untaxed) : "";
   }
 }
 
-// 讓報價/成本輸入框在 blur 時自動加千分位（可讀性更好）
-function bindMoneyAutoFormat(inputEl) {
-  if (!inputEl) return;
-  inputEl.addEventListener("blur", () => {
-    const n = parseIntSafe(inputEl.value);
-    inputEl.value = n ? formatMoney(n) : "";
-  });
-}
-
 /* =========================================================
-   2) DOM
+   3) DOM
 ========================================================= */
 const dom = {
   todayLabel: () => $("#todayLabel"),
@@ -142,8 +138,8 @@ const dom = {
   projectStatus: () => $("#projectStatus"),
 
   projectQuote: () => $("#projectQuote"),
-  projectQuoteTaxMode: () => $("#projectQuoteTaxMode"), // ✅ 新增
-  projectRevenue: () => $("#projectRevenue"),           // 未稅(自動)
+  projectQuoteTaxMode: () => $("#projectQuoteTaxMode"),
+  projectRevenue: () => $("#projectRevenue"),
   projectCost: () => $("#projectCost"),
 
   equipUsageBody: () => $("#equipUsageBody"),
@@ -175,29 +171,29 @@ const dom = {
 };
 
 /* =========================================================
-   3) Firestore Collections
+   4) Firestore collections
 ========================================================= */
 const projectsCol = collection(db, "projects");
 const equipmentCol = collection(db, "equipment");
 
 /* =========================================================
-   4) State
+   5) State
 ========================================================= */
 let currentUser = null;
 let currentRole = null;
 let unsubProjects = null;
 let unsubEquipments = null;
-
 let state = { projects: [], equipments: [] };
 
 /* =========================================================
-   5) Auth UI
+   6) Auth UI
 ========================================================= */
 let authEls = { btn: null, rolePill: null, who: null };
 
 function ensureAuthUI() {
   let host = dom.topbarRight();
 
+  // 沒有 topbar-right 就 fallback 固定右上角，避免跑版
   if (!document.querySelector(".topbar-right")) {
     let floating = document.getElementById("auth-fallback");
     if (!floating) {
@@ -280,14 +276,14 @@ function updateAuthUI() {
 }
 
 /* =========================================================
-   6) Permissions
+   7) Permissions
 ========================================================= */
 function canCreate() { return currentRole === "admin" || currentRole === "editor"; }
 function canUpdate() { return currentRole === "admin"; }
 function canDelete() { return currentRole === "admin"; }
 
 /* =========================================================
-   7) Equipment dropdown helpers
+   8) Equipment dropdown helpers
 ========================================================= */
 function getEquipmentNameList() {
   return (state.equipments || [])
@@ -307,6 +303,7 @@ function buildEquipNameSelect(selectedValue = "") {
   const names = getEquipmentNameList();
   const hasSelected = selectedValue && names.includes(selectedValue);
 
+  // 原本填的設備被刪除也保留顯示
   if (selectedValue && !hasSelected) {
     const optMissing = document.createElement("option");
     optMissing.value = selectedValue;
@@ -325,6 +322,7 @@ function buildEquipNameSelect(selectedValue = "") {
   return sel;
 }
 
+// 只更新下拉選項，不動 qty
 function refreshEquipUsageDropdowns() {
   const body = dom.equipUsageBody();
   if (!body) return;
@@ -341,7 +339,7 @@ function refreshEquipUsageDropdowns() {
 }
 
 /* =========================================================
-   8) Equip usage rows (10)
+   9) Equip usage rows (10)
 ========================================================= */
 function renderEquipUsageRows(project = null) {
   const body = dom.equipUsageBody();
@@ -373,10 +371,9 @@ function renderEquipUsageRows(project = null) {
 function readEquipUsageRows() {
   const body = dom.equipUsageBody();
   if (!body) return [];
-
   const rows = $all(".equip-usage-row", body);
-  const result = [];
 
+  const result = [];
   rows.forEach(r => {
     const name = (r.querySelector(".equip-name")?.value || "").trim();
     const qtyRaw = r.querySelector(".equip-qty")?.value ?? "";
@@ -388,7 +385,7 @@ function readEquipUsageRows() {
 }
 
 /* =========================================================
-   9) Forms
+   10) Forms
 ========================================================= */
 function resetProjectForm() {
   dom.projectId() && (dom.projectId().value = "");
@@ -400,7 +397,7 @@ function resetProjectForm() {
   dom.projectStatus() && (dom.projectStatus().value = "planning");
 
   dom.projectQuote() && (dom.projectQuote().value = "");
-  dom.projectQuoteTaxMode() && (dom.projectQuoteTaxMode().value = "taxed"); // ✅ 預設含稅
+  dom.projectQuoteTaxMode() && (dom.projectQuoteTaxMode().value = DEFAULT_TAX_MODE);
   dom.projectRevenue() && (dom.projectRevenue().value = "");
   dom.projectCost() && (dom.projectCost().value = "");
 
@@ -417,9 +414,9 @@ function fillProjectForm(p) {
   dom.projectEnd().value = p.endDate ?? "";
   dom.projectStatus().value = p.status ?? "planning";
 
-  dom.projectQuote().value = formatMoney(parseIntSafe(p.quote)) || "";
+  dom.projectQuote().value = String(parseIntSafe(p.quote)) || "";
   dom.projectQuoteTaxMode().value = getTaxModeFromProject(p);
-  dom.projectCost().value = formatMoney(parseIntSafe(p.cost)) || "";
+  dom.projectCost().value = String(parseIntSafe(p.cost)) || "";
 
   syncRevenueFromQuoteToInput();
   renderEquipUsageRows(p);
@@ -440,7 +437,7 @@ function fillEquipmentForm(e) {
 }
 
 /* =========================================================
-   10) CRUD
+   11) CRUD
 ========================================================= */
 async function upsertProjectFromForm() {
   if (!currentUser) return alert("請先登入再儲存（右上角 Google 登入）");
@@ -460,7 +457,7 @@ async function upsertProjectFromForm() {
   const status = dom.projectStatus().value;
 
   const quote = parseIntSafe(dom.projectQuote().value);
-  const quoteTaxMode = getTaxModeFromForm(); // "taxed" | "untaxed"
+  const quoteTaxMode = getTaxModeFromForm(); // taxed | untaxed
   const revenue = quote
     ? (quoteTaxMode === "taxed" ? toUntaxedFromTaxed(quote) : quote)
     : 0;
@@ -476,7 +473,7 @@ async function upsertProjectFromForm() {
     name, client, location,
     startDate, endDate, status,
     quote,
-    quoteTaxMode, // ✅ 新增欄位
+    quoteTaxMode, // ✅ 報價模式
     revenue,      // ✅ 一律存未稅
     cost,
     equipmentsUsed,
@@ -548,7 +545,7 @@ async function deleteEquipment(equipmentId) {
 }
 
 /* =========================================================
-   11) Renders
+   12) Renders
 ========================================================= */
 function renderProjectsTable() {
   const body = dom.projectTableBody();
@@ -569,8 +566,7 @@ function renderProjectsTable() {
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
     const revenueUntaxed = getRevenueUntaxed(p);
     const profit = revenueUntaxed - parseIntSafe(p.cost);
-
-    const quoteModeLabel = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
+    const quoteModeLabel = (getTaxModeFromProject(p) === "taxed") ? "含稅" : "未稅";
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -614,7 +610,7 @@ function renderEquipmentsTable() {
 }
 
 /* =========================================================
-   12) Calendar overuse
+   13) Calendar overuse
 ========================================================= */
 function isBetweenInclusive(dateISO, startISO, endISO) {
   return dateISO >= startISO && dateISO <= endISO;
@@ -746,7 +742,7 @@ function renderCalendar() {
 }
 
 /* =========================================================
-   13) Modal
+   14) Modal
 ========================================================= */
 function closeOveruseModal() {
   dom.overuseModal()?.classList.add("hidden");
@@ -794,7 +790,7 @@ function openOveruseModal(dateISO) {
 }
 
 /* =========================================================
-   14) Report + CSV
+   15) Report + CSV
 ========================================================= */
 function getMonthRange(monthValue) {
   const [y, m] = monthValue.split("-").map(Number);
@@ -826,12 +822,13 @@ function renderReport() {
   list.forEach(p => {
     const revenueUntaxed = getRevenueUntaxed(p);
     const profit = revenueUntaxed - parseIntSafe(p.cost);
+
     totalR += revenueUntaxed;
     totalC += parseIntSafe(p.cost);
     totalP += profit;
 
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
-    const quoteModeLabel = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
+    const quoteModeLabel = (getTaxModeFromProject(p) === "taxed") ? "含稅" : "未稅";
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -868,20 +865,21 @@ function exportReportCsv() {
 
   list.forEach(p => {
     const revenueUntaxed = getRevenueUntaxed(p);
-    const mode = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
+    const modeLabel = (getTaxModeFromProject(p) === "taxed") ? "含稅" : "未稅";
+    const profit = revenueUntaxed - parseIntSafe(p.cost);
 
     rows.push([
       p.name || "",
       p.client || "",
       p.location || "",
       String(parseIntSafe(p.quote)),
-      mode,
+      modeLabel,
       p.startDate || "",
       p.endDate || "",
       statusLabel(p.status),
       String(revenueUntaxed),
       String(parseIntSafe(p.cost)),
-      String(revenueUntaxed - parseIntSafe(p.cost))
+      String(profit)
     ]);
   });
 
@@ -902,7 +900,7 @@ function exportReportCsv() {
 }
 
 /* =========================================================
-   15) Tabs + Today
+   16) Tabs + Today
 ========================================================= */
 function bindTabs() {
   dom.tabButtons().forEach(btn => {
@@ -928,7 +926,7 @@ function renderToday() {
 }
 
 /* =========================================================
-   16) Realtime
+   17) Realtime
 ========================================================= */
 function detachListeners() {
   unsubProjects && unsubProjects();
@@ -970,18 +968,14 @@ function renderAll() {
 }
 
 /* =========================================================
-   17) Bind events
+   18) Bind events
 ========================================================= */
 function bindEvents() {
-  // readonly：營收(未稅) 自動算
+  // 營收(未稅) 永遠只顯示、不可手動改
   if (dom.projectRevenue()) {
-    dom.projectRevenue().setAttribute("readonly", "readonly");
-    dom.projectRevenue().setAttribute("title", "營收（未稅）會依報價(含稅/未稅)自動換算");
+    dom.projectRevenue().readOnly = true;
+    dom.projectRevenue().title = "營收（未稅）會依報價(含稅/未稅)自動換算";
   }
-
-  // Money blur auto-format
-  bindMoneyAutoFormat(dom.projectQuote());
-  bindMoneyAutoFormat(dom.projectCost());
 
   // 報價/模式變動 → 即時計算未稅營收
   dom.projectQuote()?.addEventListener("input", syncRevenueFromQuoteToInput);
@@ -1091,7 +1085,7 @@ function bindEvents() {
 }
 
 /* =========================================================
-   18) Init
+   19) Init
 ========================================================= */
 async function init() {
   renderToday();
