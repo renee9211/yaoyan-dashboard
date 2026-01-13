@@ -16,12 +16,11 @@
 
     <div class="topbar-right">
       <span id="todayLabel"></span>
-      <!-- 右上角登入 UI 會由 app.js 動態塞入 -->
+      <!-- 右上角登入 UI 由 app.js 動態塞入 -->
     </div>
   </header>
 
   <main>
-    <!-- 分頁切換 -->
     <nav class="tabs">
       <button class="tab-button active" data-tab="projects">專案管理</button>
       <button class="tab-button" data-tab="equipments">設備清單</button>
@@ -60,7 +59,6 @@
         </div>
       </div>
 
-      <!-- 專案表單 -->
       <form id="project-form" class="card form-card">
         <div class="form-grid">
           <input id="projectId" type="hidden" />
@@ -113,7 +111,6 @@
               <option value="untaxed">未稅</option>
             </select>
 
-            <!-- Segmented Toggle（你的 app.js 會接） -->
             <div class="segmented" data-seg="quoteTaxMode" style="margin-top:8px;">
               <button type="button" data-value="taxed" class="seg-btn">含稅</button>
               <button type="button" data-value="untaxed" class="seg-btn">未稅</button>
@@ -142,7 +139,6 @@
         </div>
       </form>
 
-      <!-- 專案總覽表（主表＋展開） -->
       <div class="card table-card" style="margin-top:14px;">
         <table class="projects-table">
           <thead>
@@ -239,6 +235,32 @@
         </div>
       </div>
 
+      <!-- ✅ KPI 左大右小 -->
+      <div class="report-kpi">
+        <div class="kpi-card big">
+          <div class="kpi-label">本月業績（營收未稅）</div>
+          <div class="kpi-value" id="kpiMonthRevenue">0</div>
+          <div class="kpi-sub">
+            <span class="kpi-dot">本月淨利：<span id="kpiMonthProfit">0</span></span>
+          </div>
+        </div>
+
+        <div class="kpi-card c1">
+          <div class="kpi-label">已請款金額（報價）</div>
+          <div class="kpi-value" id="kpiConfirmedQuote">0</div>
+        </div>
+
+        <div class="kpi-card c2">
+          <div class="kpi-label">已結案金額（營收未稅）</div>
+          <div class="kpi-value" id="kpiClosedRevenue">0</div>
+        </div>
+
+        <div class="kpi-card c3">
+          <div class="kpi-label">本月專案數（跨檔期）</div>
+          <div class="kpi-value" id="kpiMonthProjects">0</div>
+        </div>
+      </div>
+
       <div class="card table-card">
         <table class="table">
           <thead>
@@ -246,10 +268,10 @@
               <th>專案</th>
               <th>客戶</th>
               <th>地點</th>
-              <th class="num">報價</th>
-              <th>模式</th>
               <th>期間</th>
               <th>狀態</th>
+              <th class="num">報價</th>
+              <th>模式</th>
               <th class="num">營收(未稅)</th>
               <th class="num">成本</th>
               <th class="num">淨利</th>
@@ -258,7 +280,7 @@
           <tbody id="reportTableBody"></tbody>
           <tfoot>
             <tr>
-              <td colspan="7" style="text-align:right; font-weight:800;">合計</td>
+              <td colspan="7" style="text-align:right; font-weight:950;">合計</td>
               <td class="num" id="reportTotalRevenue"></td>
               <td class="num" id="reportTotalCost"></td>
               <td class="num" id="reportTotalProfit"></td>
@@ -280,7 +302,6 @@
     </div>
   </div>
 
-  <!-- app.js 是 module（因為有 import） -->
   <script type="module" src="./app.js"></script>
 </body>
 </html>
