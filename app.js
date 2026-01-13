@@ -303,10 +303,8 @@ function setupQuoteTaxModeSegmented() {
     });
   }
 
-  // 初始化一次
   renderSegState();
 
-  // 點按鈕 -> 改 select -> 重新計算
   seg.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-value]");
     if (!btn) return;
@@ -315,13 +313,11 @@ function setupQuoteTaxModeSegmented() {
     syncRevenueFromQuoteToInput();
   });
 
-  // 程式改 select（fill/reset） -> UI 跟著更新
   sel.addEventListener("change", () => {
     renderSegState();
     syncRevenueFromQuoteToInput();
   });
 
-  // 暴露給其他流程使用（例如 fillProjectForm）
   setupQuoteTaxModeSegmented.render = renderSegState;
 }
 
@@ -346,7 +342,6 @@ function buildEquipNameSelect(selectedValue = "") {
   const names = getEquipmentNameList();
   const hasSelected = selectedValue && names.includes(selectedValue);
 
-  // 若專案原本填的設備已不存在，也保留顯示（避免資料消失）
   if (selectedValue && !hasSelected) {
     const optMissing = document.createElement("option");
     optMissing.value = selectedValue;
@@ -365,7 +360,6 @@ function buildEquipNameSelect(selectedValue = "") {
   return sel;
 }
 
-// 只更新現有 10 行的下拉選項，不動 qty、不重建整列
 function refreshEquipUsageDropdowns() {
   const body = dom.equipUsageBody();
   if (!body) return;
@@ -441,13 +435,12 @@ function resetProjectForm() {
   dom.projectStatus() && (dom.projectStatus().value = "planning");
 
   dom.projectQuote() && (dom.projectQuote().value = "");
-  dom.projectQuoteTaxMode() && (dom.projectQuoteTaxMode().value = "taxed"); // 預設含稅
+  dom.projectQuoteTaxMode() && (dom.projectQuoteTaxMode().value = "taxed");
   dom.projectCost() && (dom.projectCost().value = "");
   dom.projectRevenue() && (dom.projectRevenue().value = "");
 
   renderEquipUsageRows(null);
 
-  // sync + toggle UI
   syncRevenueFromQuoteToInput();
   setupQuoteTaxModeSegmented.render?.();
 }
@@ -467,7 +460,6 @@ function fillProjectForm(p) {
 
   renderEquipUsageRows(p);
 
-  // sync + toggle UI
   syncRevenueFromQuoteToInput();
   setupQuoteTaxModeSegmented.render?.();
 }
@@ -507,7 +499,7 @@ async function upsertProjectFromForm() {
   const status = dom.projectStatus().value;
 
   const quote = parseIntSafe(dom.projectQuote().value);
-  const quoteTaxMode = getTaxModeFromForm(); // "taxed" | "untaxed"
+  const quoteTaxMode = getTaxModeFromForm();
   const revenue = quote
     ? (quoteTaxMode === "taxed" ? toUntaxedFromTaxed(quote) : quote)
     : 0;
@@ -523,8 +515,8 @@ async function upsertProjectFromForm() {
     name, client, location,
     startDate, endDate, status,
     quote,
-    quoteTaxMode, // ✅ 含稅/未稅
-    revenue,      // ✅ 一律存未稅
+    quoteTaxMode,
+    revenue,
     cost,
     equipmentsUsed,
     updatedAt: serverTimestamp()
@@ -596,7 +588,43 @@ async function deleteEquipment(equipmentId) {
 
 /* =========================================================
    12) Renders - Projects / Equipments
+   ✅ Projects 改為 Master-Detail (主表＋展開)
 ========================================================= */
+function statusToBadgeClass(statusKey) {
+  // 對應你目前的狀態 key：planning/confirmed/executing/closed/lost
+  if (statusKey === "closed") return "green";
+  if (statusKey === "confirmed") return "orange";
+  if (statusKey === "executing") return "blue";
+  if (statusKey === "lost") return "red";
+  return "neutral";
+}
+
+function renderEquipmentsUsedHtml(p) {
+  const list = Array.isArray(p.equipmentsUsed) ? p.equipmentsUsed : [];
+  const items = list
+    .filter(x => x && String(x.name || "").trim())
+    .map(x => `${escapeHtml(String(x.name).trim())} × <b>${escapeHtml(String(x.qty ?? 0))}</b>`);
+  if (!items.length) return "—";
+  return items.join("<br>");
+}
+
+function toggleProjectDetails(projectId, forceOpen) {
+  const body = dom.projectTableBody();
+  if (!body) return;
+
+  const row = body.querySelector(`tr.project-row[data-id="${CSS.escape(projectId)}"]`);
+  const detail = body.querySelector(`tr.details-row[data-details-for="${CSS.escape(projectId)}"]`);
+  if (!row || !detail) return;
+
+  const isOpen = detail.style.display !== "none";
+  const nextOpen = typeof forceOpen === "boolean" ? forceOpen : !isOpen;
+
+  detail.style.display = nextOpen ? "" : "none";
+  row.classList.toggle("is-open", nextOpen);
+
+  if (nextOpen) row.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 function renderProjectsTable() {
   const body = dom.projectTableBody();
   if (!body) return;
@@ -612,30 +640,81 @@ function renderProjectsTable() {
   }
 
   body.innerHTML = "";
+
   list.forEach(p => {
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
     const revenueUntaxed = getRevenueUntaxed(p);
-    const profit = revenueUntaxed - parseIntSafe(p.cost);
-    const quoteModeLabel = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
+    const cost = parseIntSafe(p.cost);
+    const profit = revenueUntaxed - cost;
 
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${escapeHtml(p.name)}</td>
-      <td>${escapeHtml(p.client || "")}</td>
-      <td>${escapeHtml(p.location || "")}</td>
-      <td>${escapeHtml(period)}</td>
-      <td>${escapeHtml(statusLabel(p.status))}</td>
-      <td class="num">${escapeHtml(formatMoney(p.quote || 0))}</td>
-      <td>${escapeHtml(quoteModeLabel)}</td>
-      <td class="num">${escapeHtml(formatMoney(revenueUntaxed || 0))}</td>
-      <td class="num">${escapeHtml(formatMoney(p.cost || 0))}</td>
-      <td class="num">${escapeHtml(formatMoney(profit))}</td>
+    const quoteModeLabel = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
+    const badgeClass = statusToBadgeClass(p.status);
+    const statusText = statusLabel(p.status);
+
+    // 主列：專案/檔期/狀態/淨利/展開
+    const trMain = document.createElement("tr");
+    trMain.className = "project-row";
+    trMain.dataset.id = p.id;
+
+    trMain.innerHTML = `
       <td>
-        <button class="btn ghost small" type="button" data-act="edit" data-id="${escapeHtml(p.id)}" ${canUpdate() ? "" : "disabled"}>編輯</button>
-        <button class="btn ghost small" type="button" data-act="del" data-id="${escapeHtml(p.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
+        <div class="project-title">
+          <div class="name">${escapeHtml(p.name || "")}</div>
+          <div class="client">${escapeHtml(p.client || "—")}</div>
+        </div>
+      </td>
+
+      <td>${escapeHtml(period)}</td>
+
+      <td>
+        <span class="badge ${badgeClass}">${escapeHtml(statusText)}</span>
+      </td>
+
+      <td class="money">
+        <div class="big">${escapeHtml(formatMoney(profit))}</div>
+        <div class="muted">營收 ${escapeHtml(formatMoney(revenueUntaxed))}｜成本 ${escapeHtml(formatMoney(cost))}</div>
+      </td>
+
+      <td style="width:56px; text-align:right;">
+        <button class="expand-btn" type="button" data-act="toggle" data-id="${escapeHtml(p.id)}" aria-label="展開">
+          <span class="chev">⌄</span>
+        </button>
       </td>
     `;
-    body.appendChild(tr);
+
+    // 細節列：位置/報價/設備/操作
+    const trDetail = document.createElement("tr");
+    trDetail.className = "details-row";
+    trDetail.dataset.detailsFor = p.id;
+    trDetail.style.display = "none";
+
+    trDetail.innerHTML = `
+      <td colspan="5">
+        <div class="details-panel">
+          <div class="details-grid">
+            <div>
+              <div class="kv"><div class="k">地點</div><div class="v">${escapeHtml(p.location || "—")}</div></div>
+              <div class="kv"><div class="k">報價</div><div class="v">${escapeHtml(formatMoney(parseIntSafe(p.quote)))}（${escapeHtml(quoteModeLabel)}）</div></div>
+              <div class="kv"><div class="k">營收(未稅)</div><div class="v"><b>${escapeHtml(formatMoney(revenueUntaxed))}</b></div></div>
+              <div class="kv"><div class="k">成本</div><div class="v">${escapeHtml(formatMoney(cost))}</div></div>
+            </div>
+
+            <div>
+              <div class="kv"><div class="k">設備</div><div class="v">${renderEquipmentsUsedHtml(p)}</div></div>
+            </div>
+          </div>
+
+          <div class="details-actions">
+            <button class="btn-sm primary" type="button" data-act="edit" data-id="${escapeHtml(p.id)}" ${canUpdate() ? "" : "disabled"}>編輯</button>
+            <button class="btn-sm" type="button" data-act="del" data-id="${escapeHtml(p.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
+            <button class="btn-sm" type="button" data-act="collapse" data-id="${escapeHtml(p.id)}">收合</button>
+          </div>
+        </div>
+      </td>
+    `;
+
+    body.appendChild(trMain);
+    body.appendChild(trDetail);
   });
 }
 
@@ -823,7 +902,7 @@ function openOveruseModal(dateISO) {
           <div style="font-weight:800; font-size:16px;">${escapeHtml(o.equip)}</div>
           <div style="color:#6b7280; font-size:13px; margin-top:4px;">
             需求：<b>${escapeHtml(String(o.required))}</b>　可用：<b>${escapeHtml(String(o.available))}</b>
-           　<span style="color:#b91c1c; font-weight:800;">缺口：${escapeHtml(String(shortage))}</span>
+            　<span style="color:#b91c1c; font-weight:800;">缺口：${escapeHtml(String(shortage))}</span>
           </div>
           <div style="margin-top:10px;">
             <div style="font-weight:700; margin-bottom:6px;">使用場次（專案 → 數量）</div>
@@ -1047,19 +1126,32 @@ function bindEvents() {
   dom.projectFilterStatus()?.addEventListener("change", renderProjectsTable);
   dom.projectSortBy()?.addEventListener("change", renderProjectsTable);
 
+  // ✅ Projects table click (toggle / edit / del)
   dom.projectTableBody()?.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
+
     const act = btn.dataset.act;
     const id = btn.dataset.id;
     if (!id) return;
 
+    if (act === "toggle") {
+      toggleProjectDetails(id);
+      return;
+    }
+    if (act === "collapse") {
+      toggleProjectDetails(id, false);
+      return;
+    }
     if (act === "edit") {
       const p = state.projects.find(x => x.id === id);
       if (p) fillProjectForm(p);
       window.scrollTo({ top: 0, behavior: "smooth" });
-    } else if (act === "del") {
+      return;
+    }
+    if (act === "del") {
       deleteProject(id);
+      return;
     }
   });
 
@@ -1149,7 +1241,6 @@ async function init() {
   bindTabs();
   renderEquipUsageRows(null);
 
-  // Segmented toggle init
   setupQuoteTaxModeSegmented();
 
   bindEvents();
