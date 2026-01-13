@@ -13,7 +13,7 @@
       <p class="subtitle">專案檔期、特效設備、行事曆與月報表一站管理</p>
     </div>
 
-    <!-- 這裡會由 app.js 動態塞入：角色/登入鈕/email -->
+    <!-- app.js 會塞入：角色 / 登入鈕 / email -->
     <div class="topbar-right">
       <span id="todayLabel"></span>
     </div>
@@ -28,7 +28,7 @@
       <button class="tab-button" data-tab="report">每月營收淨利報表</button>
     </nav>
 
-    <!-- 📌 專案管理 -->
+    <!-- ===================== 專案管理 ===================== -->
     <section class="tab-panel active" id="tab-projects">
       <div class="card">
         <h2>新增 / 編輯專案</h2>
@@ -61,7 +61,7 @@
           </div>
 
           <div class="field">
-            <label>專案狀態</label>
+            <label for="projectStatus">專案狀態</label>
             <select id="projectStatus">
               <option value="planning">規劃中</option>
               <option value="confirmed">已請款</option>
@@ -71,27 +71,40 @@
             </select>
           </div>
 
-          <!-- ✅ 改：營收（未稅）由 app.js 自動算，所以改 readonly -->
-          <div class="field">
-            <label for="projectRevenue">專案營收（未稅）</label>
-            <input id="projectRevenue" type="number" min="0" step="1" placeholder="自動計算" readonly />
-          </div>
-
-          <!-- ✅ 改：報價金額旁邊加「含稅/未稅」 -->
+          <!-- 報價 -->
           <div class="field">
             <label for="projectQuote">報價金額</label>
-            <div class="field-inline" style="gap:8px;">
-              <input id="projectQuote" type="number" min="0" step="1" placeholder="例：300000" />
-              <select id="projectQuoteTaxMode" title="報價金額是否含稅">
-                <option value="taxed" selected>含稅</option>
-                <option value="untaxed">未稅</option>
-              </select>
+            <input id="projectQuote" type="text" inputmode="numeric" placeholder="例：300,000" />
+            <p class="helper-text">可輸入含逗號或純數字，系統會自動整理格式。</p>
+          </div>
+
+          <!-- ✅ 報價模式：漂亮的 toggle + 隱藏 select(給 app.js / Firestore 用) -->
+          <div class="field">
+            <label>報價模式</label>
+
+            <div class="segmented" data-seg="quoteTaxMode">
+              <button type="button" data-value="taxed">含稅</button>
+              <button type="button" data-value="untaxed">未稅</button>
             </div>
+
+            <!-- ✅ 保留給程式/資料用（視覺隱藏） -->
+            <select id="projectQuoteTaxMode" class="sr-only" aria-hidden="true" tabindex="-1">
+              <option value="taxed">含稅</option>
+              <option value="untaxed">未稅</option>
+            </select>
+
+            <p class="helper-text">切換後「營收（未稅）」會即時重新換算。</p>
+          </div>
+
+          <!-- ✅ 營收未稅：自動算 -->
+          <div class="field">
+            <label for="projectRevenue">專案營收（未稅｜自動）</label>
+            <input id="projectRevenue" type="text" placeholder="由報價自動換算" readonly />
           </div>
 
           <div class="field">
             <label for="projectCost">專案成本（估算 or 實際）</label>
-            <input id="projectCost" type="number" min="0" step="1" placeholder="例：12345" />
+            <input id="projectCost" type="text" inputmode="numeric" placeholder="例：12,345" />
           </div>
 
           <div class="field full">
@@ -102,19 +115,17 @@
                 <span>數量</span>
               </div>
 
-              <!-- app.js 會在這裡動態產生 10 行：
-                   [select.equip-name] + [input.equip-qty] -->
               <div id="equipUsageBody"></div>
 
               <p class="helper-text">
-                設備名稱將以「設備清單」為準（下拉選單）。行事曆會依此計算檔期是否超用。
+                設備名稱以「設備清單」為準（下拉選）。行事曆會依此計算檔期是否超用。
               </p>
             </div>
           </div>
 
           <div class="actions full">
             <button type="submit" class="btn primary">儲存專案</button>
-            <button type="reset" id="projectReset" class="btn ghost">清空表單</button>
+            <button type="button" id="projectReset" class="btn ghost">清空表單</button>
           </div>
         </form>
       </div>
@@ -149,9 +160,8 @@
                 <th>期間</th>
                 <th>狀態</th>
                 <th class="num">報價</th>
-                <!-- ✅ 新增 -->
                 <th>報價模式</th>
-                <th class="num">營收</th>
+                <th class="num">營收（未稅）</th>
                 <th class="num">成本</th>
                 <th class="num">淨利</th>
                 <th>操作</th>
@@ -163,7 +173,7 @@
       </div>
     </section>
 
-    <!-- 📌 設備清單 -->
+    <!-- ===================== 設備清單 ===================== -->
     <section class="tab-panel" id="tab-equipments">
       <div class="card">
         <h2>設備清單</h2>
@@ -188,7 +198,7 @@
 
           <div class="actions">
             <button type="submit" class="btn primary">儲存設備</button>
-            <button type="reset" id="equipmentReset" class="btn ghost">清空表單</button>
+            <button type="button" id="equipmentReset" class="btn ghost">清空表單</button>
           </div>
         </form>
       </div>
@@ -211,7 +221,7 @@
       </div>
     </section>
 
-    <!-- 📌 行事曆 & 設備超用提示 -->
+    <!-- ===================== 行事曆 ===================== -->
     <section class="tab-panel" id="tab-calendar">
       <div class="card">
         <div class="card-header">
@@ -232,7 +242,7 @@
       </div>
     </section>
 
-    <!-- 📌 每月營收 / 淨利月報表 -->
+    <!-- ===================== 月報表 ===================== -->
     <section class="tab-panel" id="tab-report">
       <div class="card">
         <div class="card-header">
@@ -254,11 +264,10 @@
                 <th>客戶</th>
                 <th>地點</th>
                 <th class="num">報價</th>
-                <!-- ✅ 新增 -->
                 <th>報價模式</th>
                 <th>期間</th>
                 <th>狀態</th>
-                <th class="num">營收</th>
+                <th class="num">營收（未稅）</th>
                 <th class="num">成本</th>
                 <th class="num">淨利</th>
               </tr>
@@ -278,7 +287,7 @@
     </section>
   </main>
 
-  <!-- ✅ 設備超用明細 Modal -->
+  <!-- ===================== Modal ===================== -->
   <div id="overuseModal" class="modal hidden">
     <div class="modal-card">
       <div class="modal-header">
@@ -289,7 +298,7 @@
     </div>
   </div>
 
-  <!-- ✅ 版本號更新：避免快取 -->
+  <!-- ✅ 版本號建議每次改一下避免快取 -->
   <script type="module" src="./app.js?v=20260113-001"></script>
 </body>
 </html>
