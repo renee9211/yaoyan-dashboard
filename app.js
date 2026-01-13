@@ -13,7 +13,7 @@ import {
 
 import {
   collection, doc, addDoc, updateDoc, deleteDoc,
-  onSnapshot, query, orderBy, serverTimestamp
+  onSnapshot, query, orderBy, serverTimestamp, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 /* =========================================================
@@ -473,6 +473,42 @@ function fillEquipmentForm(e) {
 }
 
 /* =========================================================
+   10.5) Sync equipment rename -> projects.equipmentsUsed[].name
+========================================================= */
+async function syncEquipmentNameInProjects(oldName, newName) {
+  oldName = String(oldName || "").trim();
+  newName = String(newName || "").trim();
+  if (!oldName || !newName || oldName === newName) return;
+
+  // 讀取所有專案，找到 equipmentsUsed 內 name=oldName 的就改成 newName
+  const snap = await getDocs(query(projectsCol));
+
+  for (const docSnap of snap.docs) {
+    const p = docSnap.data();
+    const used = Array.isArray(p.equipmentsUsed) ? p.equipmentsUsed : [];
+    if (!used.length) continue;
+
+    let changed = false;
+    const updated = used.map(item => {
+      if (!item) return item;
+      const nm = String(item.name || "").trim();
+      if (nm === oldName) {
+        changed = true;
+        return { ...item, name: newName };
+      }
+      return item;
+    });
+
+    if (changed) {
+      await updateDoc(doc(db, "projects", docSnap.id), {
+        equipmentsUsed: updated,
+        updatedAt: serverTimestamp()
+      });
+    }
+  }
+}
+
+/* =========================================================
    11) CRUD
 ========================================================= */
 async function upsertProjectFromForm() {
@@ -543,6 +579,9 @@ async function upsertEquipmentFromForm() {
     if (!canCreate()) return alert("你目前是 viewer，不能新增（需要 admin 或 editor）");
   }
 
+  // ✅ 先抓舊名（改名同步用）
+  const oldName = id ? (state.equipments.find(x => x.id === id)?.name || "") : "";
+
   const name = dom.equipmentName().value.trim();
   const qty = Math.max(0, Math.trunc(Number(dom.equipmentQty().value) || 0));
   const note = dom.equipmentNote().value.trim();
@@ -552,8 +591,18 @@ async function upsertEquipmentFromForm() {
   const payload = { name, qty, note, updatedAt: serverTimestamp() };
 
   try {
-    if (id) await updateDoc(doc(db, "equipment", id), payload);
-    else await addDoc(equipmentCol, { ...payload, createdAt: serverTimestamp() });
+    if (id) {
+      await updateDoc(doc(db, "equipment", id), payload);
+
+      // ✅ 如果是改名：同步更新所有專案 equipmentsUsed[].name
+      const newName = name;
+      if (String(oldName || "").trim() && String(newName || "").trim() && oldName.trim() !== newName.trim()) {
+        await syncEquipmentNameInProjects(oldName, newName);
+      }
+    } else {
+      await addDoc(equipmentCol, { ...payload, createdAt: serverTimestamp() });
+    }
+
     resetEquipmentForm();
   } catch (e) {
     console.error(e);
