@@ -16,7 +16,9 @@ import {
   onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
-// --------------------- Helpers ---------------------
+/* =========================================================
+   0) Helpers
+========================================================= */
 const $ = (sel, root = document) => root.querySelector(sel);
 const $all = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -48,17 +50,78 @@ function parseIntSafe(v) {
   if (Number.isNaN(n)) return 0;
   return Math.max(0, Math.trunc(n)); // rules 要 int
 }
+
 function formatMoney(n) {
   if (n === "" || n === null || n === undefined) return "";
   const num = Number(String(n).replace(/,/g, "").trim());
   if (Number.isNaN(num)) return "";
   return num.toLocaleString("zh-TW");
 }
-function calcProfit(p) {
-  return parseIntSafe(p.revenue) - parseIntSafe(p.cost);
+
+/* =========================================================
+   1) Tax mode (含稅/未稅) + Revenue(未稅) 計算
+========================================================= */
+const TAX_RATE = 0.05;
+
+// taxed → untaxed
+function toUntaxedFromTaxed(taxedInt) {
+  const taxed = parseIntSafe(taxedInt);
+  if (!taxed) return 0;
+  return Math.round(taxed / (1 + TAX_RATE));
 }
 
-// --------------------- DOM ---------------------
+function normalizeTaxMode(v) {
+  return (v === "untaxed") ? "untaxed" : "taxed"; // 預設含稅
+}
+
+function getTaxModeFromProject(p) {
+  return normalizeTaxMode(p?.quoteTaxMode);
+}
+function getTaxModeFromForm() {
+  return normalizeTaxMode(dom.projectQuoteTaxMode()?.value);
+}
+
+// 專案顯示/報表用：回傳「營收(未稅)」
+function getRevenueUntaxed(p) {
+  const quote = parseIntSafe(p?.quote);
+  const mode = getTaxModeFromProject(p);
+
+  if (quote > 0) return (mode === "taxed") ? toUntaxedFromTaxed(quote) : quote;
+
+  // fallback：舊資料可能有 revenue
+  return parseIntSafe(p?.revenue);
+}
+
+function calcProfit(p) {
+  return getRevenueUntaxed(p) - parseIntSafe(p.cost);
+}
+
+// 表單即時同步：報價 + 模式 → 營收(未稅)
+function syncRevenueFromQuoteToInput() {
+  const quote = parseIntSafe(dom.projectQuote()?.value);
+  const mode = getTaxModeFromForm();
+
+  const untaxed = quote
+    ? (mode === "taxed" ? toUntaxedFromTaxed(quote) : quote)
+    : 0;
+
+  if (dom.projectRevenue()) {
+    dom.projectRevenue().value = quote ? formatMoney(untaxed) : "";
+  }
+}
+
+// 讓報價/成本輸入框在 blur 時自動加千分位（可讀性更好）
+function bindMoneyAutoFormat(inputEl) {
+  if (!inputEl) return;
+  inputEl.addEventListener("blur", () => {
+    const n = parseIntSafe(inputEl.value);
+    inputEl.value = n ? formatMoney(n) : "";
+  });
+}
+
+/* =========================================================
+   2) DOM
+========================================================= */
 const dom = {
   todayLabel: () => $("#todayLabel"),
   topbarRight: () =>
@@ -77,9 +140,12 @@ const dom = {
   projectStart: () => $("#projectStart"),
   projectEnd: () => $("#projectEnd"),
   projectStatus: () => $("#projectStatus"),
-  projectRevenue: () => $("#projectRevenue"),
+
   projectQuote: () => $("#projectQuote"),
+  projectQuoteTaxMode: () => $("#projectQuoteTaxMode"), // ✅ 新增
+  projectRevenue: () => $("#projectRevenue"),           // 未稅(自動)
   projectCost: () => $("#projectCost"),
+
   equipUsageBody: () => $("#equipUsageBody"),
   projectFilterStatus: () => $("#projectFilterStatus"),
   projectSortBy: () => $("#projectSortBy"),
@@ -108,11 +174,15 @@ const dom = {
   overuseModalClose: () => $("#overuseModalClose")
 };
 
-// --------------------- Firestore collections ---------------------
+/* =========================================================
+   3) Firestore Collections
+========================================================= */
 const projectsCol = collection(db, "projects");
 const equipmentCol = collection(db, "equipment");
 
-// --------------------- State ---------------------
+/* =========================================================
+   4) State
+========================================================= */
 let currentUser = null;
 let currentRole = null;
 let unsubProjects = null;
@@ -120,13 +190,14 @@ let unsubEquipments = null;
 
 let state = { projects: [], equipments: [] };
 
-// --------------------- Auth UI ---------------------
+/* =========================================================
+   5) Auth UI
+========================================================= */
 let authEls = { btn: null, rolePill: null, who: null };
 
 function ensureAuthUI() {
   let host = dom.topbarRight();
 
-  // 如果沒有 .topbar-right，就用固定右上角容器，避免跑版或看不到
   if (!document.querySelector(".topbar-right")) {
     let floating = document.getElementById("auth-fallback");
     if (!floating) {
@@ -208,12 +279,16 @@ function updateAuthUI() {
   }
 }
 
-// --------------------- Permissions ---------------------
+/* =========================================================
+   6) Permissions
+========================================================= */
 function canCreate() { return currentRole === "admin" || currentRole === "editor"; }
 function canUpdate() { return currentRole === "admin"; }
 function canDelete() { return currentRole === "admin"; }
 
-// --------------------- Equip dropdown helpers ---------------------
+/* =========================================================
+   7) Equipment dropdown helpers
+========================================================= */
 function getEquipmentNameList() {
   return (state.equipments || [])
     .map(e => String(e?.name || "").trim())
@@ -232,7 +307,6 @@ function buildEquipNameSelect(selectedValue = "") {
   const names = getEquipmentNameList();
   const hasSelected = selectedValue && names.includes(selectedValue);
 
-  // 若專案原本填的設備已不存在，也保留顯示（避免資料消失）
   if (selectedValue && !hasSelected) {
     const optMissing = document.createElement("option");
     optMissing.value = selectedValue;
@@ -251,7 +325,6 @@ function buildEquipNameSelect(selectedValue = "") {
   return sel;
 }
 
-// 只更新現有 10 行的下拉選項，不動 qty、不重建整列
 function refreshEquipUsageDropdowns() {
   const body = dom.equipUsageBody();
   if (!body) return;
@@ -267,7 +340,9 @@ function refreshEquipUsageDropdowns() {
   });
 }
 
-// --------------------- Equip usage rows (10) ---------------------
+/* =========================================================
+   8) Equip usage rows (10)
+========================================================= */
 function renderEquipUsageRows(project = null) {
   const body = dom.equipUsageBody();
   if (!body) return;
@@ -298,6 +373,7 @@ function renderEquipUsageRows(project = null) {
 function readEquipUsageRows() {
   const body = dom.equipUsageBody();
   if (!body) return [];
+
   const rows = $all(".equip-usage-row", body);
   const result = [];
 
@@ -311,7 +387,9 @@ function readEquipUsageRows() {
   return result;
 }
 
-// --------------------- Forms ---------------------
+/* =========================================================
+   9) Forms
+========================================================= */
 function resetProjectForm() {
   dom.projectId() && (dom.projectId().value = "");
   dom.projectName() && (dom.projectName().value = "");
@@ -320,10 +398,14 @@ function resetProjectForm() {
   dom.projectStart() && (dom.projectStart().value = "");
   dom.projectEnd() && (dom.projectEnd().value = "");
   dom.projectStatus() && (dom.projectStatus().value = "planning");
-  dom.projectRevenue() && (dom.projectRevenue().value = "");
+
   dom.projectQuote() && (dom.projectQuote().value = "");
+  dom.projectQuoteTaxMode() && (dom.projectQuoteTaxMode().value = "taxed"); // ✅ 預設含稅
+  dom.projectRevenue() && (dom.projectRevenue().value = "");
   dom.projectCost() && (dom.projectCost().value = "");
+
   renderEquipUsageRows(null);
+  syncRevenueFromQuoteToInput();
 }
 
 function fillProjectForm(p) {
@@ -334,9 +416,12 @@ function fillProjectForm(p) {
   dom.projectStart().value = p.startDate ?? "";
   dom.projectEnd().value = p.endDate ?? "";
   dom.projectStatus().value = p.status ?? "planning";
-  dom.projectRevenue().value = parseIntSafe(p.revenue) || "";
-  dom.projectQuote().value = parseIntSafe(p.quote) || "";
-  dom.projectCost().value = parseIntSafe(p.cost) || "";
+
+  dom.projectQuote().value = formatMoney(parseIntSafe(p.quote)) || "";
+  dom.projectQuoteTaxMode().value = getTaxModeFromProject(p);
+  dom.projectCost().value = formatMoney(parseIntSafe(p.cost)) || "";
+
+  syncRevenueFromQuoteToInput();
   renderEquipUsageRows(p);
 }
 
@@ -354,7 +439,9 @@ function fillEquipmentForm(e) {
   dom.equipmentNote().value = e.note ?? "";
 }
 
-// --------------------- CRUD ---------------------
+/* =========================================================
+   10) CRUD
+========================================================= */
 async function upsertProjectFromForm() {
   if (!currentUser) return alert("請先登入再儲存（右上角 Google 登入）");
 
@@ -371,9 +458,14 @@ async function upsertProjectFromForm() {
   const startDate = dom.projectStart().value;
   const endDate = dom.projectEnd().value;
   const status = dom.projectStatus().value;
-  const revenue = parseIntSafe(dom.projectRevenue().value);
-  const cost = parseIntSafe(dom.projectCost().value);
+
   const quote = parseIntSafe(dom.projectQuote().value);
+  const quoteTaxMode = getTaxModeFromForm(); // "taxed" | "untaxed"
+  const revenue = quote
+    ? (quoteTaxMode === "taxed" ? toUntaxedFromTaxed(quote) : quote)
+    : 0;
+
+  const cost = parseIntSafe(dom.projectCost().value);
   const equipmentsUsed = readEquipUsageRows();
 
   if (!name) return alert("請填寫專案名稱");
@@ -383,7 +475,10 @@ async function upsertProjectFromForm() {
   const payload = {
     name, client, location,
     startDate, endDate, status,
-    revenue, cost, quote,
+    quote,
+    quoteTaxMode, // ✅ 新增欄位
+    revenue,      // ✅ 一律存未稅
+    cost,
     equipmentsUsed,
     updatedAt: serverTimestamp()
   };
@@ -452,7 +547,9 @@ async function deleteEquipment(equipmentId) {
   }
 }
 
-// --------------------- Renders ---------------------
+/* =========================================================
+   11) Renders
+========================================================= */
 function renderProjectsTable() {
   const body = dom.projectTableBody();
   if (!body) return;
@@ -462,17 +559,18 @@ function renderProjectsTable() {
 
   const sortBy = dom.projectSortBy()?.value ?? "updatedDesc";
   if (sortBy === "startAsc") {
-    // 開始日期：近到遠
     list.sort((a, b) =>
       String(a.startDate || "9999-12-31").localeCompare(String(b.startDate || "9999-12-31"))
     );
   }
-  // updatedDesc：維持 Firestore query updatedAt desc 的順序（不處理）
 
   body.innerHTML = "";
   list.forEach(p => {
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
-    const profit = calcProfit(p);
+    const revenueUntaxed = getRevenueUntaxed(p);
+    const profit = revenueUntaxed - parseIntSafe(p.cost);
+
+    const quoteModeLabel = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -482,7 +580,8 @@ function renderProjectsTable() {
       <td>${escapeHtml(period)}</td>
       <td>${escapeHtml(statusLabel(p.status))}</td>
       <td class="num">${escapeHtml(formatMoney(p.quote || 0))}</td>
-      <td class="num">${escapeHtml(formatMoney(p.revenue || 0))}</td>
+      <td>${escapeHtml(quoteModeLabel)}</td>
+      <td class="num">${escapeHtml(formatMoney(revenueUntaxed || 0))}</td>
       <td class="num">${escapeHtml(formatMoney(p.cost || 0))}</td>
       <td class="num">${escapeHtml(formatMoney(profit))}</td>
       <td>
@@ -514,7 +613,9 @@ function renderEquipmentsTable() {
   });
 }
 
-// --------------------- Calendar overuse ---------------------
+/* =========================================================
+   12) Calendar overuse
+========================================================= */
 function isBetweenInclusive(dateISO, startISO, endISO) {
   return dateISO >= startISO && dateISO <= endISO;
 }
@@ -644,7 +745,9 @@ function renderCalendar() {
   }
 }
 
-// --------------------- Modal ---------------------
+/* =========================================================
+   13) Modal
+========================================================= */
 function closeOveruseModal() {
   dom.overuseModal()?.classList.add("hidden");
 }
@@ -690,7 +793,9 @@ function openOveruseModal(dateISO) {
   modal.classList.remove("hidden");
 }
 
-// --------------------- Report + CSV ---------------------
+/* =========================================================
+   14) Report + CSV
+========================================================= */
 function getMonthRange(monthValue) {
   const [y, m] = monthValue.split("-").map(Number);
   if (!y || !m) return null;
@@ -704,6 +809,7 @@ function isProjectInMonth(p, monthValue) {
   if (!r || !p.startDate || !p.endDate) return false;
   return !(p.endDate < r.start || p.startDate > r.end);
 }
+
 function renderReport() {
   const body = dom.reportTableBody();
   const monthInput = dom.reportMonth();
@@ -716,13 +822,16 @@ function renderReport() {
   body.innerHTML = "";
 
   let totalR = 0, totalC = 0, totalP = 0;
+
   list.forEach(p => {
-    const profit = calcProfit(p);
-    totalR += parseIntSafe(p.revenue);
+    const revenueUntaxed = getRevenueUntaxed(p);
+    const profit = revenueUntaxed - parseIntSafe(p.cost);
+    totalR += revenueUntaxed;
     totalC += parseIntSafe(p.cost);
     totalP += profit;
 
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
+    const quoteModeLabel = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -730,9 +839,10 @@ function renderReport() {
       <td>${escapeHtml(p.client || "")}</td>
       <td>${escapeHtml(p.location || "")}</td>
       <td class="num">${escapeHtml(formatMoney(p.quote || 0))}</td>
+      <td>${escapeHtml(quoteModeLabel)}</td>
       <td>${escapeHtml(period)}</td>
       <td>${escapeHtml(statusLabel(p.status))}</td>
-      <td class="num">${escapeHtml(formatMoney(p.revenue || 0))}</td>
+      <td class="num">${escapeHtml(formatMoney(revenueUntaxed || 0))}</td>
       <td class="num">${escapeHtml(formatMoney(p.cost || 0))}</td>
       <td class="num">${escapeHtml(formatMoney(profit))}</td>
     `;
@@ -743,25 +853,35 @@ function renderReport() {
   dom.reportTotalCost().textContent = formatMoney(totalC);
   dom.reportTotalProfit().textContent = formatMoney(totalP);
 }
+
 function exportReportCsv() {
   const mv = dom.reportMonth()?.value;
   if (!mv) return alert("請先選擇月份");
 
   const list = state.projects.filter(p => isProjectInMonth(p, mv));
-  const rows = [["專案","客戶","地點","報價","開始","結束","狀態","營收","成本","淨利"]];
+  const rows = [[
+    "專案", "客戶", "地點",
+    "報價金額", "報價模式",
+    "開始", "結束", "狀態",
+    "營收(未稅)", "成本", "淨利"
+  ]];
 
   list.forEach(p => {
+    const revenueUntaxed = getRevenueUntaxed(p);
+    const mode = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
+
     rows.push([
       p.name || "",
       p.client || "",
       p.location || "",
       String(parseIntSafe(p.quote)),
+      mode,
       p.startDate || "",
       p.endDate || "",
       statusLabel(p.status),
-      String(parseIntSafe(p.revenue)),
+      String(revenueUntaxed),
       String(parseIntSafe(p.cost)),
-      String(calcProfit(p))
+      String(revenueUntaxed - parseIntSafe(p.cost))
     ]);
   });
 
@@ -781,7 +901,9 @@ function exportReportCsv() {
   URL.revokeObjectURL(url);
 }
 
-// --------------------- Tabs + Today ---------------------
+/* =========================================================
+   15) Tabs + Today
+========================================================= */
 function bindTabs() {
   dom.tabButtons().forEach(btn => {
     btn.addEventListener("click", () => {
@@ -797,6 +919,7 @@ function bindTabs() {
     });
   });
 }
+
 function renderToday() {
   const el = dom.todayLabel();
   if (!el) return;
@@ -804,7 +927,9 @@ function renderToday() {
   el.textContent = `${now.getFullYear()}/${pad2(now.getMonth() + 1)}/${pad2(now.getDate())}`;
 }
 
-// --------------------- Realtime ---------------------
+/* =========================================================
+   16) Realtime
+========================================================= */
 function detachListeners() {
   unsubProjects && unsubProjects();
   unsubEquipments && unsubEquipments();
@@ -815,6 +940,7 @@ function detachListeners() {
   state.equipments = [];
   renderAll();
 }
+
 function attachRealtimeListeners() {
   unsubProjects = onSnapshot(
     query(projectsCol, orderBy("updatedAt", "desc")),
@@ -834,6 +960,7 @@ function attachRealtimeListeners() {
     (err) => { console.error(err); alert("讀取設備失敗：請確認 Firestore 權限與登入狀態"); }
   );
 }
+
 function renderAll() {
   renderProjectsTable();
   renderEquipmentsTable();
@@ -842,8 +969,26 @@ function renderAll() {
   refreshEquipUsageDropdowns();
 }
 
-// --------------------- Bind events ---------------------
+/* =========================================================
+   17) Bind events
+========================================================= */
 function bindEvents() {
+  // readonly：營收(未稅) 自動算
+  if (dom.projectRevenue()) {
+    dom.projectRevenue().setAttribute("readonly", "readonly");
+    dom.projectRevenue().setAttribute("title", "營收（未稅）會依報價(含稅/未稅)自動換算");
+  }
+
+  // Money blur auto-format
+  bindMoneyAutoFormat(dom.projectQuote());
+  bindMoneyAutoFormat(dom.projectCost());
+
+  // 報價/模式變動 → 即時計算未稅營收
+  dom.projectQuote()?.addEventListener("input", syncRevenueFromQuoteToInput);
+  dom.projectQuote()?.addEventListener("change", syncRevenueFromQuoteToInput);
+  dom.projectQuoteTaxMode()?.addEventListener("change", syncRevenueFromQuoteToInput);
+
+  // Project form
   dom.projectForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
     upsertProjectFromForm();
@@ -868,6 +1013,7 @@ function bindEvents() {
     }
   });
 
+  // Equipment form
   dom.equipmentForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
     upsertEquipmentFromForm();
@@ -889,6 +1035,7 @@ function bindEvents() {
     }
   });
 
+  // Calendar month
   const cm = dom.calendarMonth();
   if (cm) {
     const now = new Date();
@@ -896,6 +1043,7 @@ function bindEvents() {
     cm.addEventListener("change", renderCalendar);
   }
 
+  // Report month
   const rm = dom.reportMonth();
   if (rm) {
     const now = new Date();
@@ -908,17 +1056,20 @@ function bindEvents() {
     exportReportCsv();
   });
 
+  // Calendar overuse click
   dom.calendarGrid()?.addEventListener("click", (e) => {
     const btn = e.target.closest(".overuse-btn");
     if (!btn) return;
     openOveruseModal(btn.dataset.date);
   });
 
+  // Modal close
   dom.overuseModalClose()?.addEventListener("click", closeOveruseModal);
   dom.overuseModal()?.addEventListener("click", (e) => {
     if (e.target === dom.overuseModal()) closeOveruseModal();
   });
 
+  // Jump to project from modal
   dom.overuseModalBody()?.addEventListener("click", (e) => {
     const btn = e.target.closest(".jump-project-btn");
     if (!btn) return;
@@ -939,13 +1090,16 @@ function bindEvents() {
   });
 }
 
-// --------------------- Init ---------------------
+/* =========================================================
+   18) Init
+========================================================= */
 async function init() {
   renderToday();
   ensureAuthUI();
   bindTabs();
   renderEquipUsageRows(null);
   bindEvents();
+  syncRevenueFromQuoteToInput();
 
   try { await handleRedirectResult?.(); } catch (_) {}
 
