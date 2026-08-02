@@ -33,125 +33,72 @@
       <div class="panel-head">
         <div>
           <h2>專案管理</h2>
-          <p class="hint">主表僅顯示關鍵資訊，點「⌄」展開細節（報價/成本/設備/操作）。</p>
+          <p class="hint">搜尋、篩選或排序專案，點選整列可展開完整資料。</p>
         </div>
-
-        <div class="panel-actions">
-          <label class="field-inline">
-            <span>狀態篩選</span>
-            <select id="projectFilterStatus" class="select">
-              <option value="">全部</option>
-              <option value="planning">規劃中</option>
-              <option value="confirmed">已請款</option>
-              <option value="executing">執行中</option>
-              <option value="closed">已結案</option>
-              <option value="lost">流標 / 未成案</option>
-            </select>
-          </label>
-
-          <label class="field-inline">
-            <span>排序</span>
-            <select id="projectSortBy" class="select">
-              <option value="updatedDesc">最近更新</option>
-              <option value="startAsc">開始日（近→遠）</option>
-            </select>
-          </label>
-        </div>
+        <button id="projectOpenCreate" class="btn primary" type="button">＋ 新增專案</button>
       </div>
 
-      <form id="project-form" class="card form-card">
-        <div class="form-grid">
-          <input id="projectId" type="hidden" />
+      <div class="card project-toolbar">
+        <label class="toolbar-search">
+          <span class="sr-only">搜尋專案</span>
+          <input id="projectSearch" class="input" type="search" placeholder="搜尋專案、客戶或地點" />
+        </label>
 
-          <label class="field">
-            <span>專案名稱</span>
-            <input id="projectName" class="input" placeholder="例如：XX 演唱會｜特效支援" />
-          </label>
+        <label class="field-inline">
+          <span>日期範圍</span>
+          <select id="projectDateRange" class="select">
+            <option value="all">全部日期</option>
+            <option value="month">本月</option>
+            <option value="next3">未來三個月</option>
+            <option value="year">今年</option>
+          </select>
+        </label>
 
-          <label class="field">
-            <span>客戶</span>
-            <input id="projectClient" class="input" placeholder="例如：主辦 / 品牌" />
-          </label>
-
-          <label class="field">
-            <span>地點</span>
-            <input id="projectLocation" class="input" placeholder="例如：台北小巨蛋 / 南港展覽館" />
-          </label>
-
-          <label class="field">
-            <span>開始日期</span>
-            <input id="projectStart" class="input" type="date" />
-          </label>
-
-          <label class="field">
-            <span>結束日期</span>
-            <input id="projectEnd" class="input" type="date" />
-          </label>
-
-          <label class="field">
-            <span>狀態</span>
-            <select id="projectStatus" class="select">
-              <option value="planning">規劃中</option>
-              <option value="confirmed">已請款</option>
-              <option value="executing">執行中</option>
-              <option value="closed">已結案</option>
-              <option value="lost">流標 / 未成案</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>報價金額</span>
-            <input id="projectQuote" class="input" inputmode="numeric" placeholder="例如：250,000" />
-          </label>
-
-          <label class="field">
-            <span>報價模式</span>
-            <select id="projectQuoteTaxMode" class="select">
-              <option value="taxed">含稅</option>
-              <option value="untaxed">未稅</option>
-            </select>
-
-            <div class="segmented" data-seg="quoteTaxMode" style="margin-top:8px;">
-              <button type="button" data-value="taxed" class="seg-btn">含稅</button>
-              <button type="button" data-value="untaxed" class="seg-btn">未稅</button>
-            </div>
-          </label>
-
-          <label class="field">
-            <span>營收（未稅，自動換算）</span>
-            <input id="projectRevenue" class="input" placeholder="自動計算" />
-          </label>
-
-          <label class="field">
-            <span>成本</span>
-            <input id="projectCost" class="input" inputmode="numeric" placeholder="例如：120,000" />
-          </label>
-
-          <div class="field field-full">
-            <span>使用設備（10 行）</span>
-            <div id="equipUsageBody" class="equip-usage"></div>
+        <details id="projectStatusFilter" class="filter-menu">
+          <summary><span>狀態</span><b id="projectStatusSummary">全部狀態</b></summary>
+          <div class="filter-menu-pop" id="projectStatusOptions">
+            <label><input type="checkbox" value="planning" /> <span>規劃中</span><small data-count="planning">0</small></label>
+            <label><input type="checkbox" value="confirmed" /> <span>已請款</span><small data-count="confirmed">0</small></label>
+            <label><input type="checkbox" value="executing" /> <span>執行中</span><small data-count="executing">0</small></label>
+            <label><input type="checkbox" value="closed" /> <span>已結案</span><small data-count="closed">0</small></label>
+            <label><input type="checkbox" value="lost" /> <span>流標 / 未成案</span><small data-count="lost">0</small></label>
           </div>
-        </div>
+        </details>
 
-        <div class="form-actions">
-          <button class="btn primary" type="submit">儲存專案</button>
-          <button id="projectReset" class="btn ghost" type="button">清空表單</button>
-        </div>
-      </form>
+        <label class="field-inline">
+          <span>排序</span>
+          <select id="projectSortBy" class="select">
+            <option value="updatedDesc">最近更新</option>
+            <option value="startAsc">開始日（近→遠）</option>
+            <option value="startDesc">開始日（遠→近）</option>
+          </select>
+        </label>
 
-      <div class="card table-card" style="margin-top:14px;">
-        <table class="projects-table">
-          <thead>
-            <tr>
-              <th>專案</th>
-              <th>檔期</th>
-              <th>狀態</th>
-              <th style="text-align:right;">淨利</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="projectTableBody"></tbody>
-        </table>
+        <button id="projectClearFilters" class="btn ghost small filter-clear hidden" type="button">清除篩選</button>
+      </div>
+
+      <div id="projectFilterChips" class="filter-chips" aria-live="polite"></div>
+
+      <div class="list-meta">
+        <span id="projectResultCount">共 0 個專案</span>
+      </div>
+
+      <div class="card table-card project-list-card">
+        <div class="table-scroll">
+          <table class="projects-table">
+            <thead>
+              <tr>
+                <th>專案／客戶</th>
+                <th>檔期／地點</th>
+                <th>狀態</th>
+                <th style="text-align:right;">淨利</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="projectTableBody"></tbody>
+          </table>
+        </div>
+        <div id="projectPagination" class="pagination"></div>
       </div>
     </section>
 
@@ -162,6 +109,7 @@
           <h2>設備清單</h2>
           <p class="hint">新增/編輯設備後，專案的設備下拉選單會自動刷新。</p>
         </div>
+        <input id="equipmentSearch" class="input compact-search" type="search" placeholder="搜尋設備" />
       </div>
 
       <form id="equipment-form" class="card form-card">
@@ -194,8 +142,8 @@
         <table class="table">
           <thead>
             <tr>
-              <th>設備</th>
-              <th class="num">數量</th>
+              <th><button class="sort-head active" type="button" data-equipment-sort="name">設備 <span>↑</span></button></th>
+              <th class="num"><button class="sort-head" type="button" data-equipment-sort="qty">數量 <span></span></button></th>
               <th>備註</th>
               <th>操作</th>
             </tr>
@@ -290,6 +238,63 @@
       </div>
     </section>
   </main>
+
+  <!-- 新增／編輯專案 Drawer -->
+  <div id="projectDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-drawer-close aria-label="關閉專案表單"></button>
+    <aside class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="projectDrawerTitle">
+      <div class="drawer-head">
+        <div>
+          <div class="drawer-eyebrow">專案管理</div>
+          <h2 id="projectDrawerTitle">新增專案</h2>
+        </div>
+        <button id="projectDrawerClose" class="icon-btn" type="button" aria-label="關閉">✕</button>
+      </div>
+
+      <form id="project-form" class="drawer-form">
+        <input id="projectId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section">
+            <h3>基本資料</h3>
+            <div class="form-grid">
+              <label class="field field-full"><span>專案名稱 *</span><input id="projectName" class="input" placeholder="例如：XX 演唱會｜特效支援" /></label>
+              <label class="field"><span>客戶</span><input id="projectClient" class="input" placeholder="例如：主辦 / 品牌" /></label>
+              <label class="field"><span>地點</span><input id="projectLocation" class="input" placeholder="例如：台北小巨蛋" /></label>
+              <label class="field"><span>開始日期 *</span><input id="projectStart" class="input" type="date" /></label>
+              <label class="field"><span>結束日期 *</span><input id="projectEnd" class="input" type="date" /></label>
+              <label class="field field-full"><span>狀態</span><select id="projectStatus" class="select"><option value="planning">規劃中</option><option value="confirmed">已請款</option><option value="executing">執行中</option><option value="closed">已結案</option><option value="lost">流標 / 未成案</option></select></label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <h3>金額</h3>
+            <div class="form-grid">
+              <label class="field"><span>報價金額</span><input id="projectQuote" class="input" inputmode="numeric" placeholder="例如：250,000" /></label>
+              <label class="field"><span>報價模式</span><select id="projectQuoteTaxMode" class="select visually-hidden-select" tabindex="-1"><option value="taxed">含稅</option><option value="untaxed">未稅</option></select><div class="segmented" data-seg="quoteTaxMode"><button type="button" data-value="taxed" class="seg-btn">含稅</button><button type="button" data-value="untaxed" class="seg-btn">未稅</button></div></label>
+              <label class="field"><span>營收（未稅，自動換算）</span><input id="projectRevenue" class="input" placeholder="自動計算" /></label>
+              <label class="field"><span>成本</span><input id="projectCost" class="input" inputmode="numeric" placeholder="例如：120,000" /></label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="section-head"><h3>使用設備</h3><span id="equipUsageCount">1 / 10</span></div>
+            <div id="equipUsageBody" class="equip-usage"></div>
+            <button id="addEquipUsage" class="btn ghost small add-equip-btn" type="button">＋ 新增設備</button>
+          </section>
+
+          <section class="form-section">
+            <h3>備註</h3>
+            <label class="field"><span class="sr-only">備註</span><textarea id="projectNote" class="textarea" rows="5" placeholder="可輸入請款、執行或其他補充資訊"></textarea></label>
+          </section>
+        </div>
+
+        <div class="drawer-actions">
+          <button id="projectReset" class="btn ghost" type="button">清空</button>
+          <button class="btn primary" type="submit">儲存專案</button>
+        </div>
+      </form>
+    </aside>
+  </div>
 
   <!-- 設備超用 Modal -->
   <div id="overuseModal" class="modal hidden">

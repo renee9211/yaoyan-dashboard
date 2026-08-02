@@ -44,6 +44,9 @@ function statusLabel(v) {
   return map[v] || v || "";
 }
 
+const PROJECT_STATUSES = ["planning", "confirmed", "executing", "closed", "lost"];
+const PROJECTS_PER_PAGE = 20;
+
 function parseIntSafe(v) {
   if (v === "" || v === null || v === undefined) return 0;
   const n = Number(String(v).replace(/,/g, "").trim());
@@ -121,6 +124,10 @@ const dom = {
 
   projectForm: () => $("#project-form"),
   projectReset: () => $("#projectReset"),
+  projectOpenCreate: () => $("#projectOpenCreate"),
+  projectDrawer: () => $("#projectDrawer"),
+  projectDrawerTitle: () => $("#projectDrawerTitle"),
+  projectDrawerClose: () => $("#projectDrawerClose"),
 
   projectId: () => $("#projectId"),
   projectName: () => $("#projectName"),
@@ -134,11 +141,22 @@ const dom = {
   projectQuoteTaxMode: () => $("#projectQuoteTaxMode"),
   projectRevenue: () => $("#projectRevenue"),
   projectCost: () => $("#projectCost"),
+  projectNote: () => $("#projectNote"),
 
   equipUsageBody: () => $("#equipUsageBody"),
-  projectFilterStatus: () => $("#projectFilterStatus"),
+  addEquipUsage: () => $("#addEquipUsage"),
+  equipUsageCount: () => $("#equipUsageCount"),
+  projectSearch: () => $("#projectSearch"),
+  projectDateRange: () => $("#projectDateRange"),
+  projectStatusFilter: () => $("#projectStatusFilter"),
+  projectStatusOptions: () => $("#projectStatusOptions"),
+  projectStatusSummary: () => $("#projectStatusSummary"),
+  projectFilterChips: () => $("#projectFilterChips"),
+  projectClearFilters: () => $("#projectClearFilters"),
   projectSortBy: () => $("#projectSortBy"),
   projectTableBody: () => $("#projectTableBody"),
+  projectResultCount: () => $("#projectResultCount"),
+  projectPagination: () => $("#projectPagination"),
 
   equipmentForm: () => $("#equipment-form"),
   equipmentReset: () => $("#equipmentReset"),
@@ -146,6 +164,7 @@ const dom = {
   equipmentName: () => $("#equipmentName"),
   equipmentQty: () => $("#equipmentQty"),
   equipmentNote: () => $("#equipmentNote"),
+  equipmentSearch: () => $("#equipmentSearch"),
   equipmentTableBody: () => $("#equipmentTableBody"),
 
   calendarMonth: () => $("#calendarMonth"),
@@ -185,6 +204,10 @@ let currentRole = null;
 let unsubProjects = null;
 let unsubEquipments = null;
 let state = { projects: [], equipments: [] };
+let selectedProjectStatuses = new Set();
+let projectCurrentPage = 1;
+let equipmentSort = { key: "name", direction: "asc" };
+let projectFormDirty = false;
 
 /* =========================================================
    5) Auth UI
@@ -272,6 +295,12 @@ function updateAuthUI() {
     authEls.rolePill.textContent = (currentRole || "viewer").toUpperCase();
     authEls.who.textContent = currentUser.email || "(unknown)";
     authEls.btn.textContent = "登出";
+  }
+
+  const createBtn = dom.projectOpenCreate();
+  if (createBtn) {
+    createBtn.disabled = !canCreate();
+    createBtn.title = canCreate() ? "新增專案" : "請先以 admin 或 editor 權限登入";
   }
 }
 
@@ -370,33 +399,52 @@ function refreshEquipUsageDropdowns() {
 }
 
 /* =========================================================
-   9) Equip usage rows (10)
+   9) Equip usage rows (dynamic, max 10)
 ========================================================= */
+function updateEquipUsageControls() {
+  const count = $all(".equip-usage-row", dom.equipUsageBody()).length;
+  if (dom.equipUsageCount()) dom.equipUsageCount().textContent = `${count} / 10`;
+  if (dom.addEquipUsage()) dom.addEquipUsage().disabled = count >= 10;
+}
+
+function addEquipUsageRow(item = {}) {
+  const body = dom.equipUsageBody();
+  if (!body || $all(".equip-usage-row", body).length >= 10) return;
+
+  const row = document.createElement("div");
+  row.className = "equip-usage-row";
+
+  const nameSel = buildEquipNameSelect(String(item?.name ?? "").trim());
+  const qtyInput = document.createElement("input");
+  qtyInput.className = "equip-qty";
+  qtyInput.type = "number";
+  qtyInput.min = "0";
+  qtyInput.step = "1";
+  qtyInput.placeholder = "數量";
+  qtyInput.value = String(item?.qty ?? "");
+
+  const removeBtn = document.createElement("button");
+  removeBtn.className = "remove-equip-row";
+  removeBtn.type = "button";
+  removeBtn.dataset.act = "remove-equip-row";
+  removeBtn.setAttribute("aria-label", "移除設備");
+  removeBtn.textContent = "✕";
+
+  row.appendChild(nameSel);
+  row.appendChild(qtyInput);
+  row.appendChild(removeBtn);
+  body.appendChild(row);
+  updateEquipUsageControls();
+}
+
 function renderEquipUsageRows(project = null) {
   const body = dom.equipUsageBody();
   if (!body) return;
 
   body.innerHTML = "";
   const used = Array.isArray(project?.equipmentsUsed) ? project.equipmentsUsed : [];
-
-  for (let i = 0; i < 10; i++) {
-    const row = document.createElement("div");
-    row.className = "equip-usage-row";
-
-    const nameSel = buildEquipNameSelect(String(used[i]?.name ?? "").trim());
-
-    const qtyInput = document.createElement("input");
-    qtyInput.className = "equip-qty";
-    qtyInput.type = "number";
-    qtyInput.min = "0";
-    qtyInput.step = "1";
-    qtyInput.placeholder = "數量";
-    qtyInput.value = String(used[i]?.qty ?? "");
-
-    row.appendChild(nameSel);
-    row.appendChild(qtyInput);
-    body.appendChild(row);
-  }
+  (used.length ? used.slice(0, 10) : [{}]).forEach(addEquipUsageRow);
+  updateEquipUsageControls();
 }
 
 function readEquipUsageRows() {
@@ -432,11 +480,13 @@ function resetProjectForm() {
   dom.projectQuoteTaxMode() && (dom.projectQuoteTaxMode().value = "taxed");
   dom.projectCost() && (dom.projectCost().value = "");
   dom.projectRevenue() && (dom.projectRevenue().value = "");
+  dom.projectNote() && (dom.projectNote().value = "");
 
   renderEquipUsageRows(null);
 
   syncRevenueFromQuoteToInput();
   setupQuoteTaxModeSegmented.render?.();
+  projectFormDirty = false;
 }
 
 function fillProjectForm(p) {
@@ -451,11 +501,41 @@ function fillProjectForm(p) {
   dom.projectQuote().value = formatMoney(parseIntSafe(p.quote)) || "";
   dom.projectQuoteTaxMode().value = getTaxModeFromProject(p);
   dom.projectCost().value = formatMoney(parseIntSafe(p.cost)) || "";
+  dom.projectNote().value = p.note ?? "";
 
   renderEquipUsageRows(p);
 
   syncRevenueFromQuoteToInput();
   setupQuoteTaxModeSegmented.render?.();
+  projectFormDirty = false;
+}
+
+function openProjectDrawer(project = null, { duplicate = false } = {}) {
+  if (!project && !canCreate()) return alert("請先以 admin 或 editor 權限登入");
+
+  if (project) fillProjectForm(project);
+  else resetProjectForm();
+
+  if (duplicate) {
+    dom.projectId().value = "";
+    dom.projectName().value = `${project.name || "未命名專案"}（複製）`;
+  }
+
+  dom.projectDrawerTitle().textContent = project && !duplicate ? "編輯專案" : "新增專案";
+  dom.projectDrawer().classList.remove("hidden");
+  dom.projectDrawer().setAttribute("aria-hidden", "false");
+  document.body.classList.add("drawer-open");
+  projectFormDirty = false;
+  setTimeout(() => dom.projectName()?.focus(), 80);
+}
+
+function closeProjectDrawer({ force = false } = {}) {
+  if (!force && projectFormDirty && !confirm("表單尚未儲存，確定要關閉嗎？")) return false;
+  dom.projectDrawer()?.classList.add("hidden");
+  dom.projectDrawer()?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("drawer-open");
+  resetProjectForm();
+  return true;
 }
 
 function resetEquipmentForm() {
@@ -534,6 +614,7 @@ async function upsertProjectFromForm() {
 
   const cost = parseIntSafe(dom.projectCost().value);
   const equipmentsUsed = readEquipUsageRows();
+  const note = dom.projectNote().value.trim();
 
   if (!name) return alert("請填寫專案名稱");
   if (!startDate || !endDate) return alert("請填寫專案期間");
@@ -547,13 +628,15 @@ async function upsertProjectFromForm() {
     revenue,
     cost,
     equipmentsUsed,
+    note,
     updatedAt: serverTimestamp()
   };
 
   try {
     if (id) await updateDoc(doc(db, "projects", id), payload);
     else await addDoc(projectsCol, { ...payload, createdAt: serverTimestamp() });
-    resetProjectForm();
+    projectFormDirty = false;
+    closeProjectDrawer({ force: true });
   } catch (e) {
     console.error(e);
     alert("儲存失敗：權限不足或資料不符合 Firestore rules");
@@ -656,23 +739,130 @@ function toggleProjectDetails(projectId, forceOpen) {
   if (nextOpen) row.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
+function getSelectedStatusLabels() {
+  return PROJECT_STATUSES.filter(s => selectedProjectStatuses.has(s)).map(statusLabel);
+}
+
+function updateProjectFilterUi() {
+  const labels = getSelectedStatusLabels();
+  if (dom.projectStatusSummary()) {
+    dom.projectStatusSummary().textContent = labels.length ? `已選 ${labels.length} 項` : "全部狀態";
+  }
+
+  if (dom.projectFilterChips()) {
+    dom.projectFilterChips().innerHTML = PROJECT_STATUSES
+      .filter(s => selectedProjectStatuses.has(s))
+      .map(s => `<button type="button" data-remove-status="${escapeHtml(s)}">${escapeHtml(statusLabel(s))} <span>✕</span></button>`)
+      .join("");
+  }
+
+  const counts = Object.fromEntries(PROJECT_STATUSES.map(s => [s, 0]));
+  state.projects.forEach(p => { if (p.status in counts) counts[p.status] += 1; });
+  $all("[data-count]", dom.projectStatusOptions()).forEach(el => {
+    el.textContent = String(counts[el.dataset.count] || 0);
+  });
+
+  const hasFilters = Boolean(
+    dom.projectSearch()?.value.trim() ||
+    dom.projectDateRange()?.value !== "all" ||
+    selectedProjectStatuses.size
+  );
+  dom.projectClearFilters()?.classList.toggle("hidden", !hasFilters);
+}
+
+function getProjectDateFilterRange() {
+  const mode = dom.projectDateRange()?.value || "all";
+  if (mode === "all") return null;
+
+  const now = new Date();
+  let start;
+  let end;
+
+  if (mode === "month") {
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+    end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  } else if (mode === "next3") {
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    end = new Date(now.getFullYear(), now.getMonth() + 3, now.getDate());
+  } else {
+    start = new Date(now.getFullYear(), 0, 1);
+    end = new Date(now.getFullYear(), 11, 31);
+  }
+
+  return { start: toISODate(start), end: toISODate(end) };
+}
+
+function getFilteredSortedProjects() {
+  const keyword = (dom.projectSearch()?.value || "").trim().toLocaleLowerCase("zh-Hant");
+  const dateRange = getProjectDateFilterRange();
+
+  const list = state.projects.filter(p => {
+    if (keyword) {
+      const haystack = [p.name, p.client, p.location].join(" ").toLocaleLowerCase("zh-Hant");
+      if (!haystack.includes(keyword)) return false;
+    }
+    if (selectedProjectStatuses.size && !selectedProjectStatuses.has(p.status)) return false;
+    if (dateRange) {
+      if (!p.startDate || !p.endDate) return false;
+      if (p.endDate < dateRange.start || p.startDate > dateRange.end) return false;
+    }
+    return true;
+  });
+
+  const sortBy = dom.projectSortBy()?.value ?? "updatedDesc";
+  if (sortBy === "startAsc" || sortBy === "startDesc") {
+    const direction = sortBy === "startAsc" ? 1 : -1;
+    list.sort((a, b) => {
+      if (!a.startDate && !b.startDate) return 0;
+      if (!a.startDate) return 1;
+      if (!b.startDate) return -1;
+      return a.startDate.localeCompare(b.startDate) * direction;
+    });
+  }
+  return list;
+}
+
+function renderProjectPagination(totalItems) {
+  const host = dom.projectPagination();
+  if (!host) return;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PROJECTS_PER_PAGE));
+  projectCurrentPage = Math.min(Math.max(1, projectCurrentPage), totalPages);
+  if (totalPages <= 1) {
+    host.innerHTML = "";
+    return;
+  }
+
+  host.innerHTML = `
+    <button type="button" data-page="${projectCurrentPage - 1}" ${projectCurrentPage === 1 ? "disabled" : ""}>上一頁</button>
+    <span>第 ${projectCurrentPage} / ${totalPages} 頁</span>
+    <button type="button" data-page="${projectCurrentPage + 1}" ${projectCurrentPage === totalPages ? "disabled" : ""}>下一頁</button>
+  `;
+}
+
 function renderProjectsTable() {
   const body = dom.projectTableBody();
   if (!body) return;
 
-  const filter = dom.projectFilterStatus()?.value ?? "";
-  let list = filter ? state.projects.filter(p => p.status === filter) : [...state.projects];
+  updateProjectFilterUi();
+  const list = getFilteredSortedProjects();
+  const totalPages = Math.max(1, Math.ceil(list.length / PROJECTS_PER_PAGE));
+  projectCurrentPage = Math.min(projectCurrentPage, totalPages);
+  const startIndex = (projectCurrentPage - 1) * PROJECTS_PER_PAGE;
+  const pageList = list.slice(startIndex, startIndex + PROJECTS_PER_PAGE);
 
-  const sortBy = dom.projectSortBy()?.value ?? "updatedDesc";
-  if (sortBy === "startAsc") {
-    list.sort((a, b) =>
-      String(a.startDate || "9999-12-31").localeCompare(String(b.startDate || "9999-12-31"))
-    );
+  if (dom.projectResultCount()) {
+    const range = list.length ? `（顯示 ${startIndex + 1}–${Math.min(startIndex + PROJECTS_PER_PAGE, list.length)}）` : "";
+    dom.projectResultCount().textContent = `共 ${list.length} 個專案${range}`;
   }
-
+  renderProjectPagination(list.length);
   body.innerHTML = "";
 
-  list.forEach(p => {
+  if (!pageList.length) {
+    body.innerHTML = `<tr><td colspan="5"><div class="empty-state">找不到符合條件的專案</div></td></tr>`;
+    return;
+  }
+
+  pageList.forEach(p => {
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
     const revenueUntaxed = getRevenueUntaxed(p);
     const cost = parseIntSafe(p.cost);
@@ -689,11 +879,11 @@ function renderProjectsTable() {
     trMain.innerHTML = `
       <td>
         <div class="project-title">
-          <div class="name">${escapeHtml(p.name || "")}</div>
+          <div class="name">${escapeHtml(p.name || "")}${p.note ? '<span class="note-dot" title="有備註">備註</span>' : ""}</div>
           <div class="client">${escapeHtml(p.client || "—")}</div>
         </div>
       </td>
-      <td>${escapeHtml(period)}</td>
+      <td><div class="period">${escapeHtml(period)}</div><div class="table-sub">${escapeHtml(p.location || "—")}</div></td>
       <td><span class="badge ${badgeClass}">${escapeHtml(statusText)}</span></td>
       <td class="money">
         <div class="big">${escapeHtml(formatMoney(profit))}</div>
@@ -723,11 +913,13 @@ function renderProjectsTable() {
             </div>
             <div>
               <div class="kv"><div class="k">設備</div><div class="v">${renderEquipmentsUsedHtml(p)}</div></div>
+              <div class="kv note-kv"><div class="k">備註</div><div class="v note-text">${escapeHtml(p.note || "—")}</div></div>
             </div>
           </div>
 
           <div class="details-actions">
             <button class="btn-sm primary" type="button" data-act="edit" data-id="${escapeHtml(p.id)}" ${canUpdate() ? "" : "disabled"}>編輯</button>
+            <button class="btn-sm" type="button" data-act="duplicate" data-id="${escapeHtml(p.id)}" ${canCreate() ? "" : "disabled"}>複製專案</button>
             <button class="btn-sm" type="button" data-act="del" data-id="${escapeHtml(p.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
             <button class="btn-sm" type="button" data-act="collapse" data-id="${escapeHtml(p.id)}">收合</button>
           </div>
@@ -745,7 +937,29 @@ function renderEquipmentsTable() {
   if (!body) return;
 
   body.innerHTML = "";
-  state.equipments.forEach(e => {
+  const keyword = (dom.equipmentSearch()?.value || "").trim().toLocaleLowerCase("zh-Hant");
+  const list = state.equipments
+    .filter(e => !keyword || [e.name, e.note].join(" ").toLocaleLowerCase("zh-Hant").includes(keyword))
+    .sort((a, b) => {
+      let result;
+      if (equipmentSort.key === "qty") result = (Number(a.qty) || 0) - (Number(b.qty) || 0);
+      else result = String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant", { numeric: true, sensitivity: "base" });
+      return equipmentSort.direction === "asc" ? result : -result;
+    });
+
+  $all("[data-equipment-sort]").forEach(btn => {
+    const active = btn.dataset.equipmentSort === equipmentSort.key;
+    btn.classList.toggle("active", active);
+    const indicator = btn.querySelector("span");
+    if (indicator) indicator.textContent = active ? (equipmentSort.direction === "asc" ? "↑" : "↓") : "";
+  });
+
+  if (!list.length) {
+    body.innerHTML = `<tr><td colspan="4"><div class="empty-state">找不到符合條件的設備</div></td></tr>`;
+    return;
+  }
+
+  list.forEach(e => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(e.name)}</td>
@@ -1026,7 +1240,7 @@ function exportReportCsv() {
     "專案","客戶","地點",
     "期間","狀態",
     "報價金額","報價模式",
-    "營收(未稅)","成本","淨利"
+    "營收(未稅)","成本","淨利","備註"
   ]];
 
   list.forEach(p => {
@@ -1046,7 +1260,8 @@ function exportReportCsv() {
       mode,
       String(revenueUntaxed),
       String(cost),
-      String(profit)
+      String(profit),
+      p.note || ""
     ]);
   });
 
@@ -1150,20 +1365,85 @@ function bindEvents() {
   dom.projectQuote()?.addEventListener("change", syncRevenueFromQuoteToInput);
   dom.projectQuoteTaxMode()?.addEventListener("change", syncRevenueFromQuoteToInput);
 
-  dom.projectReset()?.addEventListener("click", () => resetProjectForm());
+  dom.projectOpenCreate()?.addEventListener("click", () => openProjectDrawer());
+  dom.projectDrawerClose()?.addEventListener("click", () => closeProjectDrawer());
+  dom.projectDrawer()?.querySelector("[data-drawer-close]")?.addEventListener("click", () => closeProjectDrawer());
+  dom.projectReset()?.addEventListener("click", () => {
+    resetProjectForm();
+    projectFormDirty = true;
+    dom.projectName()?.focus();
+  });
   dom.equipmentReset()?.addEventListener("click", () => resetEquipmentForm());
 
   dom.projectForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
     upsertProjectFromForm();
   });
+  dom.projectForm()?.addEventListener("input", () => { projectFormDirty = true; });
+  dom.projectForm()?.addEventListener("change", () => { projectFormDirty = true; });
 
-  dom.projectFilterStatus()?.addEventListener("change", renderProjectsTable);
-  dom.projectSortBy()?.addEventListener("change", renderProjectsTable);
+  dom.addEquipUsage()?.addEventListener("click", () => {
+    addEquipUsageRow();
+    projectFormDirty = true;
+  });
+  dom.equipUsageBody()?.addEventListener("click", (e) => {
+    const btn = e.target.closest('[data-act="remove-equip-row"]');
+    if (!btn) return;
+    const rows = $all(".equip-usage-row", dom.equipUsageBody());
+    if (rows.length === 1) {
+      rows[0].querySelector(".equip-name").value = "";
+      rows[0].querySelector(".equip-qty").value = "";
+    } else {
+      btn.closest(".equip-usage-row")?.remove();
+    }
+    updateEquipUsageControls();
+    projectFormDirty = true;
+  });
+
+  const resetProjectPageAndRender = () => {
+    projectCurrentPage = 1;
+    renderProjectsTable();
+  };
+  dom.projectSearch()?.addEventListener("input", resetProjectPageAndRender);
+  dom.projectDateRange()?.addEventListener("change", resetProjectPageAndRender);
+  dom.projectSortBy()?.addEventListener("change", resetProjectPageAndRender);
+  dom.projectStatusOptions()?.addEventListener("change", (e) => {
+    const input = e.target.closest('input[type="checkbox"]');
+    if (!input) return;
+    if (input.checked) selectedProjectStatuses.add(input.value);
+    else selectedProjectStatuses.delete(input.value);
+    resetProjectPageAndRender();
+  });
+  dom.projectFilterChips()?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-remove-status]");
+    if (!btn) return;
+    selectedProjectStatuses.delete(btn.dataset.removeStatus);
+    const checkbox = dom.projectStatusOptions()?.querySelector(`input[value="${CSS.escape(btn.dataset.removeStatus)}"]`);
+    if (checkbox) checkbox.checked = false;
+    resetProjectPageAndRender();
+  });
+  dom.projectClearFilters()?.addEventListener("click", () => {
+    dom.projectSearch().value = "";
+    dom.projectDateRange().value = "all";
+    selectedProjectStatuses.clear();
+    $all('input[type="checkbox"]', dom.projectStatusOptions()).forEach(input => { input.checked = false; });
+    resetProjectPageAndRender();
+  });
+  dom.projectPagination()?.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-page]");
+    if (!btn || btn.disabled) return;
+    projectCurrentPage = Number(btn.dataset.page) || 1;
+    renderProjectsTable();
+    document.querySelector("#tab-projects .project-toolbar")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 
   dom.projectTableBody()?.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-act]");
-    if (!btn) return;
+    if (!btn) {
+      const row = e.target.closest("tr.project-row[data-id]");
+      if (row) toggleProjectDetails(row.dataset.id);
+      return;
+    }
 
     const act = btn.dataset.act;
     const id = btn.dataset.id;
@@ -1174,8 +1454,12 @@ function bindEvents() {
 
     if (act === "edit") {
       const p = state.projects.find(x => x.id === id);
-      if (p) fillProjectForm(p);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      if (p) openProjectDrawer(p);
+      return;
+    }
+    if (act === "duplicate") {
+      const p = state.projects.find(x => x.id === id);
+      if (p) openProjectDrawer(p, { duplicate: true });
       return;
     }
     if (act === "del") return deleteProject(id);
@@ -1200,6 +1484,15 @@ function bindEvents() {
     } else if (act === "del-eq") {
       deleteEquipment(id);
     }
+  });
+  dom.equipmentSearch()?.addEventListener("input", renderEquipmentsTable);
+  $all("[data-equipment-sort]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.equipmentSort;
+      if (equipmentSort.key === key) equipmentSort.direction = equipmentSort.direction === "asc" ? "desc" : "asc";
+      else equipmentSort = { key, direction: key === "qty" ? "desc" : "asc" };
+      renderEquipmentsTable();
+    });
   });
 
   const cm = dom.calendarMonth();
@@ -1244,11 +1537,20 @@ function bindEvents() {
 
     closeOveruseModal();
     document.querySelector(`button.tab-button[data-tab="projects"]`)?.click();
-    fillProjectForm(p);
+    openProjectDrawer(p);
 
     setTimeout(() => {
       dom.equipUsageBody()?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 60);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !dom.projectDrawer()?.classList.contains("hidden")) closeProjectDrawer();
+  });
+  window.addEventListener("beforeunload", (e) => {
+    if (!projectFormDirty || dom.projectDrawer()?.classList.contains("hidden")) return;
+    e.preventDefault();
+    e.returnValue = "";
   });
 }
 
