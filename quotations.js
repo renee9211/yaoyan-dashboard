@@ -69,6 +69,23 @@ function numberValue(value) {
 function integerValue(value) { return Math.round(numberValue(value)); }
 function money(value) { return Math.round(numberValue(value)).toLocaleString("zh-TW"); }
 function dateText(value) { return value || "—"; }
+function safeFilenamePart(value, fallback) {
+  return String(value || fallback || "")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim() || fallback || "未命名";
+}
+function quotationFilename(q) {
+  const firstEventDate = Array.isArray(q.events)
+    ? q.events.map(event => event?.eventDate).find(Boolean)
+    : "";
+  return [
+    safeFilenamePart(q.number, "報價編號未填"),
+    safeFilenamePart(q.customerName, "客戶未填"),
+    `${safeFilenamePart(firstEventDate, "日期未填")}${safeFilenamePart(q.projectName, "活動名稱未填")}`
+  ].join("_");
+}
 function timestampText(value) {
   if (!value) return "—";
   const d = typeof value.toDate === "function" ? value.toDate() : new Date(value);
@@ -739,12 +756,9 @@ function buildA4(q) {
   const events = Array.isArray(q.events) ? q.events : [];
   const eventMap = new Map(events.map(event => [event.id, event.name]));
   const rows = Array.isArray(q.rows) ? q.rows : [];
-  let lastCategory = null;
   const lineHtml = rows.map((row, index) => {
-    const categoryRow = row.category && row.category !== lastCategory ? `<tr class="a4-category"><td colspan="9">${esc(row.category)}</td></tr>` : "";
-    lastCategory = row.category || lastCategory;
     const included = row.calcMode === "included";
-    return `${categoryRow}<tr><td>${index + 1}</td><td>${esc(row.eventId === "shared" ? "共用" : eventMap.get(row.eventId) || "—")}</td><td>${esc(row.name)}</td><td class="num">${included ? "—" : money(row.unitPrice)}</td><td class="num">${esc(row.qty)}</td><td>${esc(row.unit || "—")}</td><td class="num">${included ? "—" : esc(row.days || 1)}</td><td class="num">${included ? "—" : money(calcRowSubtotal(row))}</td><td>${esc(row.note || "")}</td></tr>`;
+    return `<tr><td>${index + 1}</td><td>${esc(row.eventId === "shared" ? "共用" : eventMap.get(row.eventId) || "—")}</td><td>${esc(row.name)}</td><td class="num">${included ? "—" : money(row.unitPrice)}</td><td class="num">${esc(row.qty)}</td><td>${esc(row.unit || "—")}</td><td class="num">${included ? "—" : esc(row.days || 1)}</td><td class="num">${included ? "—" : money(calcRowSubtotal(row))}</td><td>${esc(row.note || "")}</td></tr>`;
   }).join("");
   const showDates = events.map(event => event.eventDate).filter(Boolean).join("、") || "—";
   const setupDates = events.map(event => event.setupDate).filter(Boolean).join("、") || "—";
@@ -774,10 +788,11 @@ function buildA4(q) {
 function printPreview() {
   if (!state.previewData) return;
   const html = buildA4(state.previewData);
+  const filename = quotationFilename(state.previewData);
   const win = window.open("", "_blank");
   if (!win) return alert("瀏覽器阻擋了列印視窗，請允許此網站開啟彈出式視窗");
   win.opener = null;
-  win.document.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>${esc(state.previewData.number)}_V${esc(state.previewData.version || 1)}</title><link rel="stylesheet" href="${new URL("./styles.css", location.href).href}"><style>body{padding:0;background:#fff}.quote-a4{box-shadow:none;margin:0 auto}@page{size:A4;margin:0}</style></head><body class="quotation-print-window">${html}<script>window.onload=()=>{const logo=document.querySelector('.a4-logo');const print=()=>setTimeout(()=>window.print(),250);if(logo&&!logo.complete){logo.addEventListener('load',print,{once:true});logo.addEventListener('error',print,{once:true});}else{print();}}<\/script></body></html>`);
+  win.document.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>${esc(filename)}</title><link rel="stylesheet" href="${new URL("./styles.css", location.href).href}"><style>body{padding:0;background:#fff}.quote-a4{box-shadow:none;margin:0 auto}@page{size:A4;margin:0}</style></head><body class="quotation-print-window">${html}<script>window.onload=()=>{const logo=document.querySelector('.a4-logo');const print=()=>setTimeout(()=>window.print(),250);if(logo&&!logo.complete){logo.addEventListener('load',print,{once:true});logo.addEventListener('error',print,{once:true});}else{print();}}<\/script></body></html>`);
   win.document.close();
 }
 

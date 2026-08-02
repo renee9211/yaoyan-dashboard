@@ -1020,16 +1020,22 @@ body.drawer-open{ overflow:hidden; }
 .quote-a4 .a4-lines td:first-child,.quote-a4 .a4-lines td:nth-child(2),.quote-a4 .a4-lines td:nth-child(5),.quote-a4 .a4-lines td:nth-child(6),.quote-a4 .a4-lines td:nth-child(7){ text-align:center; }
 .quote-a4 td.num{ text-align:right; }
 .quote-a4 .a4-category td{ padding:1.3mm 2mm; background:#fff4df; color:#8a4800; font-weight:900; }
-.quote-a4 .a4-payment-grid{ display:grid; grid-template-columns:minmax(0,1.6fr) minmax(60mm,.7fr); align-items:stretch; break-inside:avoid; }
+.quote-a4 .a4-payment-grid{
+  display:grid;
+  /* Match the split between Day and Subtotal in the 192 mm detail table. */
+  grid-template-columns:140mm minmax(0,1fr);
+  align-items:stretch;
+  break-inside:avoid;
+}
 .quote-a4 .a4-terms-block{ min-height:39mm; border:1px solid #111; border-top:0; padding:0 2mm 2mm; }
 .quote-a4 .a4-section-title{ margin:0 -2mm 2mm; padding:1.5mm 2mm; border-bottom:1px solid #111; font-size:9pt; }
 .quote-a4 .a4-terms{ white-space:pre-wrap; line-height:1.35; font-size:7.5pt; }
 .quote-a4 .a4-note{ margin:1.5mm 0 0; white-space:pre-wrap; font-size:7.5pt; }
-.quote-a4 .a4-total{ width:100%; margin:0; }
-.quote-a4 .a4-total th{ width:34mm; background:#050505; color:#fff; font-weight:500; }
+.quote-a4 .a4-total{ width:100%; margin:0; table-layout:fixed; }
+.quote-a4 .a4-total th{ width:27mm; background:#050505; color:#fff; font-weight:500; }
 .quote-a4 .a4-total td{ font-size:9pt; font-variant-numeric:tabular-nums; }
 .quote-a4 .a4-total .project-price th{ background:#f59e0b; color:#111; font-size:9.5pt; font-weight:900; }
-.quote-a4 .a4-total .project-price td{ background:#fff; font-size:11pt; font-weight:1000; }
+.quote-a4 .a4-total .project-price td{ background:#fff; font-size:10pt; font-weight:1000; white-space:nowrap; }
 .quote-a4 .a4-company{ display:grid; grid-template-columns:minmax(0,1.4fr) minmax(55mm,.6fr); min-height:38mm; border:1px solid #111; border-top:0; break-inside:avoid; }
 .quote-a4 .a4-company-info{ padding:2mm; font-size:7.5pt; line-height:1.35; }
 .quote-a4 .a4-company-info > b{ display:block; margin-bottom:1.5mm; font-size:8.5pt; }
