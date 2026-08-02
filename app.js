@@ -222,6 +222,7 @@ const dom = {
 const projectsCol = collection(db, "projects");
 const equipmentCol = collection(db, "equipment");
 const paymentsCol = collection(db, "payments");
+const quotationsCol = collection(db, "quotations");
 
 /* =========================================================
    4) State
@@ -231,11 +232,13 @@ let currentRole = null;
 let unsubProjects = null;
 let unsubEquipments = null;
 let unsubPayments = null;
-let state = { projects: [], equipments: [], payments: [] };
+let unsubQuotations = null;
+let state = { projects: [], equipments: [], payments: [], quotations: [] };
 let selectedProjectStatuses = new Set();
 let projectCurrentPage = 1;
 let equipmentSort = { key: "name", direction: "asc" };
 let projectFormDirty = false;
+const openProjectIds = new Set();
 
 /* =========================================================
    5) Auth UI
@@ -750,6 +753,115 @@ function renderEquipmentsUsedHtml(p) {
   return items.join("<br>");
 }
 
+function quotationStatusLabel(status) {
+  return ({ draft: "草稿", sent: "已寄出", confirmed: "已確認", void: "已作廢" })[status] || status || "—";
+}
+
+function quotationStatusBadge(status) {
+  return ({ draft: "neutral", sent: "blue", confirmed: "green", void: "red" })[status] || "neutral";
+}
+
+function paymentTypeLabel(type) {
+  return ({ deposit: "訂金", balance: "尾款", full: "全額款", other: "其他" })[type] || "其他";
+}
+
+function paymentRecordStatus(payment) {
+  if (payment.voided) return { key: "void", label: "已作廢", badge: "red" };
+  const amount = parseIntSafe(payment.amount);
+  const received = parseIntSafe(payment.receivedAmount);
+  if (amount > 0 && received >= amount) return { key: "paid", label: "已收款", badge: "green" };
+  if (payment.requestDate && payment.expectedPaymentDate && payment.expectedPaymentDate < toISODate(new Date())) {
+    return { key: "overdue", label: "逾期未收", badge: "red" };
+  }
+  if (received > 0) return { key: "partial", label: "部分收款", badge: "blue" };
+  if (payment.requestDate) return { key: "requested", label: "已請款待收", badge: "orange" };
+  return { key: "pending", label: "待請款", badge: "neutral" };
+}
+
+function timestampValue(value) {
+  if (!value) return 0;
+  if (typeof value.toMillis === "function") return value.toMillis();
+  const date = typeof value.toDate === "function" ? value.toDate() : new Date(value);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function timestampDateText(value) {
+  if (!value) return "—";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = typeof value.toDate === "function" ? value.toDate() : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return toISODate(date);
+}
+
+function projectQuotations(projectId) {
+  return state.quotations
+    .filter(quotation => quotation.projectId === projectId)
+    .sort((a, b) => {
+      const numberCompare = String(b.number || "").localeCompare(String(a.number || ""), "zh-Hant", { numeric: true });
+      if (numberCompare) return numberCompare;
+      const versionCompare = Number(b.version || 1) - Number(a.version || 1);
+      return versionCompare || timestampValue(b.updatedAt || b.createdAt) - timestampValue(a.updatedAt || a.createdAt);
+    });
+}
+
+function projectCollectionStatus(project, paymentSummary) {
+  const rows = state.payments.filter(payment => payment.projectId === project.id && !payment.voided);
+  if (!rows.length) return { label: "尚未建立款項", badge: "neutral", sub: "可先收訂金或結案後一次請款" };
+  if (paymentSummary.received >= getProjectTotalTaxed(project) && getProjectTotalTaxed(project) > 0) {
+    return { label: "已收款", badge: "green", sub: `共 ${rows.length} 筆款項` };
+  }
+  if (rows.some(payment => paymentRecordStatus(payment).key === "overdue")) {
+    return { label: "逾期未收", badge: "red", sub: `尚未收款 ${formatMoney(paymentSummary.outstanding)}` };
+  }
+  if (paymentSummary.received > 0) {
+    return { label: "部分收款", badge: "blue", sub: `尚未收款 ${formatMoney(paymentSummary.outstanding)}` };
+  }
+  if (paymentSummary.invoiced > 0) {
+    return { label: "已請款待收", badge: "orange", sub: `已請款 ${formatMoney(paymentSummary.invoiced)}` };
+  }
+  return { label: "待請款", badge: "neutral", sub: `已排定 ${formatMoney(paymentSummary.scheduled)}` };
+}
+
+function renderProjectQuotationsHtml(projectId) {
+  const rows = projectQuotations(projectId);
+  if (!rows.length) return `<div class="project-detail-empty">尚未建立或連結報價。</div>`;
+
+  return `<div class="project-detail-table-scroll"><table class="project-detail-table quotation-history-table">
+    <thead><tr><th>報價編號</th><th>版本</th><th>狀態</th><th class="num">專案價（含稅）</th><th>更新日</th></tr></thead>
+    <tbody>${rows.map((quotation, index) => `<tr>
+      <td><b>${escapeHtml(quotation.number || "—")}</b></td>
+      <td>V${escapeHtml(quotation.version || 1)}${index === 0 ? '<span class="detail-latest-tag">最新</span>' : ""}</td>
+      <td><span class="badge ${quotationStatusBadge(quotation.status)}">${escapeHtml(quotationStatusLabel(quotation.status))}</span></td>
+      <td class="num">${escapeHtml(formatMoney(parseIntSafe(quotation.projectPriceTaxed)))}</td>
+      <td>${escapeHtml(timestampDateText(quotation.updatedAt || quotation.createdAt))}</td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
+}
+
+function renderProjectPaymentsHtml(projectId) {
+  const rows = state.payments
+    .filter(payment => payment.projectId === projectId)
+    .sort((a, b) => String(a.requestDate || a.expectedPaymentDate || "").localeCompare(String(b.requestDate || b.expectedPaymentDate || "")) || timestampValue(a.createdAt) - timestampValue(b.createdAt));
+  if (!rows.length) return `<div class="project-detail-empty">尚未建立款項。可依實際情況新增訂金、尾款或全額款。</div>`;
+
+  return `<div class="project-detail-table-scroll"><table class="project-detail-table project-payment-history-table">
+    <thead><tr><th>款項</th><th class="num">應收</th><th>請款／發票</th><th>預計收款</th><th class="num">已收／日期</th><th class="num">未收</th><th>狀態</th></tr></thead>
+    <tbody>${rows.map(payment => {
+      const status = paymentRecordStatus(payment);
+      const remaining = Math.max(0, parseIntSafe(payment.amount) - parseIntSafe(payment.receivedAmount));
+      return `<tr class="${payment.voided ? "project-payment-void" : ""}">
+        <td><b>${escapeHtml(payment.label || paymentTypeLabel(payment.paymentType))}</b><div class="table-sub">${escapeHtml(paymentTypeLabel(payment.paymentType))}</div></td>
+        <td class="num">${escapeHtml(formatMoney(parseIntSafe(payment.amount)))}</td>
+        <td>${escapeHtml(payment.requestDate || "—")}<div class="table-sub">發票：${escapeHtml(payment.invoiceNumber || "—")}${payment.invoiceDate ? `｜${escapeHtml(payment.invoiceDate)}` : ""}</div></td>
+        <td>${escapeHtml(payment.expectedPaymentDate || "—")}</td>
+        <td class="num">${escapeHtml(formatMoney(parseIntSafe(payment.receivedAmount)))}<div class="table-sub">${escapeHtml(payment.receivedDate || "—")}</div></td>
+        <td class="num">${escapeHtml(formatMoney(remaining))}</td>
+        <td><span class="badge ${status.badge}">${escapeHtml(status.label)}</span></td>
+      </tr>`;
+    }).join("")}</tbody>
+  </table></div>`;
+}
+
 function toggleProjectDetails(projectId, forceOpen) {
   const body = dom.projectTableBody();
   if (!body) return;
@@ -763,6 +875,8 @@ function toggleProjectDetails(projectId, forceOpen) {
 
   detail.style.display = nextOpen ? "" : "none";
   row.classList.toggle("is-open", nextOpen);
+  if (nextOpen) openProjectIds.add(projectId);
+  else openProjectIds.delete(projectId);
 
   if (nextOpen) row.scrollIntoView({ behavior: "smooth", block: "center" });
 }
@@ -909,8 +1023,22 @@ function renderProjectsTable() {
     const cost = parseIntSafe(p.cost);
     const profit = revenueUntaxed - cost;
     const hasConfirmedPrice = parseIntSafe(p.quote) > 0;
+    const projectTotalTaxed = getProjectTotalTaxed(p);
+    const paymentSummary = getProjectPaymentSummary(p.id, projectTotalTaxed);
+    const collectionStatus = projectCollectionStatus(p, paymentSummary);
+    const relatedQuotations = projectQuotations(p.id);
+    const latestQuotation = relatedQuotations[0] || null;
+    const confirmedQuotation = relatedQuotations.find(quotation => quotation.status === "confirmed") || null;
+    const quoteStatus = confirmedQuotation
+      ? {
+          label: "已確認",
+          badge: "green",
+          sub: `${confirmedQuotation.number || "報價"} V${confirmedQuotation.version || 1}${latestQuotation && latestQuotation.id !== confirmedQuotation.id ? `｜另有 ${quotationStatusLabel(latestQuotation.status)} V${latestQuotation.version || 1}` : ""}`
+        }
+      : latestQuotation
+        ? { label: quotationStatusLabel(latestQuotation.status), badge: quotationStatusBadge(latestQuotation.status), sub: `${latestQuotation.number || "報價"} V${latestQuotation.version || 1}` }
+        : { label: "尚未建立", badge: "neutral", sub: "尚無連結報價" };
 
-    const quoteModeLabel = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
     const badgeClass = statusToBadgeClass(p.status);
     const statusText = statusLabel(p.status);
 
@@ -941,28 +1069,71 @@ function renderProjectsTable() {
     const trDetail = document.createElement("tr");
     trDetail.className = "details-row";
     trDetail.dataset.detailsFor = p.id;
-    trDetail.style.display = "none";
+    trDetail.style.display = openProjectIds.has(p.id) ? "" : "none";
+    trMain.classList.toggle("is-open", openProjectIds.has(p.id));
 
     trDetail.innerHTML = `
       <td colspan="5">
         <div class="details-panel">
-          <div class="details-grid">
-            <div>
-              <div class="kv"><div class="k">地點</div><div class="v">${escapeHtml(p.location || "—")}</div></div>
-              <div class="kv"><div class="k">報價</div><div class="v">${hasConfirmedPrice ? `${escapeHtml(formatMoney(parseIntSafe(p.quote)))}（${escapeHtml(quoteModeLabel)}）` : '<span class="pending-value">待確認</span>'}</div></div>
-              <div class="kv"><div class="k">營收(未稅)</div><div class="v"><b>${hasConfirmedPrice ? escapeHtml(formatMoney(revenueUntaxed)) : '<span class="pending-value">待確認</span>'}</b></div></div>
-              <div class="kv"><div class="k">成本</div><div class="v">${escapeHtml(formatMoney(cost))}</div></div>
-            </div>
-            <div>
-              <div class="kv"><div class="k">設備</div><div class="v">${renderEquipmentsUsedHtml(p)}</div></div>
-              <div class="kv note-kv"><div class="k">備註</div><div class="v note-text">${escapeHtml(p.note || "—")}</div></div>
-            </div>
+          <div class="project-detail-heading">
+            <div><span>完整專案狀態</span><h3>${escapeHtml(p.name || "未命名專案")}</h3></div>
+            <span class="badge ${badgeClass}">${escapeHtml(statusText)}</span>
           </div>
+
+          <div class="project-status-cards">
+            <div class="project-status-card"><span>案況</span><b><span class="badge ${badgeClass}">${escapeHtml(statusText)}</span></b><small>${escapeHtml(p.startDate || "日期未填")}～${escapeHtml(p.endDate || "日期未填")}</small></div>
+            <div class="project-status-card"><span>報價狀態</span><b><span class="badge ${quoteStatus.badge}">${escapeHtml(quoteStatus.label)}</span></b><small>${escapeHtml(quoteStatus.sub)}</small></div>
+            <div class="project-status-card"><span>請款進度</span><b>${escapeHtml(formatMoney(paymentSummary.invoiced))}</b><small>${paymentSummary.scheduled ? `已排定 ${escapeHtml(formatMoney(paymentSummary.scheduled))}` : "尚未建立款項"}</small></div>
+            <div class="project-status-card"><span>收款狀態</span><b><span class="badge ${collectionStatus.badge}">${escapeHtml(collectionStatus.label)}</span></b><small>${escapeHtml(collectionStatus.sub)}</small></div>
+          </div>
+
+          <section class="project-detail-section">
+            <h4>基本資料</h4>
+            <div class="details-grid">
+              <div>
+                <div class="kv"><div class="k">客戶</div><div class="v">${escapeHtml(p.client || "—")}</div></div>
+                <div class="kv"><div class="k">活動日期</div><div class="v">${escapeHtml(p.startDate || "—")}～${escapeHtml(p.endDate || "—")}</div></div>
+              </div>
+              <div>
+                <div class="kv"><div class="k">地點</div><div class="v">${escapeHtml(p.location || "—")}</div></div>
+                <div class="kv"><div class="k">案況</div><div class="v">${escapeHtml(statusText)}</div></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="project-detail-section">
+            <h4>金額總覽</h4>
+            <div class="project-finance-grid">
+              <div><span>專案價（含稅）</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(projectTotalTaxed)) : '<em class="pending-value">待確認</em>'}</b></div>
+              <div><span>營收（未稅）</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(revenueUntaxed)) : '<em class="pending-value">待確認</em>'}</b></div>
+              <div><span>成本</span><b>${escapeHtml(formatMoney(cost))}</b></div>
+              <div><span>毛利</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(profit)) : '<em class="pending-value">待確認</em>'}</b></div>
+              <div><span>已請款</span><b>${escapeHtml(formatMoney(paymentSummary.invoiced))}</b></div>
+              <div><span>已收款</span><b>${escapeHtml(formatMoney(paymentSummary.received))}</b></div>
+              <div class="outstanding"><span>尚未收款</span><b>${escapeHtml(formatMoney(paymentSummary.outstanding))}</b></div>
+            </div>
+          </section>
+
+          <section class="project-detail-section">
+            <div class="project-detail-section-head"><h4>報價紀錄</h4><button class="btn-sm" type="button" data-quotation-project="${escapeHtml(p.id)}">建立／查看報價</button></div>
+            ${renderProjectQuotationsHtml(p.id)}
+          </section>
+
+          <section class="project-detail-section">
+            <div class="project-detail-section-head"><h4>請款、發票與收款</h4><button class="btn-sm" type="button" data-payment-project="${escapeHtml(p.id)}">管理款項</button></div>
+            ${renderProjectPaymentsHtml(p.id)}
+          </section>
+
+          <section class="project-detail-section project-detail-last">
+            <h4>執行資訊</h4>
+            <div class="details-grid">
+              <div><div class="kv"><div class="k">設備</div><div class="v">${renderEquipmentsUsedHtml(p)}</div></div></div>
+              <div><div class="kv note-kv"><div class="k">備註</div><div class="v note-text">${escapeHtml(p.note || "—")}</div></div></div>
+            </div>
+          </section>
 
           <div class="details-actions">
             <button class="btn-sm primary" type="button" data-act="edit" data-id="${escapeHtml(p.id)}" ${canUpdate() ? "" : "disabled"}>編輯</button>
-            <button class="btn-sm" type="button" data-quotation-project="${escapeHtml(p.id)}">建立／查看報價</button>
-            <button class="btn-sm" type="button" data-payment-project="${escapeHtml(p.id)}">請款／收款</button>
             <button class="btn-sm" type="button" data-act="duplicate" data-id="${escapeHtml(p.id)}" ${canCreate() ? "" : "disabled"}>複製專案</button>
             <button class="btn-sm" type="button" data-act="del" data-id="${escapeHtml(p.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
             <button class="btn-sm" type="button" data-act="collapse" data-id="${escapeHtml(p.id)}">收合</button>
@@ -1387,13 +1558,17 @@ function detachListeners() {
   unsubProjects && unsubProjects();
   unsubEquipments && unsubEquipments();
   unsubPayments && unsubPayments();
+  unsubQuotations && unsubQuotations();
   unsubProjects = null;
   unsubEquipments = null;
   unsubPayments = null;
+  unsubQuotations = null;
 
   state.projects = [];
   state.equipments = [];
   state.payments = [];
+  state.quotations = [];
+  openProjectIds.clear();
   renderAll();
 }
 
@@ -1423,6 +1598,15 @@ function attachRealtimeListeners() {
       renderAll();
     },
     (err) => { console.error(err); alert("讀取請款／收款失敗：請先更新 Firestore Rules"); }
+  );
+
+  unsubQuotations = onSnapshot(
+    query(quotationsCol, orderBy("updatedAt", "desc")),
+    (snap) => {
+      state.quotations = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderProjectsTable();
+    },
+    (err) => { console.error(err); alert("讀取報價狀態失敗：請確認 Firestore Rules 已包含 quotations 權限"); }
   );
 }
 

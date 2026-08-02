@@ -475,12 +475,159 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   box-shadow: 0 1px 2px rgba(0,0,0,.04);
   padding: 14px;
 }
+.project-detail-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  padding:2px 2px 14px;
+}
+.project-detail-heading > div > span{
+  display:block;
+  margin-bottom:3px;
+  color:var(--orange);
+  font-size:11px;
+  font-weight:1000;
+  letter-spacing:.08em;
+}
+.project-detail-heading h3{ margin:0; font-size:18px; }
+.project-status-cards{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin-bottom:14px;
+}
+.project-status-card{
+  min-width:0;
+  padding:12px;
+  border:1px solid var(--line2);
+  border-radius:12px;
+  background:#f9fafb;
+}
+.project-status-card > span,
+.project-finance-grid span{
+  display:block;
+  color:var(--muted);
+  font-size:11px;
+  font-weight:950;
+}
+.project-status-card > b{
+  display:block;
+  min-height:28px;
+  margin:7px 0 4px;
+  font-size:17px;
+  font-variant-numeric:tabular-nums;
+}
+.project-status-card small{
+  display:block;
+  overflow:hidden;
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.35;
+  text-overflow:ellipsis;
+}
+.project-detail-section{
+  padding:14px 2px;
+  border-top:1px solid var(--line2);
+}
+.project-detail-section h4{ margin:0 0 10px; font-size:14px; }
+.project-detail-section-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:10px;
+}
+.project-detail-section-head h4{ margin:0; }
+.project-detail-last{ padding-bottom:4px; }
+.project-finance-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(120px,1fr));
+  gap:8px;
+}
+.project-finance-grid > div{
+  padding:10px 12px;
+  border:1px solid var(--line2);
+  border-radius:11px;
+  background:#fff;
+}
+.project-finance-grid b{
+  display:block;
+  margin-top:5px;
+  font-size:16px;
+  font-variant-numeric:tabular-nums;
+}
+.project-finance-grid em{ font-style:normal; }
+.project-finance-grid .outstanding{
+  border-color:rgba(245,158,11,.26);
+  background:#fff8eb;
+}
+.project-finance-grid .outstanding b{ color:#9a4b00; }
+.project-detail-table-scroll{
+  max-width:100%;
+  overflow-x:auto;
+  border:1px solid var(--line2);
+  border-radius:11px;
+  background:#fff;
+}
+.project-detail-table{
+  width:100%;
+  min-width:700px;
+  border-collapse:separate;
+  border-spacing:0;
+  font-size:12px;
+}
+.project-detail-table th{
+  padding:9px 10px;
+  border-bottom:1px solid var(--line2);
+  background:#f9fafb;
+  color:var(--muted);
+  font-size:11px;
+  text-align:left;
+  white-space:nowrap;
+}
+.project-detail-table td{
+  padding:9px 10px;
+  border-bottom:1px solid var(--line2);
+  vertical-align:middle;
+}
+.project-detail-table tr:last-child td{ border-bottom:0; }
+.project-detail-table .num{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.quotation-history-table{ min-width:660px; }
+.project-payment-history-table{ min-width:1040px; }
+.detail-latest-tag{
+  display:inline-flex;
+  margin-left:6px;
+  padding:2px 6px;
+  border-radius:999px;
+  background:var(--orange2);
+  color:#9a4b00;
+  font-size:10px;
+  font-weight:950;
+}
+.project-detail-empty{
+  padding:14px;
+  border:1px dashed var(--line);
+  border-radius:11px;
+  background:#f9fafb;
+  color:var(--muted);
+  font-size:12px;
+}
+.project-payment-void{ opacity:.55; text-decoration:line-through; }
 .details-grid {
   display: grid;
   grid-template-columns: 1.1fr 1fr;
   gap: 12px;
 }
-@media (max-width: 900px) { .details-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) {
+  .details-grid { grid-template-columns: 1fr; }
+  .project-status-cards{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .project-finance-grid{ grid-template-columns:repeat(2,minmax(120px,1fr)); }
+}
+@media (max-width: 560px) {
+  .project-status-cards,.project-finance-grid{ grid-template-columns:1fr; }
+  .project-detail-heading,.project-detail-section-head{ align-items:flex-start; flex-direction:column; }
+}
 
 .kv {
   display: grid;
@@ -1074,7 +1221,26 @@ body.drawer-open{ overflow:hidden; }
   grid-template-columns:minmax(280px,1fr) 190px 170px;
   margin-bottom:0;
 }
-.payment-project-table{ min-width:1180px; }
+.payment-project-table{
+  min-width:1220px;
+  table-layout:fixed;
+}
+.payment-project-table col.payment-col-date{ width:178px; }
+.payment-project-table col.payment-col-total{ width:135px; }
+.payment-project-table col.payment-col-invoiced{ width:108px; }
+.payment-project-table col.payment-col-received{ width:108px; }
+.payment-project-table col.payment-col-outstanding{ width:126px; }
+.payment-project-table col.payment-col-status{ width:140px; }
+.payment-project-table col.payment-col-actions{ width:188px; }
+.payment-project-table th:nth-child(2),
+.payment-project-table td:nth-child(2),
+.payment-project-table th:nth-child(n+3):nth-child(-n+7),
+.payment-project-table td:nth-child(n+3):nth-child(-n+7){ white-space:nowrap; }
+.payment-project-table td:first-child{
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.payment-project-table td:last-child .row-actions{ flex-wrap:nowrap; }
 .report-table{ min-width:1320px; }
 .payment-project-row{ cursor:pointer; }
 .payment-project-row:hover td{ background:#fffaf2; }
