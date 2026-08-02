@@ -1056,6 +1056,80 @@ body.drawer-open{ overflow:hidden; }
 .row-actions{ display:flex; gap:6px; flex-wrap:wrap; }
 .status-select-inline{ min-width:112px; }
 
+/* =========================================================
+   Phase 2: Billing, invoices and payment collection
+========================================================= */
+.payment-kpi-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:12px;
+  margin:10px 0 14px;
+}
+.payment-outstanding-kpi{
+  border-color:rgba(245,158,11,.28);
+  background:linear-gradient(135deg,#fff,#fff8eb);
+}
+.payment-outstanding-kpi b{ color:#9a4b00; }
+.payment-toolbar{
+  grid-template-columns:minmax(280px,1fr) 190px 170px;
+  margin-bottom:0;
+}
+.payment-project-table{ min-width:1180px; }
+.report-table{ min-width:1320px; }
+.payment-project-row{ cursor:pointer; }
+.payment-project-row:hover td{ background:#fffaf2; }
+.payment-project-detail > td{
+  padding:0 12px 14px;
+  background:#f8fafc;
+}
+.payment-detail-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:13px 4px 10px;
+}
+.payment-detail-head > div{
+  display:flex;
+  align-items:baseline;
+  gap:12px;
+  flex-wrap:wrap;
+}
+.payment-detail-head span{ color:var(--muted); font-size:12px; font-weight:850; }
+.payment-detail-table{
+  min-width:1120px;
+  background:#fff;
+  border:1px solid var(--line2);
+  border-radius:12px;
+  overflow:hidden;
+}
+.payment-detail-table th{ background:#f9fafb; }
+.payment-detail-table td{ vertical-align:middle; }
+.payment-empty-detail{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:16px 4px 4px;
+  color:var(--muted);
+}
+.payment-empty-detail p{ margin:0; }
+.payment-void-row{ opacity:.55; text-decoration:line-through; }
+.payment-drawer .form-section h3{ display:flex; align-items:center; gap:8px; }
+
+@media (max-width:1000px){
+  .payment-kpi-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .payment-toolbar{ grid-template-columns:1fr 1fr; }
+  .payment-toolbar .toolbar-search{ grid-column:1 / -1; }
+}
+
+@media (max-width:640px){
+  .payment-kpi-grid{ grid-template-columns:1fr; }
+  .payment-toolbar{ grid-template-columns:1fr; }
+  .payment-toolbar .toolbar-search{ grid-column:auto; }
+  .payment-detail-head,.payment-empty-detail{ align-items:stretch; flex-direction:column; }
+}
+
 @media (max-width:900px){
   .quote-kpi-grid{ grid-template-columns:1fr; }
   .quote-toolbar{ grid-template-columns:1fr; }

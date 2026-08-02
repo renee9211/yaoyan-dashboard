@@ -11,7 +11,7 @@
   <header class="topbar">
     <div>
       <h1>曜炎創意娛樂 Dashboard</h1>
-      <p class="subtitle">專案檔期、特效設備、行事曆與月報表一站管理</p>
+      <p class="subtitle">專案、報價、請款收款、設備檔期與月報表一站管理</p>
     </div>
 
     <div class="topbar-right">
@@ -24,6 +24,7 @@
     <nav class="tabs">
       <button class="tab-button active" data-tab="projects">專案管理</button>
       <button class="tab-button" data-tab="quotations">報價管理</button>
+      <button class="tab-button" data-tab="payments">請款／收款</button>
       <button class="tab-button" data-tab="calendar">行事曆</button>
       <button class="tab-button" data-tab="equipments">設備清單</button>
       <button class="tab-button" data-tab="report">月報表</button>
@@ -61,7 +62,7 @@
           <summary><span>狀態</span><b id="projectStatusSummary">全部狀態</b></summary>
           <div class="filter-menu-pop" id="projectStatusOptions">
             <label><input type="checkbox" value="planning" /> <span>規劃中</span><small data-count="planning">0</small></label>
-            <label><input type="checkbox" value="confirmed" /> <span>已請款</span><small data-count="confirmed">0</small></label>
+            <label><input type="checkbox" value="confirmed" /> <span>已成案</span><small data-count="confirmed">0</small></label>
             <label><input type="checkbox" value="executing" /> <span>執行中</span><small data-count="executing">0</small></label>
             <label><input type="checkbox" value="closed" /> <span>已結案</span><small data-count="closed">0</small></label>
             <label><input type="checkbox" value="lost" /> <span>流標 / 未成案</span><small data-count="lost">0</small></label>
@@ -102,6 +103,41 @@
           </table>
         </div>
         <div id="projectPagination" class="pagination"></div>
+      </div>
+    </section>
+
+    <!-- ===================== 請款／收款管理 ===================== -->
+    <section id="tab-payments" class="tab-panel">
+      <div class="panel-head">
+        <div>
+          <h2>請款／收款管理</h2>
+          <p class="hint">直接串接既有專案；同一專案可建立訂金、尾款、全額款或其他多筆款項。</p>
+        </div>
+        <button id="paymentOpenCreate" class="btn primary" type="button">＋ 新增款項</button>
+      </div>
+
+      <div class="payment-kpi-grid">
+        <div class="mini-kpi"><span>已確認專案總額</span><b id="paymentProjectTotal">0</b></div>
+        <div class="mini-kpi"><span>已請款</span><b id="paymentInvoicedTotal">0</b></div>
+        <div class="mini-kpi"><span>已收款</span><b id="paymentReceivedTotal">0</b></div>
+        <div class="mini-kpi payment-outstanding-kpi"><span>尚未收款</span><b id="paymentOutstandingTotal">0</b></div>
+      </div>
+
+      <div class="card project-toolbar payment-toolbar">
+        <label class="toolbar-search"><span class="sr-only">搜尋專案或客戶</span><input id="paymentSearch" class="input" type="search" placeholder="搜尋專案、客戶、發票號碼" /></label>
+        <label class="field-inline"><span>收款狀態</span><select id="paymentStatusFilter" class="select"><option value="all">全部狀態</option><option value="pending">待請款</option><option value="requested">已請款待收</option><option value="partial">部分收款</option><option value="paid">已收款</option><option value="overdue">逾期未收</option><option value="pricePending">總價待確認</option></select></label>
+        <label class="field-inline"><span>案況</span><select id="paymentProjectStatusFilter" class="select"><option value="all">全部案況</option><option value="planning">規劃中</option><option value="confirmed">已成案</option><option value="executing">執行中</option><option value="closed">已結案</option></select></label>
+      </div>
+
+      <div class="list-meta"><span id="paymentResultCount">共 0 個專案</span></div>
+      <div class="card table-card payment-table-card">
+        <div class="table-scroll">
+          <table class="table payment-project-table">
+            <thead><tr><th>專案／客戶</th><th>活動日期／案況</th><th class="num">專案價（含稅）</th><th class="num">已請款</th><th class="num">已收款</th><th class="num">尚未收款</th><th>收款狀態</th><th>操作</th></tr></thead>
+            <tbody id="paymentProjectTableBody"></tbody>
+          </table>
+        </div>
+        <div id="paymentPagination" class="pagination"></div>
       </div>
     </section>
 
@@ -245,17 +281,18 @@
           <div class="kpi-value" id="kpiMonthRevenue">0</div>
           <div class="kpi-sub">
             <span class="kpi-dot">本月淨利：<span id="kpiMonthProfit">0</span></span>
+            <span class="kpi-dot">已結案營收：<span id="kpiClosedRevenue">0</span></span>
           </div>
         </div>
 
         <div class="kpi-card c1">
-          <div class="kpi-label">已請款金額（報價）</div>
+          <div class="kpi-label">本月已請款（含稅）</div>
           <div class="kpi-value" id="kpiConfirmedQuote">0</div>
         </div>
 
         <div class="kpi-card c2">
-          <div class="kpi-label">已結案金額（營收未稅）</div>
-          <div class="kpi-value" id="kpiClosedRevenue">0</div>
+          <div class="kpi-label">本月已收款（含稅）</div>
+          <div class="kpi-value" id="kpiReceivedAmount">0</div>
         </div>
 
         <div class="kpi-card c3">
@@ -265,7 +302,8 @@
       </div>
 
       <div class="card table-card">
-        <table class="table">
+        <div class="table-scroll">
+        <table class="table report-table">
           <thead>
             <tr>
               <th>專案</th>
@@ -275,6 +313,9 @@
               <th>狀態</th>
               <th class="num">報價</th>
               <th>模式</th>
+              <th class="num">已請款</th>
+              <th class="num">已收款</th>
+              <th class="num">未收款</th>
               <th class="num">營收(未稅)</th>
               <th class="num">成本</th>
               <th class="num">淨利</th>
@@ -284,12 +325,16 @@
           <tfoot>
             <tr>
               <td colspan="7" style="text-align:right; font-weight:950;">合計</td>
+              <td class="num" id="reportTotalInvoiced"></td>
+              <td class="num" id="reportTotalReceived"></td>
+              <td class="num" id="reportTotalOutstanding"></td>
               <td class="num" id="reportTotalRevenue"></td>
               <td class="num" id="reportTotalCost"></td>
               <td class="num" id="reportTotalProfit"></td>
             </tr>
           </tfoot>
         </table>
+        </div>
       </div>
     </section>
   </main>
@@ -317,7 +362,7 @@
               <label class="field"><span>地點</span><input id="projectLocation" class="input" placeholder="例如：台北小巨蛋" /></label>
               <label class="field"><span>開始日期 *</span><input id="projectStart" class="input" type="date" /></label>
               <label class="field"><span>結束日期 *</span><input id="projectEnd" class="input" type="date" /></label>
-              <label class="field field-full"><span>狀態</span><select id="projectStatus" class="select"><option value="planning">規劃中</option><option value="confirmed">已請款</option><option value="executing">執行中</option><option value="closed">已結案</option><option value="lost">流標 / 未成案</option></select></label>
+              <label class="field field-full"><span>狀態</span><select id="projectStatus" class="select"><option value="planning">規劃中</option><option value="confirmed">已成案</option><option value="executing">執行中</option><option value="closed">已結案</option><option value="lost">流標 / 未成案</option></select></label>
             </div>
           </section>
 
@@ -401,6 +446,40 @@
     </aside>
   </div>
 
+  <!-- 請款／收款 Drawer -->
+  <div id="paymentDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-payment-close aria-label="關閉款項表單"></button>
+    <aside class="drawer-panel narrow payment-drawer" role="dialog" aria-modal="true" aria-labelledby="paymentDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">請款／收款</div><h2 id="paymentDrawerTitle">新增款項</h2></div><button id="paymentDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="paymentForm" class="drawer-form">
+        <input id="paymentId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section"><h3>專案與款項</h3><div class="form-grid">
+            <label class="field field-full"><span>連結專案 *</span><select id="paymentProjectId" class="select" required><option value="">請選擇專案</option></select><small id="paymentProjectHint" class="field-help">可選擇既有專案，包括活動前需先收訂金的案子。</small></label>
+            <label class="field"><span>款項類型</span><select id="paymentType" class="select"><option value="deposit">訂金</option><option value="balance">尾款</option><option value="full">全額款</option><option value="other">其他</option></select></label>
+            <label class="field"><span>本筆應收金額（含稅）*</span><input id="paymentAmount" class="input" inputmode="numeric" required /><small id="paymentRemainingHint" class="field-help"></small></label>
+            <label class="field field-full"><span>款項名稱</span><input id="paymentLabel" class="input" placeholder="例如：第一期訂金 30%" /></label>
+          </div></section>
+
+          <section class="form-section"><h3>請款與發票</h3><div class="form-grid">
+            <label class="field"><span>請款日</span><input id="paymentRequestDate" class="input" type="date" /><small class="field-help">填寫後即計入「已請款」。</small></label>
+            <label class="field"><span>發票日期</span><input id="paymentInvoiceDate" class="input" type="date" /></label>
+            <label class="field"><span>發票號碼</span><input id="paymentInvoiceNumber" class="input" /></label>
+            <label class="field"><span>預計收款日</span><input id="paymentExpectedDate" class="input" type="date" /></label>
+            <label class="field field-full"><span>付款條件</span><input id="paymentTerms" class="input" placeholder="例如：月結 60 天" /><small class="field-help">若客戶資料有付款條件，選擇專案後會自動帶入並試算預計收款日，仍可手動修改。</small></label>
+          </div></section>
+
+          <section class="form-section"><h3>實際收款</h3><div class="form-grid">
+            <label class="field"><span>已收金額（含稅）</span><input id="paymentReceivedAmount" class="input" inputmode="numeric" placeholder="尚未收到可留白" /></label>
+            <label class="field"><span>實際收款日</span><input id="paymentReceivedDate" class="input" type="date" /></label>
+            <label class="field field-full"><span>備註</span><textarea id="paymentNote" class="textarea" rows="4" placeholder="可記錄匯款資訊、催款情況或其他補充"></textarea></label>
+          </div></section>
+        </div>
+        <div class="drawer-actions"><button class="btn ghost" type="button" data-payment-close>取消</button><button class="btn primary" type="submit">儲存款項</button></div>
+      </form>
+    </aside>
+  </div>
+
   <!-- 報價 Drawer -->
   <div id="quotationDrawer" class="drawer hidden" aria-hidden="true">
     <button class="drawer-backdrop" type="button" data-quotation-close aria-label="關閉報價表單"></button>
@@ -453,5 +532,6 @@
 
   <script type="module" src="./app.js"></script>
   <script type="module" src="./quotations.js"></script>
+  <script type="module" src="./payments.js"></script>
 </body>
 </html>

@@ -36,7 +36,7 @@ function toISODate(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${p
 function statusLabel(v) {
   const map = {
     planning: "規劃中",
-    confirmed: "已請款",
+    confirmed: "已成案",
     executing: "執行中",
     closed: "已結案",
     lost: "流標 / 未成案"
@@ -84,6 +84,28 @@ function getRevenueUntaxed(p) {
   const mode = getTaxModeFromProject(p);
   if (quote > 0) return (mode === "taxed") ? toUntaxedFromTaxed(quote) : quote;
   return parseIntSafe(p?.revenue);
+}
+
+function getProjectTotalTaxed(p) {
+  const quote = parseIntSafe(p?.quote);
+  if (!quote) return 0;
+  return getTaxModeFromProject(p) === "taxed" ? quote : Math.round(quote * (1 + TAX_RATE));
+}
+
+function getProjectPaymentSummary(projectId, projectTotalTaxed = 0) {
+  const rows = state.payments.filter(payment => payment.projectId === projectId && !payment.voided);
+  const scheduled = rows.reduce((sum, payment) => sum + parseIntSafe(payment.amount), 0);
+  const invoiced = rows.filter(payment => payment.requestDate).reduce((sum, payment) => sum + parseIntSafe(payment.amount), 0);
+  const received = rows.reduce((sum, payment) => sum + parseIntSafe(payment.receivedAmount), 0);
+  return {
+    scheduled,
+    invoiced,
+    received,
+    // 專案總價未定時，仍計入已請款未收的已知款項（例如活動前訂金）。
+    outstanding: projectTotalTaxed
+      ? Math.max(0, projectTotalTaxed - received)
+      : Math.max(0, invoiced - received)
+  };
 }
 
 function calcProfit(p) {
@@ -176,11 +198,15 @@ const dom = {
   reportTotalRevenue: () => $("#reportTotalRevenue"),
   reportTotalCost: () => $("#reportTotalCost"),
   reportTotalProfit: () => $("#reportTotalProfit"),
+  reportTotalInvoiced: () => $("#reportTotalInvoiced"),
+  reportTotalReceived: () => $("#reportTotalReceived"),
+  reportTotalOutstanding: () => $("#reportTotalOutstanding"),
 
   // KPI (左大右小)
   kpiMonthRevenue: () => $("#kpiMonthRevenue"),
   kpiMonthProfit: () => $("#kpiMonthProfit"),
   kpiConfirmedQuote: () => $("#kpiConfirmedQuote"),
+  kpiReceivedAmount: () => $("#kpiReceivedAmount"),
   kpiClosedRevenue: () => $("#kpiClosedRevenue"),
   kpiMonthProjects: () => $("#kpiMonthProjects"),
 
@@ -195,6 +221,7 @@ const dom = {
 ========================================================= */
 const projectsCol = collection(db, "projects");
 const equipmentCol = collection(db, "equipment");
+const paymentsCol = collection(db, "payments");
 
 /* =========================================================
    4) State
@@ -203,7 +230,8 @@ let currentUser = null;
 let currentRole = null;
 let unsubProjects = null;
 let unsubEquipments = null;
-let state = { projects: [], equipments: [] };
+let unsubPayments = null;
+let state = { projects: [], equipments: [], payments: [] };
 let selectedProjectStatuses = new Set();
 let projectCurrentPage = 1;
 let equipmentSort = { key: "name", direction: "asc" };
@@ -934,6 +962,7 @@ function renderProjectsTable() {
           <div class="details-actions">
             <button class="btn-sm primary" type="button" data-act="edit" data-id="${escapeHtml(p.id)}" ${canUpdate() ? "" : "disabled"}>編輯</button>
             <button class="btn-sm" type="button" data-quotation-project="${escapeHtml(p.id)}">建立／查看報價</button>
+            <button class="btn-sm" type="button" data-payment-project="${escapeHtml(p.id)}">請款／收款</button>
             <button class="btn-sm" type="button" data-act="duplicate" data-id="${escapeHtml(p.id)}" ${canCreate() ? "" : "disabled"}>複製專案</button>
             <button class="btn-sm" type="button" data-act="del" data-id="${escapeHtml(p.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
             <button class="btn-sm" type="button" data-act="collapse" data-id="${escapeHtml(p.id)}">收合</button>
@@ -1197,11 +1226,13 @@ function renderReport() {
   body.innerHTML = "";
 
   let totalR = 0, totalC = 0, totalP = 0;
-  let confirmedQuote = 0;
+  let totalInvoiced = 0, totalReceived = 0, totalOutstanding = 0;
   let closedRevenue = 0;
 
   list.forEach(p => {
     const revenueUntaxed = getRevenueUntaxed(p);
+    const projectTotalTaxed = getProjectTotalTaxed(p);
+    const paymentSummary = getProjectPaymentSummary(p.id, projectTotalTaxed);
     const cost = parseIntSafe(p.cost);
     const profit = revenueUntaxed - cost;
 
@@ -1209,8 +1240,10 @@ function renderReport() {
     totalC += cost;
     totalP += profit;
 
-    if (p.status === "confirmed") confirmedQuote += parseIntSafe(p.quote);
     if (p.status === "closed") closedRevenue += revenueUntaxed;
+    totalInvoiced += paymentSummary.invoiced;
+    totalReceived += paymentSummary.received;
+    totalOutstanding += paymentSummary.outstanding;
 
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
     const quoteModeLabel = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
@@ -1224,6 +1257,11 @@ function renderReport() {
       <td>${escapeHtml(statusLabel(p.status))}</td>
       <td class="num">${escapeHtml(formatMoney(p.quote || 0))}</td>
       <td>${escapeHtml(quoteModeLabel)}</td>
+      <td class="num">${escapeHtml(formatMoney(paymentSummary.invoiced))}</td>
+      <td class="num">${escapeHtml(formatMoney(paymentSummary.received))}</td>
+      <td class="num">${projectTotalTaxed
+        ? escapeHtml(formatMoney(paymentSummary.outstanding))
+        : `${escapeHtml(formatMoney(paymentSummary.outstanding))}<div class="table-sub">總價待確認</div>`}</td>
       <td class="num">${escapeHtml(formatMoney(revenueUntaxed || 0))}</td>
       <td class="num">${escapeHtml(formatMoney(cost || 0))}</td>
       <td class="num">${escapeHtml(formatMoney(profit))}</td>
@@ -1235,11 +1273,23 @@ function renderReport() {
   dom.reportTotalRevenue().textContent = formatMoney(totalR);
   dom.reportTotalCost().textContent = formatMoney(totalC);
   dom.reportTotalProfit().textContent = formatMoney(totalP);
+  dom.reportTotalInvoiced() && (dom.reportTotalInvoiced().textContent = formatMoney(totalInvoiced));
+  dom.reportTotalReceived() && (dom.reportTotalReceived().textContent = formatMoney(totalReceived));
+  dom.reportTotalOutstanding() && (dom.reportTotalOutstanding().textContent = formatMoney(totalOutstanding));
+
+  const monthRange = getMonthRange(mv);
+  const monthlyInvoiced = state.payments
+    .filter(payment => !payment.voided && payment.requestDate && payment.requestDate >= monthRange.start && payment.requestDate <= monthRange.end)
+    .reduce((sum, payment) => sum + parseIntSafe(payment.amount), 0);
+  const monthlyReceived = state.payments
+    .filter(payment => !payment.voided && payment.receivedDate && payment.receivedDate >= monthRange.start && payment.receivedDate <= monthRange.end)
+    .reduce((sum, payment) => sum + parseIntSafe(payment.receivedAmount), 0);
 
   // KPI（左大右小）
   dom.kpiMonthRevenue() && (dom.kpiMonthRevenue().textContent = formatMoney(totalR));
   dom.kpiMonthProfit() && (dom.kpiMonthProfit().textContent = formatMoney(totalP));
-  dom.kpiConfirmedQuote() && (dom.kpiConfirmedQuote().textContent = formatMoney(confirmedQuote));
+  dom.kpiConfirmedQuote() && (dom.kpiConfirmedQuote().textContent = formatMoney(monthlyInvoiced));
+  dom.kpiReceivedAmount() && (dom.kpiReceivedAmount().textContent = formatMoney(monthlyReceived));
   dom.kpiClosedRevenue() && (dom.kpiClosedRevenue().textContent = formatMoney(closedRevenue));
   dom.kpiMonthProjects() && (dom.kpiMonthProjects().textContent = String(list.length));
 }
@@ -1255,6 +1305,7 @@ function exportReportCsv() {
     "專案","客戶","地點",
     "期間","狀態",
     "報價金額","報價模式",
+    "已請款(含稅)","已收款(含稅)","未收款(含稅)",
     "營收(未稅)","成本","淨利","備註"
   ]];
 
@@ -1264,6 +1315,8 @@ function exportReportCsv() {
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
     const cost = parseIntSafe(p.cost);
     const profit = revenueUntaxed - cost;
+    const projectTotalTaxed = getProjectTotalTaxed(p);
+    const paymentSummary = getProjectPaymentSummary(p.id, projectTotalTaxed);
 
     rows.push([
       p.name || "",
@@ -1273,6 +1326,11 @@ function exportReportCsv() {
       statusLabel(p.status),
       String(parseIntSafe(p.quote)),
       mode,
+      String(paymentSummary.invoiced),
+      String(paymentSummary.received),
+      projectTotalTaxed
+        ? String(paymentSummary.outstanding)
+        : `${paymentSummary.outstanding}（專案總價待確認）`,
       String(revenueUntaxed),
       String(cost),
       String(profit),
@@ -1328,11 +1386,14 @@ function renderToday() {
 function detachListeners() {
   unsubProjects && unsubProjects();
   unsubEquipments && unsubEquipments();
+  unsubPayments && unsubPayments();
   unsubProjects = null;
   unsubEquipments = null;
+  unsubPayments = null;
 
   state.projects = [];
   state.equipments = [];
+  state.payments = [];
   renderAll();
 }
 
@@ -1353,6 +1414,15 @@ function attachRealtimeListeners() {
       renderAll();
     },
     (err) => { console.error(err); alert("讀取設備失敗：請確認 Firestore 權限與登入狀態"); }
+  );
+
+  unsubPayments = onSnapshot(
+    query(paymentsCol, orderBy("updatedAt", "desc")),
+    (snap) => {
+      state.payments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderAll();
+    },
+    (err) => { console.error(err); alert("讀取請款／收款失敗：請先更新 Firestore Rules"); }
   );
 }
 
