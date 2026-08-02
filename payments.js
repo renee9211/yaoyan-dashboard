@@ -1,5 +1,6 @@
 // Phase 2 payment module: project-linked billing, invoices and collections.
-import { db, watchAuth, getUserRole, ensureUserDoc } from "./firebase.js";
+import { db, watchAuth, getUserAccess, hasPermission, ensureUserDoc, defaultPermissionsForRole } from "./firebase.js";
+import { logAction } from "./audit.js";
 import {
   collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot,
   query, orderBy, serverTimestamp
@@ -24,6 +25,7 @@ const collections = {
 const state = {
   user: null,
   role: null,
+  access: null,
   projects: [],
   customers: [],
   payments: [],
@@ -56,7 +58,7 @@ function formatMoneyInput(input) {
 }
 
 function canEdit() {
-  return state.role === "admin" || state.role === "editor";
+  return hasPermission(state.access, "managePayments");
 }
 
 function canDelete() {
@@ -347,12 +349,22 @@ async function savePayment() {
   };
 
   try {
+    const existing = id ? state.payments.find(payment => payment.id === id) : null;
+    let targetId = id;
     if (id) {
       await updateDoc(doc(db, "payments", id), payload);
     } else {
       const ref = doc(collections.payments);
+      targetId = ref.id;
       await setDoc(ref, { ...payload, createdAt: serverTimestamp(), createdBy: state.user.uid });
     }
+    const receivedNow = payload.receivedAmount > integerValue(existing?.receivedAmount);
+    await logAction({
+      action: receivedNow ? "receive" : (id ? "update" : "create"),
+      module: "payments", targetType: "payment", targetId,
+      targetName: `${project.client || ""}｜${project.name || ""}`,
+      summary: `${payload.label}｜應收 ${money(payload.amount)}${payload.receivedAmount ? `｜已收 ${money(payload.receivedAmount)}` : ""}`
+    });
     closeDrawer();
   } catch (error) {
     console.error(error);
@@ -476,6 +488,7 @@ async function voidPayment(payment) {
   if (!canEdit() || !payment || payment.voided) return;
   if (!confirm(`確定作廢「${payment.label || paymentTypeLabel(payment.paymentType)}」？款項會保留供日後查核，但不再計入統計。`)) return;
   await updateDoc(doc(db, "payments", payment.id), { voided: true, voidedAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+  await logAction({ action: "void", module: "payments", targetType: "payment", targetId: payment.id, targetName: `${payment.customerName || ""}｜${payment.projectName || ""}`, summary: `${payment.label || paymentTypeLabel(payment.paymentType)}｜${money(payment.amount)} 元` });
 }
 
 function listen(name, collectionRef, target) {
@@ -551,7 +564,11 @@ function bindEvents() {
     if (edit && payment) return openPayment(payment);
     if (receive && payment) return openPayment(payment, { receive: true });
     if (voidButton && payment) return voidPayment(payment);
-    if (del && payment && canDelete() && confirm("確定永久刪除這筆款項？若只是取消請款，建議使用『作廢』保留紀錄。")) return deleteDoc(doc(db, "payments", payment.id));
+    if (del && payment && canDelete() && confirm("確定永久刪除這筆款項？若只是取消請款，建議使用『作廢』保留紀錄。")) {
+      await deleteDoc(doc(db, "payments", payment.id));
+      await logAction({ action: "delete", module: "payments", targetType: "payment", targetId: payment.id, targetName: `${payment.customerName || ""}｜${payment.projectName || ""}`, summary: `${payment.label || paymentTypeLabel(payment.paymentType)}｜${money(payment.amount)} 元` });
+      return;
+    }
   });
 
   document.addEventListener("click", event => {
@@ -579,13 +596,16 @@ function init() {
     detach();
     state.user = user;
     state.role = null;
+    state.access = null;
     if (!user) return renderPayments();
     try {
       await ensureUserDoc(user);
-      state.role = await getUserRole(user);
+      state.access = await getUserAccess(user);
+      state.role = state.access.role;
     } catch (error) {
       console.error(error);
       state.role = "viewer";
+      state.access = { role: "viewer", permissions: defaultPermissionsForRole("viewer") };
     }
     attach();
   });

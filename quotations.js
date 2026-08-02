@@ -1,5 +1,6 @@
 // Phase 1 quotation module: customers, quotation catalog, versioned quotations and A4 output.
-import { db, watchAuth, getUserRole, ensureUserDoc } from "./firebase.js";
+import { db, watchAuth, getUserAccess, hasPermission, ensureUserDoc, defaultPermissionsForRole } from "./firebase.js";
+import { logAction } from "./audit.js";
 import {
   collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot,
   query, orderBy, serverTimestamp, writeBatch
@@ -37,6 +38,7 @@ const collections = {
 const state = {
   user: null,
   role: null,
+  access: null,
   customers: [],
   quotationItems: [],
   quotations: [],
@@ -93,7 +95,11 @@ function timestampText(value) {
   return new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 }
 
-function canEdit() { return state.role === "admin" || state.role === "editor"; }
+function canEdit() { return hasPermission(state.access, "manageQuotations"); }
+function canManageCustomers() { return hasPermission(state.access, "manageCustomers"); }
+function canManageCatalog() { return hasPermission(state.access, "manageCatalog"); }
+function canCreateProject() { return hasPermission(state.access, "createProjects"); }
+function canEditProject() { return hasPermission(state.access, "editProjects"); }
 function canDelete() { return state.role === "admin"; }
 
 function statusLabel(status) {
@@ -152,11 +158,16 @@ function closeDrawer(id) {
 }
 
 function setMutationButtons() {
-  ["#quotationOpenCreate", "#customerOpenCreate", "#quoteItemOpenCreate"].forEach(selector => {
+  const settings = [
+    ["#quotationOpenCreate", canEdit(), "目前沒有管理報價的權限"],
+    ["#customerOpenCreate", canManageCustomers(), "目前沒有管理客戶的權限"],
+    ["#quoteItemOpenCreate", canManageCatalog(), "目前沒有管理常用報價項目的權限"]
+  ];
+  settings.forEach(([selector, allowed, message]) => {
     const button = $(selector);
     if (!button) return;
-    button.disabled = !canEdit();
-    button.title = canEdit() ? "" : "viewer 僅能查看及下載";
+    button.disabled = !allowed;
+    button.title = allowed ? "" : message;
   });
 }
 
@@ -177,13 +188,13 @@ function resetCustomerForm(customer = null) {
 }
 
 function openCustomer(customer = null) {
-  if (!canEdit()) return alert("viewer 僅能查看客戶資料");
+  if (!canManageCustomers()) return alert("你目前沒有管理客戶資料的權限");
   resetCustomerForm(customer);
   openDrawer("#customerDrawer");
 }
 
 async function saveCustomer() {
-  if (!canEdit()) return alert("需要 admin 或 editor 權限");
+  if (!canManageCustomers()) return alert("你目前沒有管理客戶資料的權限");
   const id = $("#customerId").value;
   const payload = {
     name: $("#customerName").value.trim(),
@@ -201,11 +212,14 @@ async function saveCustomer() {
   };
   if (!payload.name) return alert("請填寫客戶／公司名稱");
   try {
+    let targetId = id;
     if (id) await updateDoc(doc(db, "customers", id), payload);
     else {
       const ref = doc(collections.customers);
+      targetId = ref.id;
       await setDoc(ref, { ...payload, createdAt: serverTimestamp(), createdBy: state.user?.uid || "" });
     }
+    await logAction({ action: id ? "update" : "create", module: "customers", targetType: "customer", targetId, targetName: payload.name, summary: payload.contactName ? `主要窗口：${payload.contactName}` : "更新客戶資料" });
     closeDrawer("#customerDrawer");
   } catch (error) {
     console.error(error);
@@ -226,7 +240,7 @@ function renderCustomers() {
       <td>${esc(customer.contactName || "—")}<div class="table-sub">${esc(customer.contactTitle || "")}</div></td>
       <td>${esc(customer.paymentTerms || "—")}</td>
       <td>${esc(customer.phone || "—")}<div class="table-sub">${esc(customer.email || "")}</div></td>
-      <td><div class="row-actions"><button class="btn ghost small" type="button" data-customer-edit="${esc(customer.id)}" ${canEdit() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-customer-delete="${esc(customer.id)}" ${canDelete() ? "" : "disabled"}>刪除</button></div></td>
+      <td><div class="row-actions"><button class="btn ghost small" type="button" data-customer-edit="${esc(customer.id)}" ${canManageCustomers() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-customer-delete="${esc(customer.id)}" ${canDelete() ? "" : "disabled"}>刪除</button></div></td>
     </tr>`).join("") : `<tr><td colspan="6"><div class="empty-state">尚無客戶資料</div></td></tr>`;
   refreshCustomerOptions();
 }
@@ -255,13 +269,13 @@ function resetQuoteItemForm(item = null) {
 }
 
 function openQuoteItem(item = null) {
-  if (!canEdit()) return alert("viewer 僅能查看常用報價項目");
+  if (!canManageCatalog()) return alert("你目前沒有管理常用報價項目的權限");
   resetQuoteItemForm(item);
   openDrawer("#quoteItemDrawer");
 }
 
 async function saveQuoteItem() {
-  if (!canEdit()) return alert("需要 admin 或 editor 權限");
+  if (!canManageCatalog()) return alert("你目前沒有管理常用報價項目的權限");
   const id = $("#quoteItemId").value;
   const equipmentId = $("#quoteItemEquipmentId").value;
   const equipment = state.equipment.find(item => item.id === equipmentId);
@@ -280,11 +294,14 @@ async function saveQuoteItem() {
   };
   if (!payload.name) return alert("請填寫項目名稱");
   try {
+    let targetId = id;
     if (id) await updateDoc(doc(db, "quotationItems", id), payload);
     else {
       const ref = doc(collections.quotationItems);
+      targetId = ref.id;
       await setDoc(ref, { ...payload, createdAt: serverTimestamp(), createdBy: state.user?.uid || "" });
     }
+    await logAction({ action: id ? "update" : "create", module: "catalog", targetType: "quotationItem", targetId, targetName: payload.name, summary: `${payload.category || "未分類"}｜${money(payload.unitPrice)} 元／${payload.unit || "單位未填"}` });
     closeDrawer("#quoteItemDrawer");
   } catch (error) {
     console.error(error);
@@ -299,7 +316,7 @@ function renderQuoteItems() {
   const list = state.quotationItems.filter(item => !keyword || [item.category, item.name, item.unit, item.equipmentName]
     .join(" ").toLocaleLowerCase("zh-Hant").includes(keyword));
   body.innerHTML = list.length ? list.map(item => `
-    <tr><td>${esc(item.category || "未分類")}</td><td><b>${esc(item.name)}</b>${item.note ? `<div class="table-sub">${esc(item.note)}</div>` : ""}</td><td class="num">${item.calcMode === "included" ? "—" : money(item.unitPrice)}</td><td>${esc(item.unit || "—")}</td><td>${esc(calcModeLabel(item.calcMode, item.continuationRate))}</td><td>${esc(item.equipmentName || "—")}</td><td><div class="row-actions"><button class="btn ghost small" type="button" data-item-edit="${esc(item.id)}" ${canEdit() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-item-delete="${esc(item.id)}" ${canDelete() ? "" : "disabled"}>刪除</button></div></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty-state">尚無常用報價項目</div></td></tr>`;
+    <tr><td>${esc(item.category || "未分類")}</td><td><b>${esc(item.name)}</b>${item.note ? `<div class="table-sub">${esc(item.note)}</div>` : ""}</td><td class="num">${item.calcMode === "included" ? "—" : money(item.unitPrice)}</td><td>${esc(item.unit || "—")}</td><td>${esc(calcModeLabel(item.calcMode, item.continuationRate))}</td><td>${esc(item.equipmentName || "—")}</td><td><div class="row-actions"><button class="btn ghost small" type="button" data-item-edit="${esc(item.id)}" ${canManageCatalog() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-item-delete="${esc(item.id)}" ${canDelete() ? "" : "disabled"}>刪除</button></div></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty-state">尚無常用報價項目</div></td></tr>`;
   refreshCatalogPicker();
 }
 
@@ -560,6 +577,7 @@ async function saveQuotation() {
       const seriesId = payload.seriesId || ref.id;
       await setDoc(ref, { ...payload, seriesId, createdAt: serverTimestamp(), createdBy: state.user.uid, updatedAt: serverTimestamp(), updatedBy: state.user.uid });
     }
+    await logAction({ action: id ? "update" : "create", module: "quotations", targetType: "quotation", targetId: savedId, targetName: `${payload.number} / V${payload.version}`, summary: `${payload.customerName}｜${payload.projectName}｜專案價 ${money(payload.projectPriceTaxed)} 元｜${statusLabel(payload.status)}` });
     closeDrawer("#quotationDrawer");
     if (payload.status === "confirmed") await syncConfirmedQuotationToProject(payload, savedId);
   } catch (error) {
@@ -582,6 +600,7 @@ async function syncConfirmedQuotationToProject(quotation, quotationId) {
 
 async function writeBackProject(quotation, quotationId) {
   if (!quotation.projectId || quotation.status !== "confirmed") return;
+  if (!canEditProject()) return alert("你目前沒有編輯既有專案的權限；報價本身不受影響。");
   try {
     await updateDoc(doc(db, "projects", quotation.projectId), {
       quote: quotation.projectPriceTaxed,
@@ -592,7 +611,8 @@ async function writeBackProject(quotation, quotationId) {
       confirmedQuotationVersion: quotation.version,
       updatedAt: serverTimestamp()
     });
-    alert("已將專案價回寫專案；成本、設備、狀態與其他舊資料都沒有變動。");
+    await logAction({ action: "sync", module: "quotations", targetType: "project", targetId: quotation.projectId, targetName: quotation.projectName || quotation.number, summary: `由 ${quotation.number} / V${quotation.version || 1} 回寫專案價 ${money(quotation.projectPriceTaxed)} 元` });
+    alert("已將專案價回寫專案；外部支出、設備、狀態與其他舊資料都沒有變動。");
   } catch (error) {
     console.error(error);
     alert("報價已儲存，但專案回寫失敗；請確認你有專案編輯權限。");
@@ -600,6 +620,7 @@ async function writeBackProject(quotation, quotationId) {
 }
 
 async function createProjectFromQuotation(quotation, quotationId) {
+  if (!canCreateProject()) return alert("你目前沒有新增專案的權限；報價本身不受影響。");
   const events = Array.isArray(quotation.events) ? quotation.events : [];
   const eventDates = events.map(event => event.eventDate).filter(Boolean).sort();
   const locations = [...new Set(events.map(event => event.location?.trim()).filter(Boolean))];
@@ -618,7 +639,7 @@ async function createProjectFromQuotation(quotation, quotationId) {
     revenue: integerValue(quotation.projectPriceUntaxed),
     cost: 0,
     equipmentsUsed: [],
-    note: `由報價 ${quotation.number} / V${quotation.version || 1} 建立；專案狀態、成本與使用設備請再確認。`,
+    note: `由報價 ${quotation.number} / V${quotation.version || 1} 建立；專案狀態、外部支出與使用設備請再確認。`,
     confirmedQuotationId: quotationId,
     confirmedQuotationNumber: quotation.number,
     confirmedQuotationVersion: quotation.version || 1,
@@ -634,7 +655,8 @@ async function createProjectFromQuotation(quotation, quotationId) {
 
   try {
     await batch.commit();
-    alert("已建立專案並完成連結。專案價與未稅營收已帶入；成本、設備與專案狀態請再確認。");
+    await logAction({ action: "create", module: "projects", targetType: "project", targetId: projectRef.id, targetName: quotation.projectName, summary: `由報價 ${quotation.number} / V${quotation.version || 1} 建立` });
+    alert("已建立專案並完成連結。專案價與未稅營收已帶入；外部支出、設備與專案狀態請再確認。");
   } catch (error) {
     console.error(error);
     alert("報價已儲存，但建立專案失敗；請確認你有新增專案的權限。");
@@ -716,7 +738,7 @@ function renderQuotations() {
         <button class="btn ghost small" type="button" data-quotation-preview="${esc(q.id)}">預覽</button>
         <button class="btn ghost small" type="button" data-quotation-edit="${esc(q.id)}" ${canEdit() && isLatest && !["confirmed", "void"].includes(q.status) ? "" : "disabled"}>編輯</button>
         <button class="btn ghost small" type="button" data-quotation-version="${esc(q.id)}" ${canEdit() && isLatest ? "" : "disabled"}>複製新版</button>
-        ${q.status === "confirmed" ? `<button class="btn ghost small" type="button" data-quotation-sync="${esc(q.id)}" ${(q.projectId ? state.role === "admin" : canEdit()) ? "" : "disabled"}>${q.projectId ? "同步專案金額" : "建立專案"}</button>` : ""}
+        ${q.status === "confirmed" ? `<button class="btn ghost small" type="button" data-quotation-sync="${esc(q.id)}" ${(canEdit() && (q.projectId ? canEditProject() : canCreateProject())) ? "" : "disabled"}>${q.projectId ? "同步專案金額" : "建立專案"}</button>` : ""}
         <button class="btn ghost small" type="button" data-quotation-void="${esc(q.id)}" ${canEdit() && isLatest && q.status !== "void" ? "" : "disabled"}>作廢</button>
         <button class="btn ghost small" type="button" data-quotation-delete="${esc(q.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
       </div></td>
@@ -847,7 +869,11 @@ function bindEvents() {
     const edit = event.target.closest("[data-customer-edit]");
     const del = event.target.closest("[data-customer-delete]");
     if (edit) openCustomer(state.customers.find(item => item.id === edit.dataset.customerEdit));
-    if (del && canDelete() && confirm("確定刪除此客戶？已建立的歷史報價仍會保留客戶快照。")) await deleteDoc(doc(db, "customers", del.dataset.customerDelete));
+    if (del && canDelete() && confirm("確定刪除此客戶？已建立的歷史報價仍會保留客戶快照。")) {
+      const customer = state.customers.find(item => item.id === del.dataset.customerDelete);
+      await deleteDoc(doc(db, "customers", del.dataset.customerDelete));
+      await logAction({ action: "delete", module: "customers", targetType: "customer", targetId: del.dataset.customerDelete, targetName: customer?.name || "", summary: "永久刪除客戶資料" });
+    }
   });
 
   $("#quoteItemOpenCreate")?.addEventListener("click", () => openQuoteItem());
@@ -859,7 +885,11 @@ function bindEvents() {
     const edit = event.target.closest("[data-item-edit]");
     const del = event.target.closest("[data-item-delete]");
     if (edit) openQuoteItem(state.quotationItems.find(item => item.id === edit.dataset.itemEdit));
-    if (del && canDelete() && confirm("確定刪除此常用項目？歷史報價內容不會被刪除。")) await deleteDoc(doc(db, "quotationItems", del.dataset.itemDelete));
+    if (del && canDelete() && confirm("確定刪除此常用項目？歷史報價內容不會被刪除。")) {
+      const item = state.quotationItems.find(entry => entry.id === del.dataset.itemDelete);
+      await deleteDoc(doc(db, "quotationItems", del.dataset.itemDelete));
+      await logAction({ action: "delete", module: "catalog", targetType: "quotationItem", targetId: del.dataset.itemDelete, targetName: item?.name || "", summary: "永久刪除常用報價項目" });
+    }
   });
 
   $("#quotationOpenCreate")?.addEventListener("click", () => openQuotation());
@@ -962,8 +992,14 @@ function bindEvents() {
     if (edit && quotation) openQuotation(quotation);
     if (version && quotation) openQuotation(quotation, { newVersion: true });
     if (sync && quotation) await syncConfirmedQuotationToProject(quotation, quotation.id);
-    if (voidButton && quotation && canEdit() && confirm(`確定將 ${quotation.number} / V${quotation.version || 1} 標記為作廢？報價仍會保留供日後回溯。`)) await updateDoc(doc(db, "quotations", quotation.id), { status: "void", updatedAt: serverTimestamp(), updatedBy: state.user.uid });
-    if (del && quotation && canDelete() && confirm(`確定刪除 ${quotation.number} / V${quotation.version || 1}？一般回溯建議使用「作廢」，不要刪除。`)) await deleteDoc(doc(db, "quotations", quotation.id));
+    if (voidButton && quotation && canEdit() && confirm(`確定將 ${quotation.number} / V${quotation.version || 1} 標記為作廢？報價仍會保留供日後回溯。`)) {
+      await updateDoc(doc(db, "quotations", quotation.id), { status: "void", updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+      await logAction({ action: "void", module: "quotations", targetType: "quotation", targetId: quotation.id, targetName: `${quotation.number} / V${quotation.version || 1}`, summary: `${quotation.customerName || ""}｜${quotation.projectName || ""}` });
+    }
+    if (del && quotation && canDelete() && confirm(`確定刪除 ${quotation.number} / V${quotation.version || 1}？一般回溯建議使用「作廢」，不要刪除。`)) {
+      await deleteDoc(doc(db, "quotations", quotation.id));
+      await logAction({ action: "delete", module: "quotations", targetType: "quotation", targetId: quotation.id, targetName: `${quotation.number} / V${quotation.version || 1}`, summary: `${quotation.customerName || ""}｜${quotation.projectName || ""}` });
+    }
   });
 
   document.addEventListener("click", event => {
@@ -1000,13 +1036,16 @@ function init() {
     detach();
     state.user = user;
     state.role = null;
+    state.access = null;
     if (!user) return renderAllQuoteModules();
     try {
       await ensureUserDoc(user);
-      state.role = await getUserRole(user);
+      state.access = await getUserAccess(user);
+      state.role = state.access.role;
     } catch (error) {
       console.error(error);
       state.role = "viewer";
+      state.access = { role: "viewer", permissions: defaultPermissionsForRole("viewer") };
     }
     setMutationButtons();
     attach();

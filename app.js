@@ -6,10 +6,12 @@ import {
   watchAuth,
   loginWithGoogle,
   logout,
-  getUserRole,
+  getUserAccess,
+  hasPermission,
   ensureUserDoc,
   handleRedirectResult
 } from "./firebase.js";
+import { logAction } from "./audit.js";
 
 import {
   collection, doc, addDoc, updateDoc, deleteDoc,
@@ -109,7 +111,53 @@ function getProjectPaymentSummary(projectId, projectTotalTaxed = 0) {
 }
 
 function calcProfit(p) {
-  return getRevenueUntaxed(p) - parseIntSafe(p.cost);
+  return getRevenueUntaxed(p) - getProjectExternalCost(p);
+}
+
+function getProjectExpenses(projectId) {
+  return state.expenses.filter(expense => expense.projectId === projectId && !expense.voided);
+}
+
+function getExpenseUntaxed(expense) {
+  if (parseIntSafe(expense?.costUntaxed)) return parseIntSafe(expense.costUntaxed);
+  const amount = parseIntSafe(expense?.amount);
+  return expense?.taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE));
+}
+
+function getProjectExternalCost(project) {
+  const rows = getProjectExpenses(project.id);
+  return rows.length ? rows.reduce((sum, expense) => sum + getExpenseUntaxed(expense), 0) : parseIntSafe(project.cost);
+}
+
+function equipmentDailyDepreciation(equipment) {
+  const purchasePrice = parseIntSafe(equipment?.unitPurchasePrice);
+  const residualValue = parseIntSafe(equipment?.residualValue);
+  const years = Math.max(0, Number(equipment?.depreciationYears) || 0);
+  const annualUsageDays = Math.max(0, Number(equipment?.annualUsageDays) || 0);
+  if (!purchasePrice || !years || !annualUsageDays || residualValue >= purchasePrice) return null;
+  return Math.round((purchasePrice - residualValue) / years / annualUsageDays);
+}
+
+function inclusiveProjectDays(project) {
+  const start = new Date(`${project?.startDate || ""}T00:00:00`);
+  const end = new Date(`${project?.endDate || ""}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 1;
+  return Math.floor((end - start) / 86400000) + 1;
+}
+
+function projectEquipmentCostEstimate(project) {
+  const used = (Array.isArray(project?.equipmentsUsed) ? project.equipmentsUsed : []).filter(item => item?.name && parseIntSafe(item.qty));
+  const days = inclusiveProjectDays(project);
+  let amount = 0;
+  let configured = 0;
+  used.forEach(item => {
+    const equipment = state.equipments.find(entry => String(entry.name || "").trim() === String(item.name || "").trim());
+    const daily = equipmentDailyDepreciation(equipment);
+    if (daily === null) return;
+    configured += 1;
+    amount += daily * parseIntSafe(item.qty) * days;
+  });
+  return { amount, configured, total: used.length, days };
 }
 
 function syncRevenueFromQuoteToInput() {
@@ -186,6 +234,11 @@ const dom = {
   equipmentName: () => $("#equipmentName"),
   equipmentQty: () => $("#equipmentQty"),
   equipmentNote: () => $("#equipmentNote"),
+  equipmentPurchasePrice: () => $("#equipmentPurchasePrice"),
+  equipmentAcquisitionDate: () => $("#equipmentAcquisitionDate"),
+  equipmentDepreciationYears: () => $("#equipmentDepreciationYears"),
+  equipmentResidualValue: () => $("#equipmentResidualValue"),
+  equipmentAnnualUsageDays: () => $("#equipmentAnnualUsageDays"),
   equipmentSearch: () => $("#equipmentSearch"),
   equipmentTableBody: () => $("#equipmentTableBody"),
 
@@ -223,17 +276,20 @@ const projectsCol = collection(db, "projects");
 const equipmentCol = collection(db, "equipment");
 const paymentsCol = collection(db, "payments");
 const quotationsCol = collection(db, "quotations");
+const expensesCol = collection(db, "expenses");
 
 /* =========================================================
    4) State
 ========================================================= */
 let currentUser = null;
 let currentRole = null;
+let currentAccess = null;
 let unsubProjects = null;
 let unsubEquipments = null;
 let unsubPayments = null;
 let unsubQuotations = null;
-let state = { projects: [], equipments: [], payments: [], quotations: [] };
+let unsubExpenses = null;
+let state = { projects: [], equipments: [], payments: [], quotations: [], expenses: [] };
 let selectedProjectStatuses = new Set();
 let projectCurrentPage = 1;
 let equipmentSort = { key: "name", direction: "asc" };
@@ -330,16 +386,18 @@ function updateAuthUI() {
 
   const createBtn = dom.projectOpenCreate();
   if (createBtn) {
-    createBtn.disabled = !canCreate();
-    createBtn.title = canCreate() ? "新增專案" : "請先以 admin 或 editor 權限登入";
+    createBtn.disabled = !canCreateProject();
+    createBtn.title = canCreateProject() ? "新增專案" : "目前沒有新增專案權限";
   }
 }
 
 /* =========================================================
    6) Permissions
 ========================================================= */
-function canCreate() { return currentRole === "admin" || currentRole === "editor"; }
-function canUpdate() { return currentRole === "admin"; }
+function canCreateProject() { return hasPermission(currentAccess, "createProjects"); }
+function canUpdateProject() { return hasPermission(currentAccess, "editProjects"); }
+function canCreateEquipment() { return hasPermission(currentAccess, "createEquipment"); }
+function canUpdateEquipment() { return hasPermission(currentAccess, "editEquipment"); }
 function canDelete() { return currentRole === "admin"; }
 
 /* =========================================================
@@ -542,7 +600,7 @@ function fillProjectForm(p) {
 }
 
 function openProjectDrawer(project = null, { duplicate = false } = {}) {
-  if (!project && !canCreate()) return alert("請先以 admin 或 editor 權限登入");
+  if (!project && !canCreateProject()) return alert("你目前沒有新增專案權限");
 
   if (project) fillProjectForm(project);
   else resetProjectForm();
@@ -574,6 +632,11 @@ function resetEquipmentForm() {
   dom.equipmentName() && (dom.equipmentName().value = "");
   dom.equipmentQty() && (dom.equipmentQty().value = "");
   dom.equipmentNote() && (dom.equipmentNote().value = "");
+  dom.equipmentPurchasePrice() && (dom.equipmentPurchasePrice().value = "");
+  dom.equipmentAcquisitionDate() && (dom.equipmentAcquisitionDate().value = "");
+  dom.equipmentDepreciationYears() && (dom.equipmentDepreciationYears().value = "6");
+  dom.equipmentResidualValue() && (dom.equipmentResidualValue().value = "");
+  dom.equipmentAnnualUsageDays() && (dom.equipmentAnnualUsageDays().value = "");
 }
 
 function fillEquipmentForm(e) {
@@ -581,6 +644,11 @@ function fillEquipmentForm(e) {
   dom.equipmentName().value = e.name ?? "";
   dom.equipmentQty().value = Number(e.qty ?? 0) || 0;
   dom.equipmentNote().value = e.note ?? "";
+  dom.equipmentPurchasePrice().value = formatMoney(parseIntSafe(e.unitPurchasePrice)) || "";
+  dom.equipmentAcquisitionDate().value = e.acquisitionDate || "";
+  dom.equipmentDepreciationYears().value = Number(e.depreciationYears) || 6;
+  dom.equipmentResidualValue().value = formatMoney(parseIntSafe(e.residualValue)) || "";
+  dom.equipmentAnnualUsageDays().value = Number(e.annualUsageDays) || "";
 }
 
 /* =========================================================
@@ -627,9 +695,9 @@ async function upsertProjectFromForm() {
 
   const id = dom.projectId().value.trim();
   if (id) {
-    if (!canUpdate()) return alert("你目前是 editor/viewer，不能編輯既有專案（只有 admin 可以編輯）");
+    if (!canUpdateProject()) return alert("你目前沒有編輯既有專案的權限");
   } else {
-    if (!canCreate()) return alert("你目前是 viewer，不能新增（需要 admin 或 editor）");
+    if (!canCreateProject()) return alert("你目前沒有新增專案的權限");
   }
 
   const name = dom.projectName().value.trim();
@@ -664,8 +732,13 @@ async function upsertProjectFromForm() {
   };
 
   try {
-    if (id) await updateDoc(doc(db, "projects", id), payload);
-    else await addDoc(projectsCol, { ...payload, createdAt: serverTimestamp() });
+    if (id) {
+      await updateDoc(doc(db, "projects", id), payload);
+      await logAction({ action: "update", module: "projects", targetType: "project", targetId: id, targetName: name, summary: `更新專案｜${statusLabel(status)}` });
+    } else {
+      const ref = await addDoc(projectsCol, { ...payload, createdAt: serverTimestamp() });
+      await logAction({ action: "create", module: "projects", targetType: "project", targetId: ref.id, targetName: name, summary: `新增專案｜${statusLabel(status)}` });
+    }
     projectFormDirty = false;
     closeProjectDrawer({ force: true });
   } catch (e) {
@@ -679,7 +752,11 @@ async function deleteProject(projectId) {
   if (!canDelete()) return alert("只有 admin 可以刪除");
   if (!confirm("確定要刪除此專案？")) return;
 
-  try { await deleteDoc(doc(db, "projects", projectId)); }
+  const project = state.projects.find(item => item.id === projectId);
+  try {
+    await deleteDoc(doc(db, "projects", projectId));
+    await logAction({ action: "delete", module: "projects", targetType: "project", targetId: projectId, targetName: project?.name || "", summary: "永久刪除專案" });
+  }
   catch (e) { console.error(e); alert("刪除失敗：請確認權限"); }
 }
 
@@ -688,9 +765,9 @@ async function upsertEquipmentFromForm() {
 
   const id = dom.equipmentId().value.trim();
   if (id) {
-    if (!canUpdate()) return alert("你目前是 editor/viewer，不能編輯既有設備（只有 admin 可以編輯）");
+    if (!canUpdateEquipment()) return alert("你目前沒有編輯既有設備的權限");
   } else {
-    if (!canCreate()) return alert("你目前是 viewer，不能新增（需要 admin 或 editor）");
+    if (!canCreateEquipment()) return alert("你目前沒有新增設備的權限");
   }
 
   // ✅ 先抓舊名（改名同步用）
@@ -699,10 +776,17 @@ async function upsertEquipmentFromForm() {
   const name = dom.equipmentName().value.trim();
   const qty = Math.max(0, Math.trunc(Number(dom.equipmentQty().value) || 0));
   const note = dom.equipmentNote().value.trim();
+  const unitPurchasePrice = parseIntSafe(dom.equipmentPurchasePrice().value);
+  const acquisitionDate = dom.equipmentAcquisitionDate().value;
+  const depreciationYears = Math.max(1, Math.trunc(Number(dom.equipmentDepreciationYears().value) || 6));
+  const residualValue = parseIntSafe(dom.equipmentResidualValue().value);
+  const annualUsageDays = Math.max(0, Math.trunc(Number(dom.equipmentAnnualUsageDays().value) || 0));
 
   if (!name) return alert("請填寫設備名稱");
+  if (unitPurchasePrice && residualValue >= unitPurchasePrice) return alert("預估殘值必須小於購入價");
+  if (id && oldName.trim() !== name.trim() && !canUpdateProject()) return alert("設備改名會同步更新所有專案，因此還需要『編輯專案』權限；你仍可修改數量、備註與資產資料。");
 
-  const payload = { name, qty, note, updatedAt: serverTimestamp() };
+  const payload = { name, qty, note, unitPurchasePrice, acquisitionDate, depreciationYears, residualValue, annualUsageDays, updatedAt: serverTimestamp() };
 
   try {
     if (id) {
@@ -713,8 +797,10 @@ async function upsertEquipmentFromForm() {
       if (String(oldName || "").trim() && String(newName || "").trim() && oldName.trim() !== newName.trim()) {
         await syncEquipmentNameInProjects(oldName, newName);
       }
+      await logAction({ action: "update", module: "equipment", targetType: "equipment", targetId: id, targetName: name, summary: oldName && oldName !== name ? `設備更名：${oldName} → ${name}` : `更新數量為 ${qty}` });
     } else {
-      await addDoc(equipmentCol, { ...payload, createdAt: serverTimestamp() });
+      const ref = await addDoc(equipmentCol, { ...payload, createdAt: serverTimestamp() });
+      await logAction({ action: "create", module: "equipment", targetType: "equipment", targetId: ref.id, targetName: name, summary: `新增設備｜數量 ${qty}` });
     }
 
     resetEquipmentForm();
@@ -729,7 +815,11 @@ async function deleteEquipment(equipmentId) {
   if (!canDelete()) return alert("只有 admin 可以刪除");
   if (!confirm("確定要刪除此設備？")) return;
 
-  try { await deleteDoc(doc(db, "equipment", equipmentId)); }
+  const equipment = state.equipments.find(item => item.id === equipmentId);
+  try {
+    await deleteDoc(doc(db, "equipment", equipmentId));
+    await logAction({ action: "delete", module: "equipment", targetType: "equipment", targetId: equipmentId, targetName: equipment?.name || "", summary: "永久刪除設備" });
+  }
   catch (e) { console.error(e); alert("刪除失敗：請確認權限"); }
 }
 
@@ -859,6 +949,22 @@ function renderProjectPaymentsHtml(projectId) {
         <td><span class="badge ${status.badge}">${escapeHtml(status.label)}</span></td>
       </tr>`;
     }).join("")}</tbody>
+  </table></div>`;
+}
+
+function expenseCategoryLabel(value) {
+  return ({ outsourcing_equipment: "外包設備", temporary_staff: "臨時人力", transport: "運輸", consumables: "耗材", venue: "場租／其他場地費", other: "其他" })[value] || "其他";
+}
+
+function renderProjectExpensesHtml(project) {
+  const rows = getProjectExpenses(project.id).sort((a, b) => String(b.expenseDate || "").localeCompare(String(a.expenseDate || "")));
+  if (!rows.length) {
+    const legacy = parseIntSafe(project.cost);
+    return `<div class="project-detail-empty">${legacy ? `目前沿用專案手動外部支出合計 ${escapeHtml(formatMoney(legacy))} 元；尚無逐筆明細。` : "尚未登記外部支出；設備折舊及固定費用也尚未納入。"}</div>`;
+  }
+  return `<div class="project-detail-table-scroll"><table class="project-detail-table project-expense-history-table">
+    <thead><tr><th>日期</th><th>類別</th><th>廠商／收款方</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅成本</th><th>備註</th></tr></thead>
+    <tbody>${rows.map(expense => `<tr><td>${escapeHtml(expense.expenseDate || "—")}</td><td>${escapeHtml(expenseCategoryLabel(expense.category))}</td><td>${escapeHtml(expense.vendor || "—")}</td><td class="num">${escapeHtml(formatMoney(expense.amount))}</td><td>${expense.taxMode === "untaxed" ? "未稅" : "含稅"}</td><td class="num"><b>${escapeHtml(formatMoney(getExpenseUntaxed(expense)))}</b></td><td>${escapeHtml(expense.note || "—")}</td></tr>`).join("")}</tbody>
   </table></div>`;
 }
 
@@ -1020,8 +1126,9 @@ function renderProjectsTable() {
   pageList.forEach(p => {
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
     const revenueUntaxed = getRevenueUntaxed(p);
-    const cost = parseIntSafe(p.cost);
+    const cost = getProjectExternalCost(p);
     const profit = revenueUntaxed - cost;
+    const equipmentCostEstimate = projectEquipmentCostEstimate(p);
     const hasConfirmedPrice = parseIntSafe(p.quote) > 0;
     const projectTotalTaxed = getProjectTotalTaxed(p);
     const paymentSummary = getProjectPaymentSummary(p.id, projectTotalTaxed);
@@ -1057,7 +1164,7 @@ function renderProjectsTable() {
       <td><span class="badge ${badgeClass}">${escapeHtml(statusText)}</span></td>
       <td class="money">
         <div class="big ${hasConfirmedPrice ? "" : "pending-value"}">${hasConfirmedPrice ? escapeHtml(formatMoney(profit)) : "待確認"}</div>
-        <div class="muted">營收 ${hasConfirmedPrice ? escapeHtml(formatMoney(revenueUntaxed)) : "待確認"}｜成本 ${escapeHtml(formatMoney(cost))}</div>
+        <div class="muted">營收 ${hasConfirmedPrice ? escapeHtml(formatMoney(revenueUntaxed)) : "待確認"}｜外部支出 ${escapeHtml(formatMoney(cost))}</div>
       </td>
       <td style="width:56px; text-align:right;">
         <button class="expand-btn" type="button" data-act="toggle" data-id="${escapeHtml(p.id)}" aria-label="展開">
@@ -1106,8 +1213,9 @@ function renderProjectsTable() {
             <div class="project-finance-grid">
               <div><span>專案價（含稅）</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(projectTotalTaxed)) : '<em class="pending-value">待確認</em>'}</b></div>
               <div><span>營收（未稅）</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(revenueUntaxed)) : '<em class="pending-value">待確認</em>'}</b></div>
-              <div><span>成本</span><b>${escapeHtml(formatMoney(cost))}</b></div>
-              <div><span>毛利</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(profit)) : '<em class="pending-value">待確認</em>'}</b></div>
+              <div><span>外部支出</span><b>${escapeHtml(formatMoney(cost))}</b></div>
+              <div><span>案件毛利</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(profit)) : '<em class="pending-value">待確認</em>'}</b><small>未扣設備折舊及固定費用</small></div>
+              <div><span>設備分攤估算</span><b>${equipmentCostEstimate.configured ? escapeHtml(formatMoney(equipmentCostEstimate.amount)) : '<em class="pending-value">尚未估算</em>'}</b><small>${equipmentCostEstimate.total ? `已設定 ${equipmentCostEstimate.configured}/${equipmentCostEstimate.total} 項｜${equipmentCostEstimate.days} 天；不列入案件毛利` : "專案未使用設備"}</small></div>
               <div><span>已請款</span><b>${escapeHtml(formatMoney(paymentSummary.invoiced))}</b></div>
               <div><span>已收款</span><b>${escapeHtml(formatMoney(paymentSummary.received))}</b></div>
               <div class="outstanding"><span>尚未收款</span><b>${escapeHtml(formatMoney(paymentSummary.outstanding))}</b></div>
@@ -1124,6 +1232,11 @@ function renderProjectsTable() {
             ${renderProjectPaymentsHtml(p.id)}
           </section>
 
+          <section class="project-detail-section">
+            <div class="project-detail-section-head"><h4>外部支出</h4><button class="btn-sm" type="button" data-finance-project="${escapeHtml(p.id)}">管理外部支出</button></div>
+            ${renderProjectExpensesHtml(p)}
+          </section>
+
           <section class="project-detail-section project-detail-last">
             <h4>執行資訊</h4>
             <div class="details-grid">
@@ -1133,8 +1246,8 @@ function renderProjectsTable() {
           </section>
 
           <div class="details-actions">
-            <button class="btn-sm primary" type="button" data-act="edit" data-id="${escapeHtml(p.id)}" ${canUpdate() ? "" : "disabled"}>編輯</button>
-            <button class="btn-sm" type="button" data-act="duplicate" data-id="${escapeHtml(p.id)}" ${canCreate() ? "" : "disabled"}>複製專案</button>
+            <button class="btn-sm primary" type="button" data-act="edit" data-id="${escapeHtml(p.id)}" ${canUpdateProject() ? "" : "disabled"}>編輯</button>
+            <button class="btn-sm" type="button" data-act="duplicate" data-id="${escapeHtml(p.id)}" ${canCreateProject() ? "" : "disabled"}>複製專案</button>
             <button class="btn-sm" type="button" data-act="del" data-id="${escapeHtml(p.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
             <button class="btn-sm" type="button" data-act="collapse" data-id="${escapeHtml(p.id)}">收合</button>
           </div>
@@ -1170,18 +1283,21 @@ function renderEquipmentsTable() {
   });
 
   if (!list.length) {
-    body.innerHTML = `<tr><td colspan="4"><div class="empty-state">找不到符合條件的設備</div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="6"><div class="empty-state">找不到符合條件的設備</div></td></tr>`;
     return;
   }
 
   list.forEach(e => {
+    const dailyDepreciation = equipmentDailyDepreciation(e);
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(e.name)}</td>
       <td class="num">${escapeHtml(String(e.qty ?? 0))}</td>
+      <td>${parseIntSafe(e.unitPurchasePrice) ? `購入價 ${escapeHtml(formatMoney(e.unitPurchasePrice))}<div class="table-sub">${escapeHtml(e.acquisitionDate || "購入日未填")}｜${escapeHtml(String(e.depreciationYears || 6))} 年｜殘值 ${escapeHtml(formatMoney(e.residualValue || 0))}</div>` : '<span class="pending-value">尚未設定</span>'}</td>
+      <td class="num">${dailyDepreciation === null ? '<span class="pending-value">尚未估算</span>' : `<b>${escapeHtml(formatMoney(dailyDepreciation))}</b><div class="table-sub">預估 ${escapeHtml(String(e.annualUsageDays))} 天／年</div>`}</td>
       <td>${escapeHtml(e.note ?? "")}</td>
       <td>
-        <button class="btn ghost small" type="button" data-act="edit-eq" data-id="${escapeHtml(e.id)}" ${canUpdate() ? "" : "disabled"}>編輯</button>
+        <button class="btn ghost small" type="button" data-act="edit-eq" data-id="${escapeHtml(e.id)}" ${canUpdateEquipment() ? "" : "disabled"}>編輯</button>
         <button class="btn ghost small" type="button" data-act="del-eq" data-id="${escapeHtml(e.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
       </td>
     `;
@@ -1404,7 +1520,7 @@ function renderReport() {
     const revenueUntaxed = getRevenueUntaxed(p);
     const projectTotalTaxed = getProjectTotalTaxed(p);
     const paymentSummary = getProjectPaymentSummary(p.id, projectTotalTaxed);
-    const cost = parseIntSafe(p.cost);
+    const cost = getProjectExternalCost(p);
     const profit = revenueUntaxed - cost;
 
     totalR += revenueUntaxed;
@@ -1477,14 +1593,14 @@ function exportReportCsv() {
     "期間","狀態",
     "報價金額","報價模式",
     "已請款(含稅)","已收款(含稅)","未收款(含稅)",
-    "營收(未稅)","成本","淨利","備註"
+    "營收(未稅)","外部支出(未稅)","案件毛利(未扣設備折舊及固定費用)","備註"
   ]];
 
   list.forEach(p => {
     const revenueUntaxed = getRevenueUntaxed(p);
     const mode = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
-    const cost = parseIntSafe(p.cost);
+    const cost = getProjectExternalCost(p);
     const profit = revenueUntaxed - cost;
     const projectTotalTaxed = getProjectTotalTaxed(p);
     const paymentSummary = getProjectPaymentSummary(p.id, projectTotalTaxed);
@@ -1559,15 +1675,18 @@ function detachListeners() {
   unsubEquipments && unsubEquipments();
   unsubPayments && unsubPayments();
   unsubQuotations && unsubQuotations();
+  unsubExpenses && unsubExpenses();
   unsubProjects = null;
   unsubEquipments = null;
   unsubPayments = null;
   unsubQuotations = null;
+  unsubExpenses = null;
 
   state.projects = [];
   state.equipments = [];
   state.payments = [];
   state.quotations = [];
+  state.expenses = [];
   openProjectIds.clear();
   renderAll();
 }
@@ -1608,6 +1727,16 @@ function attachRealtimeListeners() {
     },
     (err) => { console.error(err); alert("讀取報價狀態失敗：請確認 Firestore Rules 已包含 quotations 權限"); }
   );
+
+  unsubExpenses = onSnapshot(
+    query(expensesCol, orderBy("updatedAt", "desc")),
+    (snap) => {
+      state.expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderProjectsTable();
+      renderReport();
+    },
+    (err) => { console.error(err); alert("讀取外部支出失敗：請先更新第三階段 Firestore Rules"); }
+  );
 }
 
 function renderAll() {
@@ -1629,6 +1758,8 @@ function bindEvents() {
 
   bindMoneyAutoFormat(dom.projectQuote());
   bindMoneyAutoFormat(dom.projectCost());
+  bindMoneyAutoFormat(dom.equipmentPurchasePrice());
+  bindMoneyAutoFormat(dom.equipmentResidualValue());
 
   dom.projectQuote()?.addEventListener("input", syncRevenueFromQuoteToInput);
   dom.projectQuote()?.addEventListener("change", syncRevenueFromQuoteToInput);
@@ -1851,6 +1982,7 @@ async function init() {
 
     if (!user) {
       currentRole = null;
+      currentAccess = null;
       updateAuthUI();
       detachListeners();
       return;
@@ -1858,8 +1990,15 @@ async function init() {
 
     try { await ensureUserDoc(user); } catch (e) { console.error("❌ ensureUserDoc", e); }
 
-    try { currentRole = await getUserRole(user); }
-    catch (e) { console.error(e); currentRole = "viewer"; }
+    try {
+      currentAccess = await getUserAccess(user);
+      currentRole = currentAccess.role;
+    }
+    catch (e) {
+      console.error(e);
+      currentRole = "viewer";
+      currentAccess = { role: "viewer", permissions: {} };
+    }
 
     updateAuthUI();
     detachListeners();

@@ -11,7 +11,7 @@
   <header class="topbar">
     <div>
       <h1>曜炎創意娛樂 Dashboard</h1>
-      <p class="subtitle">專案、報價、請款收款、設備檔期與月報表一站管理</p>
+      <p class="subtitle">專案、報價、請款收款、財務、設備檔期與月報表一站管理</p>
     </div>
 
     <div class="topbar-right">
@@ -25,11 +25,13 @@
       <button class="tab-button active" data-tab="projects">專案管理</button>
       <button class="tab-button" data-tab="quotations">報價管理</button>
       <button class="tab-button" data-tab="payments">請款／收款</button>
+      <button class="tab-button" data-tab="finance">財務總覽</button>
       <button class="tab-button" data-tab="calendar">行事曆</button>
       <button class="tab-button" data-tab="equipments">設備清單</button>
       <button class="tab-button" data-tab="report">月報表</button>
       <button class="tab-button" data-tab="customers">客戶管理</button>
       <button class="tab-button" data-tab="quotation-items">常用報價項目</button>
+      <button class="tab-button system-tab-button hidden" data-tab="system">系統管理</button>
     </nav>
 
     <!-- ===================== 專案管理 ===================== -->
@@ -58,16 +60,19 @@
           </select>
         </label>
 
-        <details id="projectStatusFilter" class="filter-menu">
-          <summary><span>狀態</span><b id="projectStatusSummary">全部狀態</b></summary>
-          <div class="filter-menu-pop" id="projectStatusOptions">
-            <label><input type="checkbox" value="planning" /> <span>規劃中</span><small data-count="planning">0</small></label>
-            <label><input type="checkbox" value="confirmed" /> <span>已成案</span><small data-count="confirmed">0</small></label>
-            <label><input type="checkbox" value="executing" /> <span>執行中</span><small data-count="executing">0</small></label>
-            <label><input type="checkbox" value="closed" /> <span>已結案</span><small data-count="closed">0</small></label>
-            <label><input type="checkbox" value="lost" /> <span>流標 / 未成案</span><small data-count="lost">0</small></label>
-          </div>
-        </details>
+        <div class="filter-field">
+          <span class="filter-field-label">狀態</span>
+          <details id="projectStatusFilter" class="filter-menu">
+            <summary><b id="projectStatusSummary">全部狀態</b></summary>
+            <div class="filter-menu-pop" id="projectStatusOptions">
+              <label><input type="checkbox" value="planning" /> <span>規劃中</span><small data-count="planning">0</small></label>
+              <label><input type="checkbox" value="confirmed" /> <span>已成案</span><small data-count="confirmed">0</small></label>
+              <label><input type="checkbox" value="executing" /> <span>執行中</span><small data-count="executing">0</small></label>
+              <label><input type="checkbox" value="closed" /> <span>已結案</span><small data-count="closed">0</small></label>
+              <label><input type="checkbox" value="lost" /> <span>流標 / 未成案</span><small data-count="lost">0</small></label>
+            </div>
+          </details>
+        </div>
 
         <label class="field-inline">
           <span>排序</span>
@@ -95,7 +100,7 @@
                 <th>專案／客戶</th>
                 <th>檔期／地點</th>
                 <th>狀態</th>
-                <th style="text-align:right;">淨利</th>
+                <th style="text-align:right;">案件毛利</th>
                 <th></th>
               </tr>
             </thead>
@@ -104,6 +109,76 @@
         </div>
         <div id="projectPagination" class="pagination"></div>
       </div>
+    </section>
+
+    <!-- ===================== 財務總覽 ===================== -->
+    <section id="tab-finance" class="tab-panel">
+      <div class="panel-head">
+        <div>
+          <h2>財務總覽</h2>
+          <p class="hint">應收只計算「已請款但尚未收到」的金額；未請款的專案尾款不會混入應收帳款。</p>
+        </div>
+        <div class="panel-actions">
+          <button id="expenseOpenCreate" class="btn primary" type="button">＋ 新增外部支出</button>
+          <button id="financeExportCsv" class="btn ghost" type="button">匯出應收 CSV</button>
+        </div>
+      </div>
+
+      <div class="card finance-toolbar">
+        <label class="toolbar-search"><span class="sr-only">搜尋應收</span><input id="financeSearch" class="input" type="search" placeholder="搜尋客戶、專案或發票號碼" /></label>
+        <label class="field-inline"><span>客戶</span><select id="financeCustomerFilter" class="select"><option value="all">全部客戶</option></select></label>
+        <label class="field-inline"><span>統計月份</span><input id="financeMonth" class="input" type="month" /></label>
+        <label class="field-inline"><span>帳齡基準日</span><input id="financeAsOfDate" class="input" type="date" /></label>
+      </div>
+
+      <div class="finance-kpi-grid">
+        <div class="finance-kpi primary"><span>已請款未收</span><b id="financeReceivableTotal">0</b><small>所有未作廢且已請款款項</small></div>
+        <div class="finance-kpi danger"><span>逾期未收</span><b id="financeOverdueTotal">0</b><small id="financeOverdueCount">0 筆逾期</small></div>
+        <div class="finance-kpi warning"><span>未來 30 天預計收款</span><b id="financeNext30Total">0</b><small id="financeNext30Count">0 筆即將到期</small></div>
+        <div class="finance-kpi success"><span>本月已收款</span><b id="financeMonthReceived">0</b><small id="financeMonthReceivedCount">0 筆入帳</small></div>
+      </div>
+
+      <div class="finance-profit-grid">
+        <div class="finance-profit-card"><span>選定月份營收（未稅）</span><b id="financeMonthRevenue">0</b><small>依活動檔期歸月</small></div>
+        <div class="finance-profit-card"><span>專案外部支出（未稅）</span><b id="financeMonthExpenses">0</b><small>逐筆支出；舊案沿用手動成本</small></div>
+        <div class="finance-profit-card emphasized"><span>案件毛利</span><b id="financeMonthContribution">0</b><small>營收－外部支出，未扣設備折舊及固定費用</small></div>
+      </div>
+
+      <section class="finance-section">
+        <div class="finance-section-head"><div><h3>應收帳齡</h3><p>依「預計收款日」相對於基準日計算；沒有預計收款日的款項獨立列出。</p></div></div>
+        <div class="aging-grid">
+          <div class="aging-card current"><span>未到期</span><b id="agingCurrent">0</b><small id="agingCurrentCount">0 筆</small></div>
+          <div class="aging-card"><span>逾期 1–30 天</span><b id="aging30">0</b><small id="aging30Count">0 筆</small></div>
+          <div class="aging-card"><span>逾期 31–60 天</span><b id="aging60">0</b><small id="aging60Count">0 筆</small></div>
+          <div class="aging-card"><span>逾期 61–90 天</span><b id="aging90">0</b><small id="aging90Count">0 筆</small></div>
+          <div class="aging-card critical"><span>逾期 91 天以上</span><b id="aging91">0</b><small id="aging91Count">0 筆</small></div>
+          <div class="aging-card unknown"><span>未設定收款日</span><b id="agingUnknown">0</b><small id="agingUnknownCount">0 筆</small></div>
+        </div>
+      </section>
+
+      <section class="finance-section">
+        <div class="finance-section-head"><div><h3>外部支出明細</h3><p>記錄可確認的實際支出；含稅金額會自動換算為未稅成本供毛利計算。</p></div><span id="expenseResultCount">共 0 筆</span></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table expense-table"><thead><tr><th>日期</th><th>專案／客戶</th><th>類別／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅成本</th><th>備註</th><th>操作</th></tr></thead><tbody id="expenseTableBody"></tbody></table></div></div>
+      </section>
+
+      <section class="finance-section">
+        <div class="finance-section-head"><div><h3>未來 30 天預計收款</h3><p>僅列出已請款、仍有未收金額，且預計收款日在基準日起 30 天內的款項。</p></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table finance-due-table"><thead><tr><th>預計收款日</th><th>客戶／專案</th><th>款項／發票</th><th class="num">應收</th><th class="num">已收</th><th class="num">本次預計收款</th></tr></thead><tbody id="financeNext30Body"></tbody></table></div></div>
+      </section>
+
+      <section class="finance-section">
+        <div class="finance-section-head"><div><h3>應收帳款明細</h3><p id="financeReceivableCount">共 0 筆</p></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table finance-ar-table"><thead><tr><th>客戶／專案</th><th>款項</th><th>請款／發票</th><th>預計收款</th><th class="num">應收</th><th class="num">已收</th><th class="num">未收</th><th>帳齡</th></tr></thead><tbody id="financeReceivableBody"></tbody></table></div></div>
+      </section>
+
+      <section class="finance-section">
+        <div class="finance-section-head"><div><h3>統計分析</h3><p>「已請款」依請款日歸月；「已收款」依實際收款日歸月，避免混用日期基準。</p></div></div>
+        <div class="finance-analysis-grid">
+          <div class="card analysis-card"><h4>客戶別</h4><div class="table-scroll"><table class="table compact-table"><thead><tr><th>客戶</th><th class="num">已請款</th><th class="num">已收</th><th class="num">未收</th><th class="num">逾期</th></tr></thead><tbody id="financeCustomerStatsBody"></tbody></table></div></div>
+          <div class="card analysis-card"><h4>專案別</h4><div class="table-scroll"><table class="table compact-table"><thead><tr><th>專案</th><th class="num">已請款</th><th class="num">已收</th><th class="num">未收</th></tr></thead><tbody id="financeProjectStatsBody"></tbody></table></div></div>
+          <div class="card analysis-card"><h4>月份別</h4><div class="table-scroll"><table class="table compact-table"><thead><tr><th>月份</th><th class="num">請款</th><th class="num">收款</th><th class="num">月底未收</th></tr></thead><tbody id="financeMonthStatsBody"></tbody></table></div></div>
+        </div>
+      </section>
     </section>
 
     <!-- ===================== 請款／收款管理 ===================== -->
@@ -203,6 +278,21 @@
       <div class="card table-card"><div class="table-scroll"><table class="table item-table"><thead><tr><th>類別</th><th>項目</th><th class="num">預設單價</th><th>單位</th><th>計價方式</th><th>連結設備</th><th>操作</th></tr></thead><tbody id="quoteItemTableBody"></tbody></table></div></div>
     </section>
 
+    <!-- ===================== 系統管理 ===================== -->
+    <section id="tab-system" class="tab-panel">
+      <div class="panel-head"><div><h2>系統管理</h2><p class="hint">權限變更由 admin 管理；操作紀錄建立後不可修改或刪除。</p></div></div>
+      <section id="userPermissionSection" class="finance-section hidden">
+        <div class="finance-section-head"><div><h3>使用者與細分權限</h3><p>角色提供預設值，也可逐項調整；永久刪除資料仍只限 admin。</p></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table permission-table"><thead><tr><th>使用者</th><th>角色</th><th>新增專案</th><th>編輯專案</th><th>報價</th><th>請款收款</th><th>外部支出</th><th>新增設備</th><th>編輯設備</th><th>客戶</th><th>常用品項</th><th>操作紀錄</th><th>操作</th></tr></thead><tbody id="userPermissionBody"></tbody></table></div></div>
+      </section>
+      <section id="auditLogSection" class="finance-section hidden">
+        <div class="finance-section-head"><div><h3>操作紀錄</h3><p>記錄第三階段上線後，網站內的新增、修改、作廢、同步與刪除操作。</p></div></div>
+        <div class="card audit-toolbar"><label class="toolbar-search"><span class="sr-only">搜尋操作紀錄</span><input id="auditSearch" class="input" type="search" placeholder="搜尋使用者、專案、客戶或摘要" /></label><label class="field-inline"><span>模組</span><select id="auditModuleFilter" class="select"><option value="all">全部模組</option><option value="projects">專案</option><option value="quotations">報價</option><option value="payments">請款／收款</option><option value="expenses">外部支出</option><option value="customers">客戶</option><option value="catalog">常用品項</option><option value="equipment">設備</option><option value="permissions">權限</option></select></label></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table audit-table"><thead><tr><th>時間</th><th>使用者</th><th>模組</th><th>動作</th><th>對象</th><th>內容</th></tr></thead><tbody id="auditLogBody"></tbody></table></div></div>
+      </section>
+      <div id="systemNoAccess" class="card empty-state hidden">你目前沒有查看系統管理的權限。</div>
+    </section>
+
     <!-- ===================== 設備清單 ===================== -->
     <section id="tab-equipments" class="tab-panel">
       <div class="panel-head">
@@ -227,6 +317,13 @@
             <input id="equipmentQty" class="input" type="number" min="0" step="1" />
           </label>
 
+          <div class="field field-full equipment-cost-note"><span>設備折舊估算（選填）</span><small>只有資料填完整才會顯示每台每日估算；此數字不會自動列入案件毛利。</small></div>
+          <label class="field"><span>單台／單組購入價</span><input id="equipmentPurchasePrice" class="input" inputmode="numeric" placeholder="例如：600,000" /></label>
+          <label class="field"><span>購入日期</span><input id="equipmentAcquisitionDate" class="input" type="date" /></label>
+          <label class="field"><span>折舊年限</span><input id="equipmentDepreciationYears" class="input" type="number" min="1" step="1" value="6" /></label>
+          <label class="field"><span>預估殘值</span><input id="equipmentResidualValue" class="input" inputmode="numeric" placeholder="沒有可填 0" /></label>
+          <label class="field field-full"><span>預估每年使用天數</span><input id="equipmentAnnualUsageDays" class="input" type="number" min="1" step="1" placeholder="例如：50" /><small class="field-help">每台每日折舊＝（購入價－殘值）÷ 折舊年限 ÷ 每年使用天數。</small></label>
+
           <label class="field field-full">
             <span>備註</span>
             <input id="equipmentNote" class="input" placeholder="例如：需保養 / 有耗材" />
@@ -240,17 +337,19 @@
       </form>
 
       <div class="card table-card" style="margin-top:14px;">
-        <table class="table">
+        <div class="table-scroll"><table class="table equipment-table">
           <thead>
             <tr>
               <th><button class="sort-head active" type="button" data-equipment-sort="name">設備 <span>↑</span></button></th>
               <th class="num"><button class="sort-head" type="button" data-equipment-sort="qty">數量 <span></span></button></th>
+              <th>資產資料</th>
+              <th class="num">每台每日折舊估算</th>
               <th>備註</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody id="equipmentTableBody"></tbody>
-        </table>
+        </table></div>
       </div>
     </section>
 
@@ -275,7 +374,7 @@
       <div class="panel-head">
         <div>
           <h2>月報表</h2>
-          <p class="hint">統計該月份有跨到檔期的專案（營收以未稅計）。</p>
+          <p class="hint">統計該月份有跨到檔期的專案；案件毛利＝未稅營收－外部支出，不包含設備折舊及固定費用。</p>
         </div>
 
         <div class="panel-actions">
@@ -290,7 +389,7 @@
           <div class="kpi-label">本月業績（營收未稅）</div>
           <div class="kpi-value" id="kpiMonthRevenue">0</div>
           <div class="kpi-sub">
-            <span class="kpi-dot">本月淨利：<span id="kpiMonthProfit">0</span></span>
+            <span class="kpi-dot">案件毛利：<span id="kpiMonthProfit">0</span></span>
             <span class="kpi-dot">已結案營收：<span id="kpiClosedRevenue">0</span></span>
           </div>
         </div>
@@ -327,8 +426,8 @@
               <th class="num">已收款</th>
               <th class="num">未收款</th>
               <th class="num">營收(未稅)</th>
-              <th class="num">成本</th>
-              <th class="num">淨利</th>
+              <th class="num">外部支出</th>
+              <th class="num">案件毛利</th>
             </tr>
           </thead>
           <tbody id="reportTableBody"></tbody>
@@ -382,7 +481,7 @@
               <label class="field"><span>報價金額</span><input id="projectQuote" class="input" inputmode="numeric" placeholder="價格未定可先留白" /><small class="field-help">可先建立專案，報價確認後再自動回寫金額。</small></label>
               <label class="field"><span>報價模式</span><select id="projectQuoteTaxMode" class="select visually-hidden-select" tabindex="-1"><option value="taxed">含稅</option><option value="untaxed">未稅</option></select><div class="segmented" data-seg="quoteTaxMode"><button type="button" data-value="taxed" class="seg-btn">含稅</button><button type="button" data-value="untaxed" class="seg-btn">未稅</button></div></label>
               <label class="field"><span>營收（未稅，自動換算）</span><input id="projectRevenue" class="input" placeholder="自動計算" /></label>
-              <label class="field"><span>成本</span><input id="projectCost" class="input" inputmode="numeric" placeholder="例如：120,000" /></label>
+              <label class="field"><span>外部支出（手動合計）</span><input id="projectCost" class="input" inputmode="numeric" placeholder="尚未逐筆登記時可填" /><small class="field-help">若財務總覽已有逐筆外部支出，報表會優先採用逐筆加總；不包含設備折舊及固定費用。</small></label>
             </div>
           </section>
 
@@ -490,6 +589,29 @@
     </aside>
   </div>
 
+  <!-- 外部支出 Drawer -->
+  <div id="expenseDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-expense-close aria-label="關閉外部支出表單"></button>
+    <aside class="drawer-panel narrow" role="dialog" aria-modal="true" aria-labelledby="expenseDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">財務總覽</div><h2 id="expenseDrawerTitle">新增外部支出</h2></div><button id="expenseDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="expenseForm" class="drawer-form">
+        <input id="expenseId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section"><h3>支出資料</h3><div class="form-grid">
+            <label class="field field-full"><span>連結專案 *</span><select id="expenseProjectId" class="select" required><option value="">請選擇專案</option></select></label>
+            <label class="field"><span>支出日期 *</span><input id="expenseDate" class="input" type="date" required /></label>
+            <label class="field"><span>類別</span><select id="expenseCategory" class="select"><option value="outsourcing_equipment">外包設備</option><option value="temporary_staff">臨時人力</option><option value="transport">運輸</option><option value="consumables">耗材</option><option value="venue">場租／其他場地費</option><option value="other">其他</option></select></label>
+            <label class="field"><span>廠商／收款方</span><input id="expenseVendor" class="input" /></label>
+            <label class="field"><span>支出金額 *</span><input id="expenseAmount" class="input" inputmode="numeric" required /></label>
+            <label class="field field-full"><span>金額稅別</span><select id="expenseTaxMode" class="select"><option value="taxed">含稅</option><option value="untaxed">未稅</option></select><small id="expenseUntaxedHint" class="field-help">未稅成本：0</small></label>
+            <label class="field field-full"><span>備註</span><textarea id="expenseNote" class="textarea" rows="4"></textarea></label>
+          </div></section>
+        </div>
+        <div class="drawer-actions"><button class="btn ghost" type="button" data-expense-close>取消</button><button class="btn primary" type="submit">儲存外部支出</button></div>
+      </form>
+    </aside>
+  </div>
+
   <!-- 報價 Drawer -->
   <div id="quotationDrawer" class="drawer hidden" aria-hidden="true">
     <button class="drawer-backdrop" type="button" data-quotation-close aria-label="關閉報價表單"></button>
@@ -543,5 +665,6 @@
   <script type="module" src="./app.js"></script>
   <script type="module" src="./quotations.js"></script>
   <script type="module" src="./payments.js"></script>
+  <script type="module" src="./finance.js"></script>
 </body>
 </html>

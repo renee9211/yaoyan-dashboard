@@ -77,6 +77,7 @@ export async function ensureUserDoc(user) {
         email: user.email || "",
         displayName: user.displayName || "",
         role: "viewer",
+        permissions: defaultPermissionsForRole("viewer"),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       },
@@ -92,4 +93,52 @@ export async function getUserRole(user) {
   const ref = doc(db, "users", user.uid);
   const snap = await getDoc(ref);
   return snap.exists() ? (snap.data().role || "viewer") : "viewer";
+}
+
+export const PERMISSION_KEYS = [
+  "createProjects",
+  "editProjects",
+  "manageQuotations",
+  "managePayments",
+  "manageExpenses",
+  "createEquipment",
+  "editEquipment",
+  "manageCustomers",
+  "manageCatalog",
+  "viewAudit"
+];
+
+export function defaultPermissionsForRole(role = "viewer") {
+  const none = Object.fromEntries(PERMISSION_KEYS.map(key => [key, false]));
+  if (role === "admin") return Object.fromEntries(PERMISSION_KEYS.map(key => [key, true]));
+  if (role !== "editor") return none;
+  return {
+    ...none,
+    createProjects: true,
+    manageQuotations: true,
+    managePayments: true,
+    manageExpenses: true,
+    createEquipment: true,
+    manageCustomers: true,
+    manageCatalog: true
+  };
+}
+
+export async function getUserAccess(user) {
+  if (!user) return { role: "viewer", permissions: defaultPermissionsForRole("viewer") };
+  const snap = await getDoc(doc(db, "users", user.uid));
+  const data = snap.exists() ? snap.data() : {};
+  const role = data.role || "viewer";
+  return {
+    role,
+    permissions: {
+      ...defaultPermissionsForRole(role),
+      ...(data.permissions && typeof data.permissions === "object" ? data.permissions : {})
+    }
+  };
+}
+
+export function hasPermission(access, permission) {
+  if (access?.role === "admin") return true;
+  return access?.permissions?.[permission] === true;
 }
