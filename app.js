@@ -919,6 +919,7 @@ function renderProjectsTable() {
 
           <div class="details-actions">
             <button class="btn-sm primary" type="button" data-act="edit" data-id="${escapeHtml(p.id)}" ${canUpdate() ? "" : "disabled"}>編輯</button>
+            <button class="btn-sm" type="button" data-quotation-project="${escapeHtml(p.id)}">建立／查看報價</button>
             <button class="btn-sm" type="button" data-act="duplicate" data-id="${escapeHtml(p.id)}" ${canCreate() ? "" : "disabled"}>複製專案</button>
             <button class="btn-sm" type="button" data-act="del" data-id="${escapeHtml(p.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
             <button class="btn-sm" type="button" data-act="collapse" data-id="${escapeHtml(p.id)}">收合</button>

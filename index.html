@@ -23,6 +23,9 @@
   <main>
     <nav class="tabs">
       <button class="tab-button active" data-tab="projects">專案管理</button>
+      <button class="tab-button" data-tab="quotations">報價管理</button>
+      <button class="tab-button" data-tab="customers">客戶管理</button>
+      <button class="tab-button" data-tab="quotation-items">常用報價項目</button>
       <button class="tab-button" data-tab="equipments">設備清單</button>
       <button class="tab-button" data-tab="calendar">行事曆</button>
       <button class="tab-button" data-tab="report">月報表</button>
@@ -100,6 +103,57 @@
         </div>
         <div id="projectPagination" class="pagination"></div>
       </div>
+    </section>
+
+    <!-- ===================== 報價管理 ===================== -->
+    <section id="tab-quotations" class="tab-panel">
+      <div class="panel-head">
+        <div>
+          <h2>報價管理</h2>
+          <p class="hint">保留每一版報價；只有「已確認」的版本才能選擇回寫專案金額。</p>
+        </div>
+        <button id="quotationOpenCreate" class="btn primary" type="button">＋ 新增報價</button>
+      </div>
+
+      <div class="quote-kpi-grid">
+        <div class="mini-kpi"><span>報價系列</span><b id="quotationSeriesCount">0</b></div>
+        <div class="mini-kpi"><span>草稿／已寄出</span><b id="quotationOpenCount">0</b></div>
+        <div class="mini-kpi"><span>已確認金額</span><b id="quotationConfirmedTotal">0</b></div>
+      </div>
+
+      <div class="card project-toolbar quote-toolbar">
+        <label class="toolbar-search"><span class="sr-only">搜尋報價</span><input id="quotationSearch" class="input" type="search" placeholder="搜尋報價編號、專案或客戶" /></label>
+        <label class="field-inline"><span>狀態</span><select id="quotationStatusFilter" class="select"><option value="all">全部狀態</option><option value="draft">草稿</option><option value="sent">已寄出</option><option value="confirmed">已確認</option><option value="void">作廢</option></select></label>
+      </div>
+
+      <div class="card table-card quotation-table-card">
+        <div class="table-scroll">
+          <table class="table quotation-table">
+            <thead><tr><th>報價編號</th><th>專案／客戶</th><th>版本</th><th class="num">專案價（含稅）</th><th>狀態</th><th>更新日期</th><th>操作</th></tr></thead>
+            <tbody id="quotationTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 客戶管理 ===================== -->
+    <section id="tab-customers" class="tab-panel">
+      <div class="panel-head">
+        <div><h2>客戶管理</h2><p class="hint">新專案與新報價可選擇客戶；舊專案不必補填或轉換。</p></div>
+        <button id="customerOpenCreate" class="btn primary" type="button">＋ 新增客戶</button>
+      </div>
+      <div class="card project-toolbar simple-toolbar"><label class="toolbar-search"><span class="sr-only">搜尋客戶</span><input id="customerSearch" class="input" type="search" placeholder="搜尋公司、窗口、電話或 Email" /></label></div>
+      <div class="card table-card"><div class="table-scroll"><table class="table customer-table"><thead><tr><th>客戶／公司</th><th>統一編號</th><th>主要窗口</th><th>付款條件</th><th>聯絡方式</th><th>操作</th></tr></thead><tbody id="customerTableBody"></tbody></table></div></div>
+    </section>
+
+    <!-- ===================== 常用報價項目 ===================== -->
+    <section id="tab-quotation-items" class="tab-panel">
+      <div class="panel-head">
+        <div><h2>常用報價項目</h2><p class="hint">作為建立報價時的預設值；歷史報價保存當下快照，不會跟著牌價變動。</p></div>
+        <button id="quoteItemOpenCreate" class="btn primary" type="button">＋ 新增項目</button>
+      </div>
+      <div class="card project-toolbar simple-toolbar"><label class="toolbar-search"><span class="sr-only">搜尋品項</span><input id="quoteItemSearch" class="input" type="search" placeholder="搜尋類別、項目或單位" /></label></div>
+      <div class="card table-card"><div class="table-scroll"><table class="table item-table"><thead><tr><th>類別</th><th>項目</th><th class="num">預設單價</th><th>單位</th><th>計價方式</th><th>連結設備</th><th>操作</th></tr></thead><tbody id="quoteItemTableBody"></tbody></table></div></div>
     </section>
 
     <!-- ===================== 設備清單 ===================== -->
@@ -296,6 +350,95 @@
     </aside>
   </div>
 
+  <!-- 客戶 Drawer -->
+  <div id="customerDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-customer-close aria-label="關閉客戶表單"></button>
+    <aside class="drawer-panel narrow" role="dialog" aria-modal="true" aria-labelledby="customerDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">客戶管理</div><h2 id="customerDrawerTitle">新增客戶</h2></div><button id="customerDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="customerForm" class="drawer-form">
+        <input id="customerId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section"><h3>公司資料</h3><div class="form-grid">
+            <label class="field field-full"><span>客戶／公司名稱 *</span><input id="customerName" class="input" required /></label>
+            <label class="field"><span>統一編號</span><input id="customerTaxId" class="input" /></label>
+            <label class="field"><span>付款條件</span><input id="customerPaymentTerms" class="input" placeholder="例如：月結 60 天" /></label>
+            <label class="field field-full"><span>公司地址</span><input id="customerAddress" class="input" /></label>
+            <label class="field field-full"><span>發票寄送資訊</span><input id="customerInvoiceInfo" class="input" /></label>
+          </div></section>
+          <section class="form-section"><h3>主要聯絡窗口</h3><div class="form-grid">
+            <label class="field"><span>姓名</span><input id="customerContactName" class="input" /></label>
+            <label class="field"><span>部門／職稱</span><input id="customerContactTitle" class="input" /></label>
+            <label class="field"><span>電話</span><input id="customerPhone" class="input" /></label>
+            <label class="field"><span>Email</span><input id="customerEmail" class="input" type="email" /></label>
+          </div></section>
+          <section class="form-section"><h3>備註</h3><textarea id="customerNote" class="textarea" rows="4"></textarea></section>
+        </div>
+        <div class="drawer-actions"><button class="btn ghost" type="button" data-customer-close>取消</button><button class="btn primary" type="submit">儲存客戶</button></div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- 常用報價項目 Drawer -->
+  <div id="quoteItemDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-quote-item-close aria-label="關閉品項表單"></button>
+    <aside class="drawer-panel narrow" role="dialog" aria-modal="true" aria-labelledby="quoteItemDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">常用報價項目</div><h2 id="quoteItemDrawerTitle">新增項目</h2></div><button id="quoteItemDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="quoteItemForm" class="drawer-form">
+        <input id="quoteItemId" type="hidden" />
+        <div class="drawer-content"><section class="form-section"><div class="form-grid">
+          <label class="field"><span>類別</span><input id="quoteItemCategory" class="input" placeholder="例如：特殊效果設備" /></label>
+          <label class="field"><span>項目名稱 *</span><input id="quoteItemName" class="input" required /></label>
+          <label class="field"><span>預設單價</span><input id="quoteItemPrice" class="input" inputmode="numeric" /></label>
+          <label class="field"><span>單位</span><input id="quoteItemUnit" class="input" placeholder="台／式／班／公斤" /></label>
+          <label class="field field-full"><span>預設計價方式</span><select id="quoteItemCalcMode" class="select"><option value="auto50">次日起加收 50%</option><option value="daily">每日原價</option><option value="custom">自訂續日比例</option><option value="manual">人工輸入小計</option><option value="included">免費／已包含</option></select></label>
+          <label class="field"><span>自訂續日比例（%）</span><input id="quoteItemContinuationRate" class="input" type="number" min="0" step="1" value="50" /></label>
+          <label class="field"><span>連結庫存設備</span><select id="quoteItemEquipmentId" class="select"><option value="">不連結</option></select></label>
+          <label class="field field-full"><span>預設備註</span><input id="quoteItemNote" class="input" /></label>
+        </div></section></div>
+        <div class="drawer-actions"><button class="btn ghost" type="button" data-quote-item-close>取消</button><button class="btn primary" type="submit">儲存項目</button></div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- 報價 Drawer -->
+  <div id="quotationDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-quotation-close aria-label="關閉報價表單"></button>
+    <aside class="drawer-panel quotation-drawer" role="dialog" aria-modal="true" aria-labelledby="quotationDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">報價管理</div><h2 id="quotationDrawerTitle">新增報價</h2></div><button id="quotationDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="quotationForm" class="drawer-form">
+        <input id="quotationId" type="hidden" /><input id="quotationSeriesId" type="hidden" /><input id="quotationVersion" type="hidden" value="1" />
+        <div class="drawer-content">
+          <section class="form-section"><div class="section-head"><h3>基本資料</h3><span id="quotationVersionLabel">V1</span></div><div class="form-grid quote-basic-grid">
+            <label class="field"><span>連結專案</span><select id="quotationProjectId" class="select"><option value="">不連結專案</option></select></label>
+            <label class="field"><span>客戶</span><select id="quotationCustomerId" class="select"><option value="">手動輸入／不連結</option></select></label>
+            <label class="field"><span>報價編號 *</span><input id="quotationNumber" class="input" required placeholder="Y26072502" /></label>
+            <label class="field"><span>狀態</span><select id="quotationStatus" class="select"><option value="draft">草稿</option><option value="sent">已寄出</option><option value="confirmed">已確認</option><option value="void">作廢</option></select></label>
+            <label class="field"><span>客戶／公司名稱 *</span><input id="quotationCustomerName" class="input" required /></label>
+            <label class="field"><span>專案名稱 *</span><input id="quotationProjectName" class="input" required /></label>
+            <label class="field"><span>聯絡人</span><input id="quotationContactName" class="input" /></label>
+            <label class="field"><span>電話</span><input id="quotationPhone" class="input" /></label>
+            <label class="field"><span>Email</span><input id="quotationEmail" class="input" type="email" /></label>
+            <label class="field"><span>統一編號</span><input id="quotationTaxId" class="input" /></label>
+          </div></section>
+
+          <section class="form-section"><div class="section-head"><h3>活動場次</h3><button id="quotationAddEvent" class="btn ghost small" type="button">＋ 新增場次</button></div><div id="quotationEvents" class="quote-events"></div></section>
+
+          <section class="form-section quote-lines-section"><div class="section-head"><h3>報價明細</h3><div class="inline-actions"><select id="quotationCatalogPicker" class="select compact-select"><option value="">從常用項目新增…</option></select><button id="quotationAddRow" class="btn ghost small" type="button">＋ 空白列</button></div></div><div class="quote-lines-scroll"><table class="quote-lines-table"><thead><tr><th>場次</th><th>類別／項目</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>計價</th><th>續日%</th><th>小計</th><th>備註</th><th></th></tr></thead><tbody id="quotationRows"></tbody></table></div></section>
+
+          <section class="form-section quote-summary-section"><div class="quote-summary-layout"><div><h3>付款條件與備註</h3><textarea id="quotationTerms" class="textarea" rows="8"></textarea><label class="field quote-note-field"><span>其他備註</span><textarea id="quotationNote" class="textarea" rows="3"></textarea></label></div><div class="quote-totals">
+            <div><span>原未稅合計</span><b id="quotationSubtotal">0</b></div><div><span>營業稅 5%</span><b id="quotationTax">0</b></div><div><span>原含稅總計</span><b id="quotationOriginalTotal">0</b></div>
+            <label><span>專案價（含稅）</span><input id="quotationProjectPrice" class="input money-input" inputmode="numeric" placeholder="預設等於原含稅總計" /></label>
+            <div><span>優惠差額</span><b id="quotationDiscount">0</b></div><div class="grand-total"><span>專案價未稅營收</span><b id="quotationUntaxedRevenue">0</b></div>
+          </div></div></section>
+        </div>
+        <div class="drawer-actions quote-drawer-actions"><div class="drawer-actions-left"><button id="quotationPreviewCurrent" class="btn ghost" type="button">預覽報價單</button></div><button class="btn ghost" type="button" data-quotation-close>取消</button><button class="btn primary" type="submit">儲存報價</button></div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- A4 報價預覽 Modal -->
+  <div id="quotationPreviewModal" class="modal hidden"><div class="modal-card preview-modal-card"><div class="modal-head"><div class="modal-title">報價單預覽</div><div class="inline-actions"><button id="quotationPrint" class="btn primary small" type="button">列印／另存 PDF</button><button id="quotationPreviewClose" class="icon-btn" type="button">✕</button></div></div><div id="quotationPreviewBody" class="modal-body preview-body"></div></div></div>
+
   <!-- 設備超用 Modal -->
   <div id="overuseModal" class="modal hidden">
     <div class="modal-card">
@@ -308,5 +451,6 @@
   </div>
 
   <script type="module" src="./app.js"></script>
+  <script type="module" src="./quotations.js"></script>
 </body>
 </html>
