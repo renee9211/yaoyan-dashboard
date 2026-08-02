@@ -244,6 +244,9 @@ const dom = {
 
   calendarMonth: () => $("#calendarMonth"),
   calendarGrid: () => $("#calendarGrid"),
+  calendarHint: () => $("#calendarHint"),
+  calendarLegend: () => $("#calendarLegend"),
+  calendarViewButtons: () => $all("[data-calendar-view]"),
 
   reportMonth: () => $("#reportMonth"),
   exportCsv: () => $("#exportCsv"),
@@ -295,6 +298,14 @@ let projectCurrentPage = 1;
 let equipmentSort = { key: "name", direction: "asc" };
 let projectFormDirty = false;
 const openProjectIds = new Set();
+const CALENDAR_VIEW_STORAGE_KEY = "yaoyan-calendar-view";
+let calendarView = (() => {
+  try {
+    return localStorage.getItem(CALENDAR_VIEW_STORAGE_KEY) === "projects" ? "projects" : "equipment";
+  } catch (_) {
+    return "equipment";
+  }
+})();
 
 /* =========================================================
    5) Auth UI
@@ -1311,6 +1322,22 @@ function renderEquipmentsTable() {
 function isBetweenInclusive(dateISO, startISO, endISO) {
   return dateISO >= startISO && dateISO <= endISO;
 }
+function getProjectsForDate(dateISO) {
+  const statusOrder = { executing: 0, confirmed: 1, planning: 2, closed: 3, lost: 4 };
+  return state.projects
+    .filter(p => {
+      const start = p.startDate || "";
+      const end = p.endDate || start;
+      return start && isBetweenInclusive(dateISO, start, end);
+    })
+    .sort((a, b) => {
+      const byStatus = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
+      if (byStatus) return byStatus;
+      const byStart = String(a.startDate || "").localeCompare(String(b.startDate || ""));
+      if (byStart) return byStart;
+      return String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant");
+    });
+}
 function buildInventoryMap() {
   const map = new Map();
   state.equipments.forEach(e => {
@@ -1321,9 +1348,7 @@ function buildInventoryMap() {
 }
 function computeUsageForDate(dateISO) {
   const usage = new Map();
-  const activeProjects = state.projects.filter(p =>
-    p.startDate && p.endDate && isBetweenInclusive(dateISO, p.startDate, p.endDate)
-  );
+  const activeProjects = getProjectsForDate(dateISO);
 
   activeProjects.forEach(p => {
     (p.equipmentsUsed || []).forEach(item => {
@@ -1370,6 +1395,31 @@ function buildMonthOveruse(monthValue) {
   return { byDate };
 }
 
+function setCalendarView(nextView) {
+  calendarView = nextView === "projects" ? "projects" : "equipment";
+  try { localStorage.setItem(CALENDAR_VIEW_STORAGE_KEY, calendarView); } catch (_) {}
+  renderCalendar();
+}
+
+function renderCalendarLegend() {
+  const legend = dom.calendarLegend();
+  if (!legend) return;
+  if (calendarView === "projects") {
+    legend.innerHTML = `
+      <span class="calendar-legend-item"><i class="calendar-legend-dot planning"></i>規劃中</span>
+      <span class="calendar-legend-item"><i class="calendar-legend-dot confirmed"></i>已成案</span>
+      <span class="calendar-legend-item"><i class="calendar-legend-dot executing"></i>執行中</span>
+      <span class="calendar-legend-item"><i class="calendar-legend-dot closed"></i>已結案</span>
+      <span class="calendar-legend-item"><i class="calendar-legend-dot lost"></i>流標／未成案</span>
+    `;
+  } else {
+    legend.innerHTML = `
+      <span class="calendar-legend-item"><i class="calendar-legend-dot scheduled"></i>設備已有排程</span>
+      <span class="calendar-legend-item"><i class="calendar-legend-dot overbooked"></i>需求超過庫存</span>
+    `;
+  }
+}
+
 function renderCalendar() {
   const grid = dom.calendarGrid();
   const monthInput = dom.calendarMonth();
@@ -1378,8 +1428,23 @@ function renderCalendar() {
   const monthValue = monthInput.value;
   if (!monthValue) return;
 
+  dom.calendarViewButtons().forEach(btn => {
+    const isActive = btn.dataset.calendarView === calendarView;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-pressed", String(isActive));
+  });
+  grid.dataset.view = calendarView;
+  if (dom.calendarHint()) {
+    dom.calendarHint().textContent = calendarView === "projects"
+      ? "查看每日專案、案況與客戶；跨日專案會在檔期內每天連續顯示。"
+      : "查看每日設備需求、庫存與超用狀況；點「查看超用」可查看使用場次。";
+  }
+  renderCalendarLegend();
+
   monthOveruseCache.month = monthValue;
-  monthOveruseCache.byDate = buildMonthOveruse(monthValue).byDate;
+  monthOveruseCache.byDate = calendarView === "equipment"
+    ? buildMonthOveruse(monthValue).byDate
+    : new Map();
 
   const [y, m] = monthValue.split("-").map(Number);
   const first = new Date(y, m - 1, 1);
@@ -1398,39 +1463,67 @@ function renderCalendar() {
     const d = new Date(y, m - 1, day);
     const dateISO = toISODate(d);
 
-    const { activeProjects } = computeUsageForDate(dateISO);
-    const hasOver = monthOveruseCache.byDate.has(dateISO);
+    const { usage, activeProjects } = computeUsageForDate(dateISO);
+    const hasOver = calendarView === "equipment" && monthOveruseCache.byDate.has(dateISO);
 
     const cell = document.createElement("div");
     cell.className = "calendar-day" + (hasOver ? " overbooked" : "");
     cell.dataset.date = dateISO;
 
-    const badge = hasOver
-      ? `<span class="calendar-badge">超用</span>`
-      : `<span class="calendar-badge ok">OK</span>`;
+    let badge = "";
+    let action = "";
+    let entries = "";
+    let more = "";
 
-    const overBtn = hasOver
-      ? `<button type="button" class="btn ghost small overuse-btn" data-date="${escapeHtml(dateISO)}">查看超用</button>`
-      : "";
-
-    const chips = (activeProjects || [])
-      .slice(0, 6)
-      .map(p => `<div class="calendar-project status-${escapeHtml(p.status || "planning")}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</div>`)
-      .join("");
-
-    const more = (activeProjects?.length || 0) > 6
-      ? `<div class="calendar-project" title="更多">+${activeProjects.length - 6} more</div>`
-      : "";
+    if (calendarView === "projects") {
+      badge = activeProjects.length
+        ? `<span class="calendar-badge project-count">${escapeHtml(String(activeProjects.length))} 案</span>`
+        : "";
+      entries = activeProjects.slice(0, 6).map(p => {
+        const projectEnd = p.endDate || p.startDate;
+        const rangePoint = p.startDate === dateISO && projectEnd === dateISO
+          ? "單日"
+          : p.startDate === dateISO
+            ? "開始"
+            : projectEnd === dateISO ? "結束" : "進行中";
+        const meta = [rangePoint, statusLabel(p.status), p.client || "未填客戶"].filter(Boolean).join("｜");
+        const title = [p.name || "未命名專案", p.client, `${p.startDate || ""}～${projectEnd || ""}`, statusLabel(p.status)].filter(Boolean).join("｜");
+        return `<div class="calendar-project status-${escapeHtml(p.status || "planning")}" title="${escapeHtml(title)}"><span class="calendar-project-name">${escapeHtml(p.name || "未命名專案")}</span><span class="calendar-project-meta">${escapeHtml(meta)}</span></div>`;
+      }).join("");
+      more = activeProjects.length > 6
+        ? `<div class="calendar-more">另有 ${escapeHtml(String(activeProjects.length - 6))} 個專案</div>`
+        : "";
+      if (!activeProjects.length) entries = `<div class="calendar-empty">無專案檔期</div>`;
+    } else {
+      const inventory = buildInventoryMap();
+      const equipmentRows = Array.from(usage.entries()).sort(([a], [b]) => a.localeCompare(b, "zh-Hant"));
+      badge = hasOver
+        ? `<span class="calendar-badge">超用</span>`
+        : equipmentRows.length ? `<span class="calendar-badge ok">OK</span>` : "";
+      action = hasOver
+        ? `<button type="button" class="btn ghost small overuse-btn" data-date="${escapeHtml(dateISO)}">查看超用</button>`
+        : "";
+      entries = equipmentRows.slice(0, 6).map(([name, detail]) => {
+        const available = inventory.has(name) ? inventory.get(name) : 0;
+        const isOver = detail.required > available;
+        const title = (detail.projects || []).map(p => `${p.projectName} × ${p.qty}`).join("、");
+        return `<div class="calendar-equipment${isOver ? " over" : ""}" title="${escapeHtml(title)}"><b>${escapeHtml(name)}</b><span>${escapeHtml(String(detail.required))} / ${escapeHtml(String(available))}</span></div>`;
+      }).join("");
+      more = equipmentRows.length > 6
+        ? `<div class="calendar-more">另有 ${escapeHtml(String(equipmentRows.length - 6))} 項設備</div>`
+        : "";
+      if (!equipmentRows.length) entries = `<div class="calendar-empty">無設備排程</div>`;
+    }
 
     cell.innerHTML = `
       <div class="calendar-day-header">
         <span>${day}</span>
         <span style="display:flex; align-items:center; gap:6px;">
           ${badge}
-          ${overBtn}
+          ${action}
         </span>
       </div>
-      ${chips}
+      ${entries}
       ${more}
     `;
     grid.appendChild(cell);
@@ -1649,6 +1742,7 @@ function bindTabs() {
     btn.addEventListener("click", () => {
       dom.tabButtons().forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
+      $all(".tab-group").forEach(group => group.classList.toggle("has-active", group.contains(btn)));
 
       const tab = btn.dataset.tab;
       dom.tabPanels().forEach(p => p.classList.remove("active"));
@@ -1908,6 +2002,9 @@ function bindEvents() {
     cm.value = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
     cm.addEventListener("change", renderCalendar);
   }
+  dom.calendarViewButtons().forEach(btn => {
+    btn.addEventListener("click", () => setCalendarView(btn.dataset.calendarView));
+  });
 
   const rm = dom.reportMonth();
   if (rm) {

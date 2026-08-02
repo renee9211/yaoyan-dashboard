@@ -21,17 +21,40 @@
   </header>
 
   <main>
-    <nav class="tabs">
-      <button class="tab-button active" data-tab="projects">專案管理</button>
-      <button class="tab-button" data-tab="quotations">報價管理</button>
-      <button class="tab-button" data-tab="payments">請款／收款</button>
-      <button class="tab-button" data-tab="finance">財務總覽</button>
-      <button class="tab-button" data-tab="calendar">行事曆</button>
-      <button class="tab-button" data-tab="equipments">設備清單</button>
-      <button class="tab-button" data-tab="report">月報表</button>
-      <button class="tab-button" data-tab="customers">客戶管理</button>
-      <button class="tab-button" data-tab="quotation-items">常用報價項目</button>
-      <button class="tab-button system-tab-button hidden" data-tab="system">系統管理</button>
+    <nav class="tabs" aria-label="主要功能">
+      <div class="tab-group has-active">
+        <span class="tab-group-label">專案類</span>
+        <div class="tab-group-buttons">
+          <button class="tab-button active" data-tab="projects">專案管理</button>
+          <button class="tab-button" data-tab="calendar">行事曆</button>
+        </div>
+      </div>
+
+      <div class="tab-group">
+        <span class="tab-group-label">報價與客戶</span>
+        <div class="tab-group-buttons">
+          <button class="tab-button" data-tab="quotations">報價管理</button>
+          <button class="tab-button" data-tab="customers">客戶管理</button>
+          <button class="tab-button" data-tab="quotation-items">常用報價項目</button>
+        </div>
+      </div>
+
+      <div class="tab-group">
+        <span class="tab-group-label">財務類</span>
+        <div class="tab-group-buttons">
+          <button class="tab-button" data-tab="payments">請款／收款</button>
+          <button class="tab-button" data-tab="finance">財務總覽</button>
+          <button class="tab-button" data-tab="report">月報表</button>
+        </div>
+      </div>
+
+      <div class="tab-group">
+        <span class="tab-group-label">設備與系統</span>
+        <div class="tab-group-buttons">
+          <button class="tab-button" data-tab="equipments">設備清單</button>
+          <button class="tab-button system-tab-button hidden" data-tab="system">系統管理</button>
+        </div>
+      </div>
     </nav>
 
     <!-- ===================== 專案管理 ===================== -->
@@ -357,16 +380,32 @@
     <section id="tab-calendar" class="tab-panel">
       <div class="panel-head">
         <div>
-          <h2>行事曆（檔期＋設備超用）</h2>
-          <p class="hint">點「查看超用」可看缺口與使用場次，並可跳回專案調整。</p>
+          <h2>行事曆</h2>
+          <p id="calendarHint" class="hint">查看每日設備需求、庫存與超用狀況。</p>
         </div>
 
-        <div class="panel-actions">
-          <input id="calendarMonth" class="input" type="month" />
+        <div class="panel-actions calendar-controls">
+          <div class="calendar-view-field">
+            <span>顯示方式</span>
+            <div class="segmented calendar-view-toggle" role="group" aria-label="行事曆顯示方式">
+              <button class="seg-btn active" type="button" data-calendar-view="equipment" aria-pressed="true">設備檔期</button>
+              <button class="seg-btn" type="button" data-calendar-view="projects" aria-pressed="false">專案檔期</button>
+            </div>
+          </div>
+          <label class="field-inline">
+            <span>月份</span>
+            <input id="calendarMonth" class="input" type="month" />
+          </label>
         </div>
       </div>
 
-      <div id="calendarGrid" class="calendar-grid"></div>
+      <div id="calendarLegend" class="calendar-legend" aria-live="polite"></div>
+      <div class="calendar-scroll">
+        <div class="calendar-weekdays" aria-hidden="true">
+          <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+        </div>
+        <div id="calendarGrid" class="calendar-grid" data-view="equipment"></div>
+      </div>
     </section>
 
     <!-- ===================== 月報表 ===================== -->
