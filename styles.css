@@ -972,6 +972,8 @@ body.drawer-open{ overflow:hidden; }
 .quote-a4{
   /* 140 mm of detail columns plus the collapsed table border midpoint. */
   --a4-detail-split:calc(140mm + .5px);
+  /* Keep every total label aligned with the Subtotal column above. */
+  --a4-subtotal-width:24mm;
   width:210mm;
   min-height:297mm;
   margin:0 auto;
@@ -1016,7 +1018,7 @@ body.drawer-open{ overflow:hidden; }
 .quote-a4 .a4-lines th:nth-child(5){ width:13mm; }
 .quote-a4 .a4-lines th:nth-child(6){ width:13mm; }
 .quote-a4 .a4-lines th:nth-child(7){ width:13mm; }
-.quote-a4 .a4-lines th:nth-child(8){ width:24mm; }
+.quote-a4 .a4-lines th:nth-child(8){ width:var(--a4-subtotal-width); }
 .quote-a4 .a4-lines th:nth-child(9){ width:auto; }
 .quote-a4 .a4-lines td{ padding:1.5mm 1.4mm; line-height:1.2; overflow-wrap:anywhere; }
 .quote-a4 .a4-lines td:first-child,.quote-a4 .a4-lines td:nth-child(2),.quote-a4 .a4-lines td:nth-child(5),.quote-a4 .a4-lines td:nth-child(6),.quote-a4 .a4-lines td:nth-child(7){ text-align:center; }
@@ -1034,7 +1036,14 @@ body.drawer-open{ overflow:hidden; }
 .quote-a4 .a4-terms{ white-space:pre-wrap; line-height:1.35; font-size:7.5pt; }
 .quote-a4 .a4-note{ margin:1.5mm 0 0; white-space:pre-wrap; font-size:7.5pt; }
 .quote-a4 .a4-total{ width:100%; margin:0; table-layout:fixed; }
-.quote-a4 .a4-total th{ width:27mm; background:#050505; color:#fff; font-weight:500; }
+.quote-a4 .a4-total th{
+  /* Collapsed table borders add half a pixel; compensate so this divider
+     lands on the exact Subtotal / Note divider above. */
+  width:calc(var(--a4-subtotal-width) - .55px);
+  background:#050505;
+  color:#fff;
+  font-weight:500;
+}
 .quote-a4 .a4-total td{ font-size:9pt; font-variant-numeric:tabular-nums; }
 .quote-a4 .a4-total .project-price th{ background:#f59e0b; color:#111; font-size:9.5pt; font-weight:900; }
 .quote-a4 .a4-total .project-price td{ background:#fff; font-size:10pt; font-weight:1000; white-space:nowrap; }
