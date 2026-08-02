@@ -725,7 +725,8 @@ main, .topbar{ max-width:1440px; margin-left:auto; margin-right:auto; }
   display:flex;
   align-items:center;
   justify-content:center;
-  gap:12px;
+  flex-wrap:wrap;
+  gap:8px;
   padding:12px 4px 4px;
   color:var(--muted);
   font-size:12px;
@@ -742,6 +743,30 @@ main, .topbar{ max-width:1440px; margin-left:auto; margin-right:auto; }
   cursor:pointer;
 }
 .pagination button:disabled{ opacity:.4; cursor:not-allowed; }
+.pagination-pages{ display:flex; align-items:center; gap:6px; }
+.pagination .page-number{ width:34px; padding:0; border-radius:10px; }
+.pagination .page-number.active{
+  border-color:var(--orange);
+  background:var(--orange);
+  color:#fff;
+  box-shadow:0 4px 12px rgba(255,126,0,.2);
+}
+.pagination-ellipsis{ min-width:16px; text-align:center; color:var(--muted); }
+.pagination-summary{ margin:0 2px; white-space:nowrap; }
+.pagination-jump{ display:flex; align-items:center; gap:5px; white-space:nowrap; }
+.pagination-jump select{
+  height:34px;
+  min-width:58px;
+  padding:0 24px 0 10px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:#fff;
+  color:var(--text);
+  font:inherit;
+  cursor:pointer;
+}
+.pending-value{ color:#b45309 !important; }
+.field-help{ display:block; margin-top:5px; color:var(--muted); font-size:11px; line-height:1.45; }
 
 /* Equipment sorting */
 .sort-head{
@@ -948,29 +973,68 @@ body.drawer-open{ overflow:hidden; }
   width:210mm;
   min-height:297mm;
   margin:0 auto;
-  padding:14mm 14mm 18mm;
+  padding:8mm 9mm 10mm;
   background:#fff;
   color:#111;
   box-shadow:0 8px 30px rgba(0,0,0,.18);
   font-family:"Noto Sans TC",system-ui,sans-serif;
-  font-size:10pt;
+  font-size:8.5pt;
+  -webkit-print-color-adjust:exact;
+  print-color-adjust:exact;
 }
-.quote-a4 h1{ font-size:22pt; letter-spacing:.16em; text-align:center; margin:0 0 7mm; }
-.quote-a4 .a4-top{ display:grid; grid-template-columns:1fr 1fr; gap:8mm; margin-bottom:5mm; }
-.quote-a4 .a4-meta{ display:grid; grid-template-columns:85px 1fr; gap:3px 8px; line-height:1.55; }
-.quote-a4 .a4-meta b{ font-size:9pt; }
+.quote-a4 .a4-brand-header{
+  height:24mm;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:2.5mm 7mm 2.5mm 5mm;
+  background:#000;
+  border:1px solid #000;
+}
+.quote-a4 .a4-logo{ width:48mm; height:20mm; object-fit:contain; object-position:left center; }
+.quote-a4 .a4-title{ display:flex; flex-direction:column; align-items:center; color:#f59e0b; line-height:1; }
+.quote-a4 .a4-title strong{ font-size:19pt; font-weight:500; letter-spacing:.22em; }
+.quote-a4 .a4-title span{ margin-top:2mm; font-size:7pt; letter-spacing:.08em; }
 .quote-a4 table{ width:100%; border-collapse:collapse; }
-.quote-a4 th,.quote-a4 td{ border:1px solid #777; padding:5px 6px; vertical-align:top; }
-.quote-a4 th{ background:#efefef; font-size:8.5pt; text-align:center; }
+.quote-a4 th,.quote-a4 td{ border:1px solid #111; padding:1.5mm 1.6mm; vertical-align:middle; }
+.quote-a4 th{ font-size:8pt; text-align:center; }
+.quote-a4 th span{ display:block; margin-top:.5mm; font-size:6.5pt; font-weight:500; }
+.quote-a4 .a4-info{ table-layout:fixed; }
+.quote-a4 .a4-info th{ width:25mm; text-align:left; background:#fff; line-height:1.05; }
+.quote-a4 .a4-info td{ overflow-wrap:anywhere; }
+.quote-a4 .a4-info td:nth-child(2){ width:80mm; }
+.quote-a4 .a4-info td:nth-child(4){ width:55mm; }
+.quote-a4 .a4-lines{ table-layout:fixed; margin-top:3mm; }
+.quote-a4 .a4-lines thead{ display:table-header-group; }
+.quote-a4 .a4-lines th{ background:#050505; color:#fff; font-weight:500; line-height:1.05; }
+.quote-a4 .a4-lines th:nth-child(1){ width:10mm; }
+.quote-a4 .a4-lines th:nth-child(2){ width:18mm; }
+.quote-a4 .a4-lines th:nth-child(3){ width:51mm; }
+.quote-a4 .a4-lines th:nth-child(4){ width:22mm; }
+.quote-a4 .a4-lines th:nth-child(5){ width:13mm; }
+.quote-a4 .a4-lines th:nth-child(6){ width:13mm; }
+.quote-a4 .a4-lines th:nth-child(7){ width:13mm; }
+.quote-a4 .a4-lines th:nth-child(8){ width:24mm; }
+.quote-a4 .a4-lines th:nth-child(9){ width:auto; }
+.quote-a4 .a4-lines td{ padding:1.5mm 1.4mm; line-height:1.2; overflow-wrap:anywhere; }
+.quote-a4 .a4-lines td:first-child,.quote-a4 .a4-lines td:nth-child(2),.quote-a4 .a4-lines td:nth-child(5),.quote-a4 .a4-lines td:nth-child(6),.quote-a4 .a4-lines td:nth-child(7){ text-align:center; }
 .quote-a4 td.num{ text-align:right; }
-.quote-a4 .a4-category td{ background:#f5f5f5; font-weight:800; }
-.quote-a4 .a4-total{ width:48%; margin-left:auto; margin-top:4mm; }
-.quote-a4 .a4-total td:first-child{ font-weight:800; }
-.quote-a4 .a4-total .project-price td{ font-size:12pt; font-weight:1000; background:#fff3e8; }
-.quote-a4 .a4-footer{ display:grid; grid-template-columns:1.2fr .8fr; gap:10mm; margin-top:8mm; }
-.quote-a4 .a4-terms{ white-space:pre-wrap; line-height:1.65; }
-.quote-a4 .a4-sign{ min-height:35mm; border:1px solid #777; padding:4mm; }
-.quote-a4 .a4-company{ margin-top:8mm; padding-top:4mm; border-top:1px solid #aaa; font-size:8.5pt; line-height:1.65; }
+.quote-a4 .a4-category td{ padding:1.3mm 2mm; background:#fff4df; color:#8a4800; font-weight:900; }
+.quote-a4 .a4-payment-grid{ display:grid; grid-template-columns:minmax(0,1.6fr) minmax(60mm,.7fr); align-items:stretch; break-inside:avoid; }
+.quote-a4 .a4-terms-block{ min-height:39mm; border:1px solid #111; border-top:0; padding:0 2mm 2mm; }
+.quote-a4 .a4-section-title{ margin:0 -2mm 2mm; padding:1.5mm 2mm; border-bottom:1px solid #111; font-size:9pt; }
+.quote-a4 .a4-terms{ white-space:pre-wrap; line-height:1.35; font-size:7.5pt; }
+.quote-a4 .a4-note{ margin:1.5mm 0 0; white-space:pre-wrap; font-size:7.5pt; }
+.quote-a4 .a4-total{ width:100%; margin:0; }
+.quote-a4 .a4-total th{ width:34mm; background:#050505; color:#fff; font-weight:500; }
+.quote-a4 .a4-total td{ font-size:9pt; font-variant-numeric:tabular-nums; }
+.quote-a4 .a4-total .project-price th{ background:#f59e0b; color:#111; font-size:9.5pt; font-weight:900; }
+.quote-a4 .a4-total .project-price td{ background:#fff; font-size:11pt; font-weight:1000; }
+.quote-a4 .a4-company{ display:grid; grid-template-columns:minmax(0,1.4fr) minmax(55mm,.6fr); min-height:38mm; border:1px solid #111; border-top:0; break-inside:avoid; }
+.quote-a4 .a4-company-info{ padding:2mm; font-size:7.5pt; line-height:1.35; }
+.quote-a4 .a4-company-info > b{ display:block; margin-bottom:1.5mm; font-size:8.5pt; }
+.quote-a4 .a4-sign{ display:flex; flex-direction:column; justify-content:space-between; padding:3mm 5mm; border-left:1px solid #111; font-size:8pt; }
+.quote-a4 .a4-sign i{ display:block; width:48mm; margin:0 auto 1mm; border-bottom:1px solid #111; }
 .quote-link{ border:0; padding:0; background:transparent; color:#b45309; text-decoration:underline; cursor:pointer; font-weight:900; }
 .row-actions{ display:flex; gap:6px; flex-wrap:wrap; }
 .status-select-inline{ min-width:112px; }
@@ -986,7 +1050,9 @@ body.drawer-open{ overflow:hidden; }
 }
 
 @media print{
-  body > *{ display:none !important; }
+  body:not(.quotation-print-window) > *{ display:none !important; }
+  body.quotation-print-window{ padding:0; background:#fff; }
+  body.quotation-print-window > .quote-a4{ display:block !important; }
   #quotationPreviewModal{ display:block !important; position:static; background:#fff; padding:0; }
   #quotationPreviewModal .modal-card{ width:auto; box-shadow:none; border:0; }
   #quotationPreviewModal .modal-head{ display:none; }

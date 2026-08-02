@@ -2,12 +2,14 @@
 import { db, watchAuth, getUserRole, ensureUserDoc } from "./firebase.js";
 import {
   collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot,
-  query, orderBy, serverTimestamp
+  query, orderBy, serverTimestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 const TAX_RATE = 0.05;
+const QUOTATIONS_PER_PAGE = 20;
+const COMPANY_LOGO_URL = new URL("./assets/yaoyan-logo.png", import.meta.url).href;
 const DEFAULT_TERMS = `1. 本報價單視同合約，經簽名或用印回傳即成立。
 2. 初次合作請於報價單成立後14日內或活動開始前3日，支付頭款30%。
 3. 本公司將於專案完成日後14日內開立發票請款，請於發票開立後30日內完成尾款支付。
@@ -42,7 +44,8 @@ const state = {
   equipment: [],
   unsubs: [],
   previewData: null,
-  numberWasSuggested: false
+  numberWasSuggested: false,
+  quotationCurrentPage: 1
 };
 
 function esc(value) {
@@ -541,14 +544,23 @@ async function saveQuotation() {
       await setDoc(ref, { ...payload, seriesId, createdAt: serverTimestamp(), createdBy: state.user.uid, updatedAt: serverTimestamp(), updatedBy: state.user.uid });
     }
     closeDrawer("#quotationDrawer");
-    if (payload.status === "confirmed" && payload.projectId) {
-      const shouldWrite = confirm(`報價已儲存為「已確認」。\n\n是否將專案價 ${money(payload.projectPriceTaxed)} 元（含稅）回寫到連結專案？\n\n選擇「取消」只會儲存報價，不會修改原專案。`);
-      if (shouldWrite) await writeBackProject(payload, savedId);
-    }
+    if (payload.status === "confirmed") await syncConfirmedQuotationToProject(payload, savedId);
   } catch (error) {
     console.error(error);
     alert("報價儲存失敗，請確認 Firestore 規則已加入 quotations 權限");
   }
+}
+
+async function syncConfirmedQuotationToProject(quotation, quotationId) {
+  if (quotation.status !== "confirmed") return;
+  if (quotation.projectId) {
+    const shouldWrite = confirm(`報價已儲存為「已確認」。\n\n是否將專案價 ${money(quotation.projectPriceTaxed)} 元（含稅）回寫到連結專案？\n\n選擇「取消」只會儲存報價，不會修改原專案。`);
+    if (shouldWrite) await writeBackProject(quotation, quotationId);
+    return;
+  }
+
+  const shouldCreate = confirm(`報價已儲存為「已確認」，但尚未連結專案。\n\n是否現在以「${quotation.projectName}」建立專案，並帶入專案價 ${money(quotation.projectPriceTaxed)} 元（含稅）？\n\n選擇「取消」只會保留報價，之後仍可從報價列表建立。`);
+  if (shouldCreate) await createProjectFromQuotation(quotation, quotationId);
 }
 
 async function writeBackProject(quotation, quotationId) {
@@ -570,6 +582,48 @@ async function writeBackProject(quotation, quotationId) {
   }
 }
 
+async function createProjectFromQuotation(quotation, quotationId) {
+  const events = Array.isArray(quotation.events) ? quotation.events : [];
+  const eventDates = events.map(event => event.eventDate).filter(Boolean).sort();
+  const locations = [...new Set(events.map(event => event.location?.trim()).filter(Boolean))];
+  const projectRef = doc(collections.projects);
+  const quotationRef = doc(db, "quotations", quotationId);
+  const batch = writeBatch(db);
+  batch.set(projectRef, {
+    name: quotation.projectName,
+    client: quotation.customerName || "",
+    location: locations.join("／"),
+    startDate: eventDates[0] || "",
+    endDate: eventDates[eventDates.length - 1] || eventDates[0] || "",
+    status: "planning",
+    quote: integerValue(quotation.projectPriceTaxed),
+    quoteTaxMode: "taxed",
+    revenue: integerValue(quotation.projectPriceUntaxed),
+    cost: 0,
+    equipmentsUsed: [],
+    note: `由報價 ${quotation.number} / V${quotation.version || 1} 建立；專案狀態、成本與使用設備請再確認。`,
+    confirmedQuotationId: quotationId,
+    confirmedQuotationNumber: quotation.number,
+    confirmedQuotationVersion: quotation.version || 1,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+  batch.update(quotationRef, {
+    projectId: projectRef.id,
+    projectCreatedFromQuotation: true,
+    updatedAt: serverTimestamp(),
+    updatedBy: state.user?.uid || ""
+  });
+
+  try {
+    await batch.commit();
+    alert("已建立專案並完成連結。專案價與未稅營收已帶入；成本、設備與專案狀態請再確認。");
+  } catch (error) {
+    console.error(error);
+    alert("報價已儲存，但建立專案失敗；請確認你有新增專案的權限。");
+  }
+}
+
 function latestBySeries() {
   const map = new Map();
   state.quotations.forEach(q => {
@@ -578,6 +632,35 @@ function latestBySeries() {
     if (!current || Number(q.version || 1) > Number(current.version || 1)) map.set(key, q);
   });
   return map;
+}
+
+function renderQuotationPagination(totalItems) {
+  const host = $("#quotationPagination");
+  if (!host) return;
+  const totalPages = Math.max(1, Math.ceil(totalItems / QUOTATIONS_PER_PAGE));
+  state.quotationCurrentPage = Math.min(Math.max(1, state.quotationCurrentPage), totalPages);
+  if (totalPages <= 1) {
+    host.innerHTML = "";
+    return;
+  }
+
+  const visiblePages = new Set([1, totalPages]);
+  for (let page = state.quotationCurrentPage - 2; page <= state.quotationCurrentPage + 2; page += 1) {
+    if (page >= 1 && page <= totalPages) visiblePages.add(page);
+  }
+  const pageButtons = [...visiblePages].sort((a, b) => a - b).map((page, index, pages) => {
+    const gap = index > 0 && page - pages[index - 1] > 1 ? `<span class="pagination-ellipsis" aria-hidden="true">…</span>` : "";
+    return `${gap}<button class="page-number ${page === state.quotationCurrentPage ? "active" : ""}" type="button" data-page="${page}" ${page === state.quotationCurrentPage ? 'aria-current="page"' : ""}>${page}</button>`;
+  }).join("");
+  const pageOptions = Array.from({ length: totalPages }, (_, index) => index + 1)
+    .map(page => `<option value="${page}" ${page === state.quotationCurrentPage ? "selected" : ""}>${page}</option>`).join("");
+
+  host.innerHTML = `
+    <button class="page-direction" type="button" data-page="${state.quotationCurrentPage - 1}" ${state.quotationCurrentPage === 1 ? "disabled" : ""}>上一頁</button>
+    <div class="pagination-pages">${pageButtons}</div>
+    <span class="pagination-summary">第 ${state.quotationCurrentPage} / ${totalPages} 頁</span>
+    <label class="pagination-jump"><span>跳至</span><select data-page-select aria-label="選擇報價頁數">${pageOptions}</select><span>頁</span></label>
+    <button class="page-direction" type="button" data-page="${state.quotationCurrentPage + 1}" ${state.quotationCurrentPage === totalPages ? "disabled" : ""}>下一頁</button>`;
 }
 
 function renderQuotations() {
@@ -592,13 +675,17 @@ function renderQuotations() {
     const current = confirmedBySeries.get(key);
     if (!current || Number(q.version || 1) > Number(current.version || 1)) confirmedBySeries.set(key, q);
   });
-  const list = [...state.quotations].filter(q => {
+  const filteredList = [...state.quotations].filter(q => {
     if (status !== "all" && q.status !== status) return false;
     return !keyword || [q.number, q.projectName, q.customerName].join(" ").toLocaleLowerCase("zh-Hant").includes(keyword);
   }).sort((a, b) => {
     if (a.number === b.number) return Number(b.version || 1) - Number(a.version || 1);
     return String(b.number || "").localeCompare(String(a.number || ""), "zh-Hant", { numeric: true });
   });
+  const totalPages = Math.max(1, Math.ceil(filteredList.length / QUOTATIONS_PER_PAGE));
+  state.quotationCurrentPage = Math.min(Math.max(1, state.quotationCurrentPage), totalPages);
+  const startIndex = (state.quotationCurrentPage - 1) * QUOTATIONS_PER_PAGE;
+  const list = filteredList.slice(startIndex, startIndex + QUOTATIONS_PER_PAGE);
   body.innerHTML = list.length ? list.map(q => {
     const isLatest = latest.get(q.seriesId || q.id)?.id === q.id;
     return `<tr>
@@ -612,11 +699,13 @@ function renderQuotations() {
         <button class="btn ghost small" type="button" data-quotation-preview="${esc(q.id)}">預覽</button>
         <button class="btn ghost small" type="button" data-quotation-edit="${esc(q.id)}" ${canEdit() && isLatest && !["confirmed", "void"].includes(q.status) ? "" : "disabled"}>編輯</button>
         <button class="btn ghost small" type="button" data-quotation-version="${esc(q.id)}" ${canEdit() && isLatest ? "" : "disabled"}>複製新版</button>
+        ${q.status === "confirmed" ? `<button class="btn ghost small" type="button" data-quotation-sync="${esc(q.id)}" ${(q.projectId ? state.role === "admin" : canEdit()) ? "" : "disabled"}>${q.projectId ? "同步專案金額" : "建立專案"}</button>` : ""}
         <button class="btn ghost small" type="button" data-quotation-void="${esc(q.id)}" ${canEdit() && isLatest && q.status !== "void" ? "" : "disabled"}>作廢</button>
         <button class="btn ghost small" type="button" data-quotation-delete="${esc(q.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
       </div></td>
     </tr>`;
   }).join("") : `<tr><td colspan="7"><div class="empty-state">尚無符合條件的報價</div></td></tr>`;
+  renderQuotationPagination(filteredList.length);
 
   $("#quotationSeriesCount").textContent = String(latest.size);
   $("#quotationOpenCount").textContent = String([...latest.values()].filter(q => q.status === "draft" || q.status === "sent").length);
@@ -639,6 +728,13 @@ function eventSummary(events = []) {
   return events.map(event => `${esc(event.name || "場次")}｜${esc(event.eventDate || "日期未填")}｜${esc(event.location || "地點未填")}${event.setupDate ? `｜進撤場 ${esc(event.setupDate)}` : ""}`).join("<br>");
 }
 
+function quotationDateText(q) {
+  const source = q.quotationDate || q.createdAt || new Date();
+  const date = typeof source?.toDate === "function" ? source.toDate() : new Date(source);
+  if (Number.isNaN(date.getTime())) return "—";
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+}
+
 function buildA4(q) {
   const events = Array.isArray(q.events) ? q.events : [];
   const eventMap = new Map(events.map(event => [event.id, event.name]));
@@ -650,16 +746,28 @@ function buildA4(q) {
     const included = row.calcMode === "included";
     return `${categoryRow}<tr><td>${index + 1}</td><td>${esc(row.eventId === "shared" ? "共用" : eventMap.get(row.eventId) || "—")}</td><td>${esc(row.name)}</td><td class="num">${included ? "—" : money(row.unitPrice)}</td><td class="num">${esc(row.qty)}</td><td>${esc(row.unit || "—")}</td><td class="num">${included ? "—" : esc(row.days || 1)}</td><td class="num">${included ? "—" : money(calcRowSubtotal(row))}</td><td>${esc(row.note || "")}</td></tr>`;
   }).join("");
+  const showDates = events.map(event => event.eventDate).filter(Boolean).join("、") || "—";
+  const setupDates = events.map(event => event.setupDate).filter(Boolean).join("、") || "—";
+  const locations = [...new Set(events.map(event => event.location).filter(Boolean))].join("、") || "—";
   return `<article class="quote-a4">
-    <h1>報價單</h1>
-    <div class="a4-top">
-      <div class="a4-meta"><b>客戶 Customer</b><span>${esc(q.customerName)}</span><b>聯絡人 Contact</b><span>${esc(q.contactName || "—")}</span><b>電話 Tel</b><span>${esc(q.phone || "—")}</span><b>Email</b><span>${esc(q.email || "—")}</span><b>統編 Tax ID</b><span>${esc(q.taxId || "—")}</span></div>
-      <div class="a4-meta"><b>報價編號 No.</b><span>${esc(q.number)} / V${esc(q.version || 1)}</span><b>專案 Project</b><span>${esc(q.projectName)}</span><b>活動場次 Event</b><span>${eventSummary(events)}</span><b>報價狀態</b><span>${esc(statusLabel(q.status))}</span></div>
+    <header class="a4-brand-header">
+      <img class="a4-logo" src="${esc(COMPANY_LOGO_URL)}" alt="曜炎創意 YAoyan" />
+      <div class="a4-title"><strong>報 價 單</strong><span>QUOTATION</span></div>
+    </header>
+    <table class="a4-info"><tbody>
+      <tr><th>客戶名稱<span>Client</span></th><td>${esc(q.customerName)}</td><th>報價日期<span>Quotation Date</span></th><td>${esc(quotationDateText(q))}</td></tr>
+      <tr><th>專案名稱<span>Project</span></th><td>${esc(q.projectName)}</td><th>報價編號<span>Quotation No.</span></th><td>${esc(q.number)} / V${esc(q.version || 1)}</td></tr>
+      <tr><th>演出日期<span>Show Date</span></th><td>${esc(showDates)}</td><th>聯絡人<span>Contact Person</span></th><td>${esc(q.contactName || "—")}</td></tr>
+      <tr><th>進撤場日期<span>Load-in/Out Dates</span></th><td>${esc(setupDates)}</td><th>聯絡電話<span>Phone</span></th><td>${esc(q.phone || "—")}</td></tr>
+      <tr><th>專案地點<span>Location</span></th><td>${esc(locations)}</td><th>聯絡信箱<span>Email</span></th><td>${esc(q.email || "—")}</td></tr>
+      <tr><th>客戶統編<span>Tax ID</span></th><td>${esc(q.taxId || "—")}</td><th>活動場次<span>Event</span></th><td>${eventSummary(events) || "—"}</td></tr>
+    </tbody></table>
+    <table class="a4-lines"><thead><tr><th>編號<span>No.</span></th><th>場次<span>Event</span></th><th>項目<span>Item</span></th><th>單價<span>Price</span></th><th>數量<span>Unit</span></th><th>單位</th><th>天數<span>Day</span></th><th>小計<span>Subtotal</span></th><th>備註<span>Note</span></th></tr></thead><tbody>${lineHtml || `<tr><td colspan="9">尚無報價項目</td></tr>`}</tbody></table>
+    <div class="a4-payment-grid">
+      <div class="a4-terms-block"><div class="a4-section-title">合作與付款條件 Payment Terms</div><div class="a4-terms">${esc(q.terms || DEFAULT_TERMS)}</div>${q.note ? `<p class="a4-note"><b>備註：</b>${esc(q.note)}</p>` : ""}</div>
+      <table class="a4-total"><tbody><tr><th>合計<span>Total</span></th><td class="num">$ ${money(q.subtotal)}</td></tr><tr><th>營業稅<span>5% VAT</span></th><td class="num">$ ${money(q.tax)}</td></tr><tr><th>總計<span>Grand Total</span></th><td class="num">$ ${money(q.originalTotal)}</td></tr><tr class="project-price"><th>專案價（含稅）</th><td class="num">$ ${money(q.projectPriceTaxed)}</td></tr></tbody></table>
     </div>
-    <table><thead><tr><th>#</th><th>場次</th><th>項目 Description</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>小計</th><th>備註</th></tr></thead><tbody>${lineHtml || `<tr><td colspan="9">尚無報價項目</td></tr>`}</tbody></table>
-    <table class="a4-total"><tbody><tr><td>合計 Total</td><td class="num">$ ${money(q.subtotal)}</td></tr><tr><td>營業稅 5% VAT</td><td class="num">$ ${money(q.tax)}</td></tr><tr><td>總計 Grand Total</td><td class="num">$ ${money(q.originalTotal)}</td></tr><tr class="project-price"><td>專案價（含稅）</td><td class="num">$ ${money(q.projectPriceTaxed)}</td></tr></tbody></table>
-    <div class="a4-footer"><div><b>合作與付款條件 Payment Terms</b><div class="a4-terms">${esc(q.terms || DEFAULT_TERMS)}</div>${q.note ? `<p><b>備註：</b>${esc(q.note)}</p>` : ""}</div><div class="a4-sign">確認無誤煩請簽名回傳：</div></div>
-    <div class="a4-company"><b>${esc(COMPANY.name)}</b><br>公司統編 Tax ID：${esc(COMPANY.taxId)}　業務聯絡人 Contact：${esc(COMPANY.contact)}　聯絡信箱 Email：${esc(COMPANY.email)}<br>匯款資訊 Remittance Info：${esc(COMPANY.bank)}／${esc(COMPANY.accountName)}／${esc(COMPANY.account)}</div>
+    <footer class="a4-company"><div class="a4-company-info"><b>${esc(COMPANY.name)}</b><div>公司統編 Tax ID：${esc(COMPANY.taxId)}</div><div>業務聯絡人 Contact：${esc(COMPANY.contact)}</div><div>聯絡信箱 Email：${esc(COMPANY.email)}</div><div>匯款資訊 Remittance Info：${esc(COMPANY.bank)}<br>${esc(COMPANY.accountName)}／${esc(COMPANY.account)}</div></div><div class="a4-sign"><span>確認無誤煩請簽名回傳：</span><i></i></div></footer>
   </article>`;
 }
 
@@ -669,7 +777,7 @@ function printPreview() {
   const win = window.open("", "_blank");
   if (!win) return alert("瀏覽器阻擋了列印視窗，請允許此網站開啟彈出式視窗");
   win.opener = null;
-  win.document.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>${esc(state.previewData.number)}_V${esc(state.previewData.version || 1)}</title><link rel="stylesheet" href="${new URL("./styles.css", location.href).href}"><style>body{padding:0;background:#fff}.quote-a4{box-shadow:none;margin:0 auto}@page{size:A4;margin:0}</style></head><body>${html}<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+  win.document.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>${esc(state.previewData.number)}_V${esc(state.previewData.version || 1)}</title><link rel="stylesheet" href="${new URL("./styles.css", location.href).href}"><style>body{padding:0;background:#fff}.quote-a4{box-shadow:none;margin:0 auto}@page{size:A4;margin:0}</style></head><body class="quotation-print-window">${html}<script>window.onload=()=>{const logo=document.querySelector('.a4-logo');const print=()=>setTimeout(()=>window.print(),250);if(logo&&!logo.complete){logo.addEventListener('load',print,{once:true});logo.addEventListener('error',print,{once:true});}else{print();}}<\/script></body></html>`);
   win.document.close();
 }
 
@@ -742,8 +850,26 @@ function bindEvents() {
   $("#quotationOpenCreate")?.addEventListener("click", () => openQuotation());
   $("#quotationForm")?.addEventListener("submit", event => { event.preventDefault(); saveQuotation(); });
   $$('[data-quotation-close],#quotationDrawerClose').forEach(button => button.addEventListener("click", () => closeDrawer("#quotationDrawer")));
-  $("#quotationSearch")?.addEventListener("input", renderQuotations);
-  $("#quotationStatusFilter")?.addEventListener("change", renderQuotations);
+  const resetQuotationPageAndRender = () => {
+    state.quotationCurrentPage = 1;
+    renderQuotations();
+  };
+  $("#quotationSearch")?.addEventListener("input", resetQuotationPageAndRender);
+  $("#quotationStatusFilter")?.addEventListener("change", resetQuotationPageAndRender);
+  $("#quotationPagination")?.addEventListener("click", event => {
+    const button = event.target.closest("button[data-page]");
+    if (!button || button.disabled) return;
+    state.quotationCurrentPage = Number(button.dataset.page) || 1;
+    renderQuotations();
+    document.querySelector("#tab-quotations .quote-toolbar")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  $("#quotationPagination")?.addEventListener("change", event => {
+    const select = event.target.closest("select[data-page-select]");
+    if (!select) return;
+    state.quotationCurrentPage = Number(select.value) || 1;
+    renderQuotations();
+    document.querySelector("#tab-quotations .quote-toolbar")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   $("#quotationNumber")?.addEventListener("input", () => { state.numberWasSuggested = false; });
   $("#quotationProjectPrice")?.addEventListener("input", recalcQuotation);
   $("#quotationProjectPrice")?.addEventListener("blur", event => { event.target.value = event.target.value ? money(event.target.value) : ""; recalcQuotation(); });
@@ -812,13 +938,15 @@ function bindEvents() {
     const preview = event.target.closest("[data-quotation-preview]");
     const edit = event.target.closest("[data-quotation-edit]");
     const version = event.target.closest("[data-quotation-version]");
+    const sync = event.target.closest("[data-quotation-sync]");
     const voidButton = event.target.closest("[data-quotation-void]");
     const del = event.target.closest("[data-quotation-delete]");
-    const id = preview?.dataset.quotationPreview || edit?.dataset.quotationEdit || version?.dataset.quotationVersion || voidButton?.dataset.quotationVoid || del?.dataset.quotationDelete;
+    const id = preview?.dataset.quotationPreview || edit?.dataset.quotationEdit || version?.dataset.quotationVersion || sync?.dataset.quotationSync || voidButton?.dataset.quotationVoid || del?.dataset.quotationDelete;
     const quotation = state.quotations.find(item => item.id === id);
     if (preview && quotation) previewQuotation(quotation);
     if (edit && quotation) openQuotation(quotation);
     if (version && quotation) openQuotation(quotation, { newVersion: true });
+    if (sync && quotation) await syncConfirmedQuotationToProject(quotation, quotation.id);
     if (voidButton && quotation && canEdit() && confirm(`確定將 ${quotation.number} / V${quotation.version || 1} 標記為作廢？報價仍會保留供日後回溯。`)) await updateDoc(doc(db, "quotations", quotation.id), { status: "void", updatedAt: serverTimestamp(), updatedBy: state.user.uid });
     if (del && quotation && canDelete() && confirm(`確定刪除 ${quotation.number} / V${quotation.version || 1}？一般回溯建議使用「作廢」，不要刪除。`)) await deleteDoc(doc(db, "quotations", quotation.id));
   });
@@ -832,6 +960,7 @@ function bindEvents() {
     if (related.length) {
       switchTab("quotations");
       $("#quotationSearch").value = project.name || project.client || "";
+      state.quotationCurrentPage = 1;
       renderQuotations();
     } else if (canEdit()) {
       openQuotation(null, { project });

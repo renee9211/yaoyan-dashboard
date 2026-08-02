@@ -24,11 +24,11 @@
     <nav class="tabs">
       <button class="tab-button active" data-tab="projects">專案管理</button>
       <button class="tab-button" data-tab="quotations">報價管理</button>
+      <button class="tab-button" data-tab="calendar">行事曆</button>
+      <button class="tab-button" data-tab="equipments">設備清單</button>
+      <button class="tab-button" data-tab="report">月報表</button>
       <button class="tab-button" data-tab="customers">客戶管理</button>
       <button class="tab-button" data-tab="quotation-items">常用報價項目</button>
-      <button class="tab-button" data-tab="equipments">設備清單</button>
-      <button class="tab-button" data-tab="calendar">行事曆</button>
-      <button class="tab-button" data-tab="report">月報表</button>
     </nav>
 
     <!-- ===================== 專案管理 ===================== -->
@@ -133,6 +133,7 @@
             <tbody id="quotationTableBody"></tbody>
           </table>
         </div>
+        <div id="quotationPagination" class="pagination"></div>
       </div>
     </section>
 
@@ -323,7 +324,7 @@
           <section class="form-section">
             <h3>金額</h3>
             <div class="form-grid">
-              <label class="field"><span>報價金額</span><input id="projectQuote" class="input" inputmode="numeric" placeholder="例如：250,000" /></label>
+              <label class="field"><span>報價金額</span><input id="projectQuote" class="input" inputmode="numeric" placeholder="價格未定可先留白" /><small class="field-help">可先建立專案，報價確認後再自動回寫金額。</small></label>
               <label class="field"><span>報價模式</span><select id="projectQuoteTaxMode" class="select visually-hidden-select" tabindex="-1"><option value="taxed">含稅</option><option value="untaxed">未稅</option></select><div class="segmented" data-seg="quoteTaxMode"><button type="button" data-value="taxed" class="seg-btn">含稅</button><button type="button" data-value="untaxed" class="seg-btn">未稅</button></div></label>
               <label class="field"><span>營收（未稅，自動換算）</span><input id="projectRevenue" class="input" placeholder="自動計算" /></label>
               <label class="field"><span>成本</span><input id="projectCost" class="input" inputmode="numeric" placeholder="例如：120,000" /></label>

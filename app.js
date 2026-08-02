@@ -832,10 +832,23 @@ function renderProjectPagination(totalItems) {
     return;
   }
 
+  const visiblePages = new Set([1, totalPages]);
+  for (let page = projectCurrentPage - 2; page <= projectCurrentPage + 2; page += 1) {
+    if (page >= 1 && page <= totalPages) visiblePages.add(page);
+  }
+  const pageButtons = [...visiblePages].sort((a, b) => a - b).map((page, index, pages) => {
+    const gap = index > 0 && page - pages[index - 1] > 1 ? `<span class="pagination-ellipsis" aria-hidden="true">…</span>` : "";
+    return `${gap}<button class="page-number ${page === projectCurrentPage ? "active" : ""}" type="button" data-page="${page}" ${page === projectCurrentPage ? 'aria-current="page"' : ""}>${page}</button>`;
+  }).join("");
+  const pageOptions = Array.from({ length: totalPages }, (_, index) => index + 1)
+    .map(page => `<option value="${page}" ${page === projectCurrentPage ? "selected" : ""}>${page}</option>`).join("");
+
   host.innerHTML = `
-    <button type="button" data-page="${projectCurrentPage - 1}" ${projectCurrentPage === 1 ? "disabled" : ""}>上一頁</button>
-    <span>第 ${projectCurrentPage} / ${totalPages} 頁</span>
-    <button type="button" data-page="${projectCurrentPage + 1}" ${projectCurrentPage === totalPages ? "disabled" : ""}>下一頁</button>
+    <button class="page-direction" type="button" data-page="${projectCurrentPage - 1}" ${projectCurrentPage === 1 ? "disabled" : ""}>上一頁</button>
+    <div class="pagination-pages">${pageButtons}</div>
+    <span class="pagination-summary">第 ${projectCurrentPage} / ${totalPages} 頁</span>
+    <label class="pagination-jump"><span>跳至</span><select data-page-select aria-label="選擇專案頁數">${pageOptions}</select><span>頁</span></label>
+    <button class="page-direction" type="button" data-page="${projectCurrentPage + 1}" ${projectCurrentPage === totalPages ? "disabled" : ""}>下一頁</button>
   `;
 }
 
@@ -867,6 +880,7 @@ function renderProjectsTable() {
     const revenueUntaxed = getRevenueUntaxed(p);
     const cost = parseIntSafe(p.cost);
     const profit = revenueUntaxed - cost;
+    const hasConfirmedPrice = parseIntSafe(p.quote) > 0;
 
     const quoteModeLabel = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
     const badgeClass = statusToBadgeClass(p.status);
@@ -886,8 +900,8 @@ function renderProjectsTable() {
       <td><div class="period">${escapeHtml(period)}</div><div class="table-sub">${escapeHtml(p.location || "—")}</div></td>
       <td><span class="badge ${badgeClass}">${escapeHtml(statusText)}</span></td>
       <td class="money">
-        <div class="big">${escapeHtml(formatMoney(profit))}</div>
-        <div class="muted">營收 ${escapeHtml(formatMoney(revenueUntaxed))}｜成本 ${escapeHtml(formatMoney(cost))}</div>
+        <div class="big ${hasConfirmedPrice ? "" : "pending-value"}">${hasConfirmedPrice ? escapeHtml(formatMoney(profit)) : "待確認"}</div>
+        <div class="muted">營收 ${hasConfirmedPrice ? escapeHtml(formatMoney(revenueUntaxed)) : "待確認"}｜成本 ${escapeHtml(formatMoney(cost))}</div>
       </td>
       <td style="width:56px; text-align:right;">
         <button class="expand-btn" type="button" data-act="toggle" data-id="${escapeHtml(p.id)}" aria-label="展開">
@@ -907,8 +921,8 @@ function renderProjectsTable() {
           <div class="details-grid">
             <div>
               <div class="kv"><div class="k">地點</div><div class="v">${escapeHtml(p.location || "—")}</div></div>
-              <div class="kv"><div class="k">報價</div><div class="v">${escapeHtml(formatMoney(parseIntSafe(p.quote)))}（${escapeHtml(quoteModeLabel)}）</div></div>
-              <div class="kv"><div class="k">營收(未稅)</div><div class="v"><b>${escapeHtml(formatMoney(revenueUntaxed))}</b></div></div>
+              <div class="kv"><div class="k">報價</div><div class="v">${hasConfirmedPrice ? `${escapeHtml(formatMoney(parseIntSafe(p.quote)))}（${escapeHtml(quoteModeLabel)}）` : '<span class="pending-value">待確認</span>'}</div></div>
+              <div class="kv"><div class="k">營收(未稅)</div><div class="v"><b>${hasConfirmedPrice ? escapeHtml(formatMoney(revenueUntaxed)) : '<span class="pending-value">待確認</span>'}</b></div></div>
               <div class="kv"><div class="k">成本</div><div class="v">${escapeHtml(formatMoney(cost))}</div></div>
             </div>
             <div>
@@ -1434,6 +1448,13 @@ function bindEvents() {
     const btn = e.target.closest("button[data-page]");
     if (!btn || btn.disabled) return;
     projectCurrentPage = Number(btn.dataset.page) || 1;
+    renderProjectsTable();
+    document.querySelector("#tab-projects .project-toolbar")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  dom.projectPagination()?.addEventListener("change", (e) => {
+    const select = e.target.closest("select[data-page-select]");
+    if (!select) return;
+    projectCurrentPage = Number(select.value) || 1;
     renderProjectsTable();
     document.querySelector("#tab-projects .project-toolbar")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
