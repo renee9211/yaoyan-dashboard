@@ -1230,7 +1230,7 @@ body.drawer-open{ overflow:hidden; }
 }
 .finance-kpi-grid{
   display:grid;
-  grid-template-columns:repeat(4,minmax(0,1fr));
+  grid-template-columns:repeat(5,minmax(0,1fr));
   gap:12px;
   margin:12px 0;
 }
@@ -1308,7 +1308,7 @@ body.drawer-open{ overflow:hidden; }
   padding:12px;
   margin-bottom:10px;
 }
-.company-expense-table{ min-width:1480px; }
+.company-expense-table{ min-width:1620px; }
 .company-expense-table td:nth-child(3){ min-width:190px; }
 .report-company-grid{
   display:grid;
@@ -1333,6 +1333,13 @@ body.drawer-open{ overflow:hidden; }
   grid-template-columns:repeat(6,minmax(0,1fr));
   gap:10px;
 }
+.payable-kpi-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+  margin-bottom:10px;
+}
+.payable-table{ min-width:860px; }
 .aging-card{
   min-height:103px;
   display:flex;
@@ -1351,7 +1358,7 @@ body.drawer-open{ overflow:hidden; }
 
 .finance-due-table{ min-width:920px; }
 .finance-ar-table{ min-width:1180px; }
-.expense-table{ min-width:1120px; }
+.expense-table{ min-width:1260px; }
 .finance-analysis-grid{
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
@@ -1408,7 +1415,7 @@ body.drawer-open{ overflow:hidden; }
   #tab-equipments .panel-head{ align-items:stretch; flex-direction:column; }
   .equipment-panel-actions{ width:100%; }
   .equipment-panel-actions .compact-search{ flex:1; width:auto; }
-  .finance-toolbar,.audit-toolbar,.finance-kpi-grid,.finance-profit-grid,.aging-grid,.company-expense-kpi-grid,.company-expense-toolbar,.report-company-grid{ grid-template-columns:1fr; }
+  .finance-toolbar,.audit-toolbar,.finance-kpi-grid,.finance-profit-grid,.aging-grid,.payable-kpi-grid,.company-expense-kpi-grid,.company-expense-toolbar,.report-company-grid{ grid-template-columns:1fr; }
   .finance-toolbar .toolbar-search{ grid-column:auto; }
   .company-expense-toolbar .toolbar-search{ grid-column:auto; }
   .finance-section-head{ align-items:flex-start; flex-direction:column; }
@@ -1589,6 +1596,8 @@ body.drawer-open{ overflow:hidden; }
   gap:12px;
   margin:10px 0 14px;
 }
+.payment-kpi-grid.standard-finance-kpis{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+.payment-kpi-grid .mini-kpi small{ display:block; margin-top:5px; color:var(--muted); font-size:11px; font-weight:750; }
 .payment-outstanding-kpi{
   border-color:rgba(245,158,11,.28);
   background:linear-gradient(135deg,#fff,#fff8eb);
@@ -1599,7 +1608,7 @@ body.drawer-open{ overflow:hidden; }
   margin-bottom:0;
 }
 .payment-project-table{
-  min-width:1220px;
+  min-width:1490px;
   table-layout:fixed;
 }
 .payment-project-table col.payment-col-date{ width:178px; }
@@ -1618,7 +1627,7 @@ body.drawer-open{ overflow:hidden; }
   word-break:break-word;
 }
 .payment-project-table td:last-child .row-actions{ flex-wrap:nowrap; }
-.report-table{ min-width:1320px; }
+.report-table{ min-width:1760px; }
 .payment-project-row{ cursor:pointer; }
 .payment-project-row:hover td{ background:#fffaf2; }
 .payment-project-detail > td{
@@ -1659,15 +1668,23 @@ body.drawer-open{ overflow:hidden; }
 .payment-empty-detail p{ margin:0; }
 .payment-void-row{ opacity:.55; text-decoration:line-through; }
 .payment-drawer .form-section h3{ display:flex; align-items:center; gap:8px; }
+.receipt-billing-label{ margin:0; padding:12px; border-radius:10px; background:#fff7ed; color:#7c2d12; font-weight:850; line-height:1.5; }
+.receipt-history{ display:grid; gap:5px; min-width:260px; }
+.receipt-history-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:5px 0; border-bottom:1px dashed var(--line); font-size:12px; }
+.receipt-history-row:last-child{ border-bottom:0; }
+.receipt-history-actions{ display:flex; gap:6px; white-space:nowrap; }
+.link-button{ border:0; padding:0; background:transparent; color:#b45309; cursor:pointer; font:inherit; font-weight:850; text-decoration:underline; }
+.link-button.danger{ color:#b91c1c; }
+.link-button:disabled{ opacity:.45; cursor:not-allowed; }
 
 @media (max-width:1000px){
-  .payment-kpi-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .payment-kpi-grid,.payment-kpi-grid.standard-finance-kpis{ grid-template-columns:repeat(2,minmax(0,1fr)); }
   .payment-toolbar{ grid-template-columns:1fr 1fr; }
   .payment-toolbar .toolbar-search{ grid-column:1 / -1; }
 }
 
 @media (max-width:640px){
-  .payment-kpi-grid{ grid-template-columns:1fr; }
+  .payment-kpi-grid,.payment-kpi-grid.standard-finance-kpis,.payable-kpi-grid{ grid-template-columns:1fr; }
   .payment-toolbar{ grid-template-columns:1fr; }
   .payment-toolbar .toolbar-search{ grid-column:auto; }
   .payment-detail-head,.payment-empty-detail{ align-items:stretch; flex-direction:column; }

@@ -16,6 +16,7 @@ const TAX_RATE = 0.05;
 const collections = {
   projects: collection(db, "projects"),
   payments: collection(db, "payments"),
+  receipts: collection(db, "receipts"),
   expenses: collection(db, "expenses"),
   companyExpenses: collection(db, "companyExpenses"),
   equipment: collection(db, "equipment"),
@@ -28,6 +29,7 @@ const state = {
   access: null,
   projects: [],
   payments: [],
+  receipts: [],
   expenses: [],
   companyExpenses: [],
   equipment: [],
@@ -130,10 +132,31 @@ function projectExternalCost(project) {
 
 function projectFor(id) { return state.projects.find(project => project.id === id); }
 
+function actualReceipts(paymentId) {
+  return state.receipts.filter(receipt => receipt.paymentId === paymentId && !receipt.voided);
+}
+
+function receiptRows(payment) {
+  const rows = actualReceipts(payment.id);
+  if (rows.length) return rows;
+  const legacyAmount = integerValue(payment.receivedAmount);
+  return legacyAmount ? [{ id: `legacy:${payment.id}`, paymentId: payment.id, amount: legacyAmount, receivedDate: payment.receivedDate || "", legacy: true }] : [];
+}
+
+function receivedForPayment(payment, throughDate = "") {
+  return receiptRows(payment)
+    .filter(receipt => !throughDate || (receipt.receivedDate && receipt.receivedDate <= throughDate))
+    .reduce((sum, receipt) => sum + integerValue(receipt.amount), 0);
+}
+
+function allReceiptRows() {
+  return state.payments.filter(payment => !payment.voided).flatMap(payment => receiptRows(payment).map(receipt => ({ ...receipt, payment })));
+}
+
 function paymentRow(payment) {
   const project = projectFor(payment.projectId);
   const amount = integerValue(payment.amount);
-  const received = integerValue(payment.receivedAmount);
+  const received = receivedForPayment(payment);
   return {
     ...payment,
     project,
@@ -319,6 +342,44 @@ function canManageExpenses() { return hasPermission(state.access, "manageExpense
 function canManageCompanyExpenses() { return hasPermission(state.access, "manageCompanyExpenses"); }
 function canDelete() { return state.access?.role === "admin"; }
 
+function payableStatus(expense, asOf = isoDate()) {
+  if (expense?.payableTracked !== true) return { key: "legacyPaid", label: "舊資料／視為已付", badge: "neutral" };
+  if (expense.paidDate) return { key: "paid", label: `已付款 ${expense.paidDate}`, badge: "green" };
+  if (expense.expectedPaymentDate && expense.expectedPaymentDate < asOf) return { key: "overdue", label: "逾期未付", badge: "red" };
+  if (expense.expectedPaymentDate) return { key: "pending", label: `待付 ${expense.expectedPaymentDate}`, badge: "orange" };
+  return { key: "pending", label: "待付款／未設到期日", badge: "orange" };
+}
+
+function payableRows(context) {
+  const projectRows = state.expenses.filter(expense => !expense.voided).map(expense => {
+    const project = projectFor(expense.projectId);
+    return { ...expense, source: "專案支出", sourceName: expense.projectName || project?.name || "未命名專案", customerName: expense.customerName || project?.client || "", itemName: expenseCategoryLabel(expense.category) };
+  });
+  const companyRows = state.companyExpenses.filter(expense => !expense.voided).map(expense => ({ ...expense, source: "公司支出", sourceName: companyExpenseCategoryLabel(expense.category), customerName: "", itemName: expense.name || "未命名支出" }));
+  return [...projectRows, ...companyRows]
+    .filter(expense => expense.payableTracked === true && !expense.paidDate)
+    .filter(expense => context.customer === "all" || expense.customerName === context.customer)
+    .filter(expense => !context.keyword || [expense.vendor, expense.itemName, expense.sourceName, expense.customerName, expense.note].join(" ").toLocaleLowerCase("zh-Hant").includes(context.keyword))
+    .sort((a, b) => String(a.expectedPaymentDate || "9999").localeCompare(String(b.expectedPaymentDate || "9999")));
+}
+
+function renderPayables(context) {
+  const rows = payableRows(context);
+  const overdue = rows.filter(expense => payableStatus(expense, context.asOf).key === "overdue");
+  const end = addDays(context.asOf, 30);
+  const next30 = rows.filter(expense => expense.expectedPaymentDate && expense.expectedPaymentDate >= context.asOf && expense.expectedPaymentDate <= end);
+  $("#financePayableTotal").textContent = money(rows.reduce((sum, expense) => sum + integerValue(expense.amount), 0));
+  $("#financePayableCount").textContent = `${rows.length} 筆`;
+  $("#financePayableOverdue").textContent = money(overdue.reduce((sum, expense) => sum + integerValue(expense.amount), 0));
+  $("#financePayableOverdueCount").textContent = `${overdue.length} 筆`;
+  $("#financePayableNext30").textContent = money(next30.reduce((sum, expense) => sum + integerValue(expense.amount), 0));
+  $("#financePayableNext30Count").textContent = `${next30.length} 筆`;
+  $("#financePayableBody").innerHTML = rows.length ? rows.map(expense => {
+    const status = payableStatus(expense, context.asOf);
+    return `<tr><td>${esc(expense.expectedPaymentDate || "—")}</td><td><b>${esc(expense.vendor || "未填廠商")}</b><div class="table-sub">${esc(expense.itemName)}</div></td><td>${esc(expense.source)}<div class="table-sub">${esc(expense.sourceName)}</div></td><td class="num"><b>${money(expense.amount)}</b></td><td><span class="badge ${status.badge}">${esc(status.label)}</span></td></tr>`;
+  }).join("") : `<tr><td colspan="5"><div class="empty-state">目前沒有待付的廠商款項。</div></td></tr>`;
+}
+
 function filteredExpenses(context) {
   return state.expenses.filter(expense => !expense.voided)
     .map(expense => {
@@ -334,14 +395,14 @@ function renderExpenses(context) {
   const list = filteredExpenses(context);
   $("#expenseResultCount").textContent = `共 ${list.length} 筆`;
   $("#expenseOpenCreate").disabled = !canManageExpenses();
-  $("#expenseTableBody").innerHTML = list.length ? list.map(expense => `<tr>
+  $("#expenseTableBody").innerHTML = list.length ? list.map(expense => { const status = payableStatus(expense, context.asOf); return `<tr>
     <td>${esc(expense.expenseDate || "—")}</td>
     <td><b>${esc(expense.projectName)}</b><div class="table-sub">${esc(expense.customerName)}</div></td>
     <td>${esc(expenseCategoryLabel(expense.category))}<div class="table-sub">${esc(expense.vendor || "—")}</div></td>
-    <td class="num">${money(expense.amount)}</td><td>${expense.taxMode === "untaxed" ? "未稅" : "含稅"}</td><td class="num"><b>${money(expenseUntaxed(expense))}</b></td>
+    <td class="num">${money(expense.amount)}</td><td>${expense.taxMode === "untaxed" ? "未稅" : "含稅"}</td><td class="num"><b>${money(expenseUntaxed(expense))}</b></td><td><span class="badge ${status.badge}">${esc(status.label)}</span></td>
     <td>${esc(expense.note || "—")}</td>
     <td><div class="row-actions"><button class="btn ghost small" type="button" data-expense-edit="${esc(expense.id)}" ${canManageExpenses() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-expense-delete="${esc(expense.id)}" ${canDelete() ? "" : "disabled"}>刪除</button></div></td>
-  </tr>`).join("") : `<tr><td colspan="8"><div class="empty-state">選定月份尚無逐筆外部支出；舊專案手動成本仍會保留在案件毛利計算。</div></td></tr>`;
+  </tr>`; }).join("") : `<tr><td colspan="9"><div class="empty-state">選定月份尚無逐筆外部支出；舊專案手動成本仍會保留在案件毛利計算。</div></td></tr>`;
 }
 
 function filteredCompanyExpenses(context) {
@@ -358,19 +419,25 @@ function renderCompanyExpenses(context) {
   if ($("#companyExpenseResultCount")) $("#companyExpenseResultCount").textContent = `共 ${list.length} 筆`;
   if ($("#companyExpenseOpenCreate")) $("#companyExpenseOpenCreate").disabled = !canManageCompanyExpenses();
   if (!$("#companyExpenseTableBody")) return;
-  $("#companyExpenseTableBody").innerHTML = list.length ? list.map(expense => `<tr>
+  $("#companyExpenseTableBody").innerHTML = list.length ? list.map(expense => { const status = payableStatus(expense, context.asOf); return `<tr>
     <td>${esc(expense.expenseDate || "—")}</td>
     <td><span class="badge ${isCapitalExpense(expense) ? "orange" : "neutral"}">${isCapitalExpense(expense) ? "資本支出" : "營運支出"}</span><div class="table-sub">${esc(companyExpenseCategoryLabel(expense.category))}</div></td>
     <td><b>${esc(expense.name || "未命名支出")}</b><div class="table-sub">${esc(expense.vendor || "—")}</div></td>
-    <td class="num">${money(expense.amount)}</td><td>${expense.taxMode === "untaxed" ? "未稅" : "含稅"}</td><td class="num"><b>${money(companyExpenseUntaxed(expense))}</b></td>
+    <td class="num">${money(expense.amount)}</td><td>${expense.taxMode === "untaxed" ? "未稅" : "含稅"}</td><td class="num"><b>${money(companyExpenseUntaxed(expense))}</b></td><td><span class="badge ${status.badge}">${esc(status.label)}</span></td>
     <td>${esc(expense.receiptNumber || "—")}</td><td>${esc(expense.equipmentName || "—")}</td><td>${esc(expense.note || "—")}</td>
     <td><div class="row-actions"><button class="btn ghost small" type="button" data-company-expense-edit="${esc(expense.id)}" ${canManageCompanyExpenses() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-company-expense-delete="${esc(expense.id)}" ${canDelete() ? "" : "disabled"}>刪除</button></div></td>
-  </tr>`).join("") : `<tr><td colspan="10"><div class="empty-state">選定月份尚無符合條件的公司支出。</div></td></tr>`;
+  </tr>`; }).join("") : `<tr><td colspan="11"><div class="empty-state">選定月份尚無符合條件的公司支出。</div></td></tr>`;
 }
 
 function renderMonthReceived(context) {
-  const rows = state.payments.filter(payment => !payment.voided && payment.receivedDate?.startsWith(context.month) && integerValue(payment.receivedAmount) > 0)
+  const invoiced = state.payments.filter(payment => !payment.voided && payment.requestDate?.startsWith(context.month))
     .map(paymentRow).filter(row => matchesContext(row, context));
+  $("#financeMonthInvoiced").textContent = money(invoiced.reduce((sum, row) => sum + row.amount, 0));
+  $("#financeMonthInvoicedCount").textContent = `${invoiced.length} 筆請款`;
+  const rows = allReceiptRows()
+    .filter(receipt => receipt.receivedDate?.startsWith(context.month) && integerValue(receipt.amount) > 0)
+    .map(receipt => ({ ...paymentRow(receipt.payment), received: integerValue(receipt.amount), receivedDate: receipt.receivedDate }))
+    .filter(row => matchesContext(row, context));
   $("#financeMonthReceived").textContent = money(rows.reduce((sum, row) => sum + row.received, 0));
   $("#financeMonthReceivedCount").textContent = `${rows.length} 筆入帳`;
 }
@@ -399,12 +466,15 @@ function renderAnalysis(context) {
   $("#financeProjectStatsBody").innerHTML = projects.length ? projects.map(item => `<tr><td>${esc(item.key)}</td><td class="num">${money(item.invoiced)}</td><td class="num">${money(item.received)}</td><td class="num">${money(item.outstanding)}</td></tr>`).join("") : `<tr><td colspan="4">尚無資料</td></tr>`;
 
   const months = new Set([context.month]);
-  all.forEach(row => { if (row.requestDate) months.add(row.requestDate.slice(0, 7)); if (row.receivedDate) months.add(row.receivedDate.slice(0, 7)); });
+  all.forEach(row => { if (row.requestDate) months.add(row.requestDate.slice(0, 7)); });
+  const scopedReceipts = allReceiptRows().filter(receipt => matchesContext(paymentRow(receipt.payment), context));
+  scopedReceipts.forEach(receipt => { if (receipt.receivedDate) months.add(receipt.receivedDate.slice(0, 7)); });
   const monthRows = [...months].sort((a, b) => b.localeCompare(a)).slice(0, 12).map(month => {
     const invoiced = all.filter(row => row.requestDate?.startsWith(month)).reduce((sum, row) => sum + row.amount, 0);
-    const received = all.filter(row => row.receivedDate?.startsWith(month)).reduce((sum, row) => sum + row.received, 0);
+    const received = scopedReceipts.filter(receipt => receipt.receivedDate?.startsWith(month)).reduce((sum, receipt) => sum + integerValue(receipt.amount), 0);
     const end = `${month}-31`;
-    const outstanding = all.filter(row => row.requestDate <= end && (!row.receivedDate || row.receivedDate > end)).reduce((sum, row) => sum + row.remaining, 0);
+    const outstanding = state.payments.filter(payment => !payment.voided && payment.requestDate && payment.requestDate <= end && matchesContext(paymentRow(payment), context))
+      .reduce((sum, payment) => sum + Math.max(0, integerValue(payment.amount) - receivedForPayment(payment, end)), 0);
     return { month, invoiced, received, outstanding };
   });
   $("#financeMonthStatsBody").innerHTML = monthRows.map(item => `<tr><td>${esc(item.month)}</td><td class="num">${money(item.invoiced)}</td><td class="num">${money(item.received)}</td><td class="num">${money(item.outstanding)}</td></tr>`).join("");
@@ -421,6 +491,7 @@ function renderFinance() {
   renderMonthReceived(context);
   renderProfitability(context);
   renderCompanyExpenseSummary(context);
+  renderPayables(context);
   renderExpenses(context);
   renderCompanyExpenses(context);
   renderAnalysis(context);
@@ -450,6 +521,10 @@ function openExpense(expense = null) {
   $("#expenseVendor").value = expense?.vendor || "";
   $("#expenseAmount").value = expense?.amount ? money(expense.amount) : "";
   $("#expenseTaxMode").value = expense?.taxMode || "taxed";
+  $("#expenseVendorBillDate").value = expense?.vendorBillDate || "";
+  $("#expenseExpectedPaymentDate").value = expense?.expectedPaymentDate || "";
+  $("#expensePaidDate").value = expense ? (expense.payableTracked === true ? (expense.paidDate || "") : (expense.expenseDate || "")) : "";
+  $("#expensePaymentMethod").value = expense?.paymentMethod || "bank_transfer";
   $("#expenseNote").value = expense?.note || "";
   $("#expenseDrawerTitle").textContent = expense ? "編輯外部支出" : "新增外部支出";
   updateExpenseHint();
@@ -477,6 +552,11 @@ async function saveExpense() {
     expenseDate: $("#expenseDate").value, category: $("#expenseCategory").value,
     vendor: $("#expenseVendor").value.trim(), amount, taxMode,
     costUntaxed: taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE)),
+    vendorBillDate: $("#expenseVendorBillDate").value,
+    expectedPaymentDate: $("#expenseExpectedPaymentDate").value,
+    paidDate: $("#expensePaidDate").value,
+    paymentMethod: $("#expensePaymentMethod").value,
+    payableTracked: true,
     note: $("#expenseNote").value.trim(), voided: false,
     updatedAt: serverTimestamp(), updatedBy: state.user.uid
   };
@@ -536,6 +616,10 @@ function openCompanyExpense(expense = null) {
   $("#companyExpenseReceipt").value = expense?.receiptNumber || "";
   $("#companyExpenseAmount").value = expense?.amount ? money(expense.amount) : "";
   $("#companyExpenseTaxMode").value = expense?.taxMode || "taxed";
+  $("#companyExpenseVendorBillDate").value = expense?.vendorBillDate || "";
+  $("#companyExpenseExpectedPaymentDate").value = expense?.expectedPaymentDate || "";
+  $("#companyExpensePaidDate").value = expense ? (expense.payableTracked === true ? (expense.paidDate || "") : (expense.expenseDate || "")) : "";
+  $("#companyExpensePaymentMethod").value = expense?.paymentMethod || "bank_transfer";
   $("#companyExpenseEquipmentId").value = expense?.equipmentId || "";
   $("#companyExpenseNote").value = expense?.note || "";
   $("#companyExpenseDrawerTitle").textContent = expense ? "編輯公司支出" : "新增公司支出";
@@ -575,6 +659,11 @@ async function saveCompanyExpense() {
     costUntaxed: taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE)),
     equipmentId: equipment?.id || "",
     equipmentName: equipment?.name || "",
+    vendorBillDate: $("#companyExpenseVendorBillDate").value,
+    expectedPaymentDate: $("#companyExpenseExpectedPaymentDate").value,
+    paidDate: $("#companyExpensePaidDate").value,
+    paymentMethod: $("#companyExpensePaymentMethod").value,
+    payableTracked: true,
     note: $("#companyExpenseNote").value.trim(),
     voided: false,
     updatedAt: serverTimestamp(),
@@ -691,8 +780,8 @@ function exportCompanyExpenses() {
   const context = filterContext();
   const rows = filteredCompanyExpenses(context);
   const csv = [
-    ["日期", "性質", "類別", "支出項目", "廠商／收款方", "支出金額", "稅別", "未稅金額", "發票／憑證", "連結設備", "備註"],
-    ...rows.map(expense => [expense.expenseDate || "", isCapitalExpense(expense) ? "資本支出" : "營運支出", companyExpenseCategoryLabel(expense.category), expense.name || "", expense.vendor || "", expense.amount || 0, expense.taxMode === "untaxed" ? "未稅" : "含稅", companyExpenseUntaxed(expense), expense.receiptNumber || "", expense.equipmentName || "", expense.note || ""])
+    ["成本日期", "性質", "類別", "支出項目", "廠商／收款方", "支出金額", "稅別", "未稅金額", "廠商請款日", "預計付款日", "實際付款日", "付款方式", "付款狀態", "發票／憑證", "連結設備", "備註"],
+    ...rows.map(expense => [expense.expenseDate || "", isCapitalExpense(expense) ? "資本支出" : "營運支出", companyExpenseCategoryLabel(expense.category), expense.name || "", expense.vendor || "", expense.amount || 0, expense.taxMode === "untaxed" ? "未稅" : "含稅", companyExpenseUntaxed(expense), expense.vendorBillDate || "", expense.expectedPaymentDate || "", expense.paidDate || "", expense.paymentMethod || "", payableStatus(expense, context.asOf).label, expense.receiptNumber || "", expense.equipmentName || "", expense.note || ""])
   ].map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
   const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -721,13 +810,14 @@ function listen(collectionRef, target, options = {}) {
 function detach() {
   state.unsubs.forEach(unsubscribe => unsubscribe());
   state.unsubs = [];
-  state.projects = []; state.payments = []; state.expenses = []; state.companyExpenses = []; state.equipment = []; state.users = []; state.auditLogs = [];
+  state.projects = []; state.payments = []; state.receipts = []; state.expenses = []; state.companyExpenses = []; state.equipment = []; state.users = []; state.auditLogs = [];
   renderFinance(); renderSystemAccess();
 }
 
 function attach() {
   listen(collections.projects, "projects");
   listen(collections.payments, "payments");
+  listen(collections.receipts, "receipts");
   listen(collections.expenses, "expenses");
   listen(collections.companyExpenses, "companyExpenses");
   listen(collections.equipment, "equipment");

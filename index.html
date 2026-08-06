@@ -159,23 +159,34 @@
         <div class="finance-kpi primary"><span>已請款未收</span><b id="financeReceivableTotal">0</b><small>所有未作廢且已請款款項</small></div>
         <div class="finance-kpi danger"><span>逾期未收</span><b id="financeOverdueTotal">0</b><small id="financeOverdueCount">0 筆逾期</small></div>
         <div class="finance-kpi warning"><span>未來 30 天預計收款</span><b id="financeNext30Total">0</b><small id="financeNext30Count">0 筆即將到期</small></div>
+        <div class="finance-kpi"><span>本月已請款</span><b id="financeMonthInvoiced">0</b><small id="financeMonthInvoicedCount">0 筆請款</small></div>
         <div class="finance-kpi success"><span>本月已收款</span><b id="financeMonthReceived">0</b><small id="financeMonthReceivedCount">0 筆入帳</small></div>
       </div>
 
       <div class="finance-profit-grid">
-        <div class="finance-profit-card"><span>選定月份營收（未稅）</span><b id="financeMonthRevenue">0</b><small>依活動檔期歸月</small></div>
+        <div class="finance-profit-card"><span>檔期專案金額（未稅）</span><b id="financeMonthRevenue">0</b><small>選定月份有執行檔期的案件；非會計營收</small></div>
         <div class="finance-profit-card"><span>專案外部支出（未稅）</span><b id="financeMonthExpenses">0</b><small>逐筆支出；舊案沿用手動成本</small></div>
-        <div class="finance-profit-card emphasized"><span>案件毛利</span><b id="financeMonthContribution">0</b><small>營收－外部支出，未扣設備折舊及固定費用</small></div>
+        <div class="finance-profit-card emphasized"><span>檔期案件毛利</span><b id="financeMonthContribution">0</b><small>專案金額－外部支出，未扣設備折舊及固定費用</small></div>
       </div>
 
       <section class="finance-section company-finance-summary">
-        <div class="finance-section-head"><div><h3>公司支出與營運概況</h3><p>公司支出依支出日期歸月；設備採購屬資本支出，獨立列示且不重複扣入營運餘額。</p></div></div>
+        <div class="finance-section-head"><div><h3>公司支出與營運概況</h3><p>公司支出依成本／憑證日期歸月；設備採購屬資本支出，獨立列示且不重複扣入營運餘額。</p></div></div>
         <div class="company-expense-kpi-grid">
           <div class="company-expense-kpi"><span>公司營運支出（未稅）</span><b id="companyOperatingExpenseTotal">0</b><small>房租、人事、水電、軟體等</small></div>
           <div class="company-expense-kpi capital"><span>設備採購（未稅）</span><b id="companyCapitalExpenseTotal">0</b><small>資本支出，不列入當月營運餘額</small></div>
           <div class="company-expense-kpi"><span>公司總支出（未稅）</span><b id="companyExpenseTotal">0</b><small>營運支出＋設備採購</small></div>
           <div class="company-expense-kpi result"><span>公司營運餘額（未稅）</span><b id="companyOperatingBalance">0</b><small>全公司案件毛利－公司營運支出；非會計淨利</small></div>
         </div>
+      </section>
+
+      <section class="finance-section">
+        <div class="finance-section-head"><div><h3>廠商應付帳款</h3><p>只列新版有啟用付款追蹤、尚未付款的專案與公司支出；舊支出預設視為已付款。</p></div></div>
+        <div class="payable-kpi-grid">
+          <div class="aging-card"><span>應付未付</span><b id="financePayableTotal">0</b><small id="financePayableCount">0 筆</small></div>
+          <div class="aging-card critical"><span>逾期未付</span><b id="financePayableOverdue">0</b><small id="financePayableOverdueCount">0 筆</small></div>
+          <div class="aging-card current"><span>未來 30 天到期</span><b id="financePayableNext30">0</b><small id="financePayableNext30Count">0 筆</small></div>
+        </div>
+        <div class="card table-card"><div class="table-scroll"><table class="table payable-table"><thead><tr><th>預計付款日</th><th>廠商／項目</th><th>來源</th><th class="num">應付金額</th><th>狀態</th></tr></thead><tbody id="financePayableBody"></tbody></table></div></div>
       </section>
 
       <section class="finance-section">
@@ -191,8 +202,8 @@
       </section>
 
       <section class="finance-section">
-        <div class="finance-section-head"><div><h3>外部支出明細</h3><p>記錄可確認的實際支出；含稅金額會自動換算為未稅成本供毛利計算。</p></div><span id="expenseResultCount">共 0 筆</span></div>
-        <div class="card table-card"><div class="table-scroll"><table class="table expense-table"><thead><tr><th>日期</th><th>專案／客戶</th><th>類別／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅成本</th><th>備註</th><th>操作</th></tr></thead><tbody id="expenseTableBody"></tbody></table></div></div>
+        <div class="finance-section-head"><div><h3>外部支出明細</h3><p>記錄已確認的專案成本；付款日另行追蹤，含稅金額會自動換算為未稅成本供毛利計算。</p></div><span id="expenseResultCount">共 0 筆</span></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table expense-table"><thead><tr><th>成本日期</th><th>專案／客戶</th><th>類別／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅成本</th><th>付款狀態</th><th>備註</th><th>操作</th></tr></thead><tbody id="expenseTableBody"></tbody></table></div></div>
       </section>
 
       <section class="finance-section">
@@ -202,7 +213,7 @@
           <label class="field-inline"><span>類別</span><select id="companyExpenseCategoryFilter" class="select"><option value="all">全部類別</option><option value="rent">房租／倉租</option><option value="utilities">水電／網路／電話</option><option value="payroll">薪資／勞務／獎金</option><option value="insurance">保險／勞健保</option><option value="software">軟體／訂閱</option><option value="equipment_purchase">設備購買</option><option value="equipment_maintenance">設備維修／保養</option><option value="office">辦公／行政</option><option value="marketing">行銷／業務</option><option value="professional">專業服務／稅務</option><option value="other">其他</option></select></label>
           <button id="companyExpenseExportCsv" class="btn ghost" type="button">匯出公司支出 CSV</button>
         </div>
-        <div class="card table-card"><div class="table-scroll"><table class="table company-expense-table"><thead><tr><th>日期</th><th>性質／類別</th><th>項目／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅金額</th><th>發票／憑證</th><th>連結設備</th><th>備註</th><th>操作</th></tr></thead><tbody id="companyExpenseTableBody"></tbody></table></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table company-expense-table"><thead><tr><th>成本日期</th><th>性質／類別</th><th>項目／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅金額</th><th>付款狀態</th><th>發票／憑證</th><th>連結設備</th><th>備註</th><th>操作</th></tr></thead><tbody id="companyExpenseTableBody"></tbody></table></div></div>
       </section>
 
       <section class="finance-section">
@@ -235,11 +246,13 @@
         <button id="paymentOpenCreate" class="btn primary" type="button">＋ 新增款項</button>
       </div>
 
-      <div class="payment-kpi-grid">
-        <div class="mini-kpi"><span>已確認專案總額</span><b id="paymentProjectTotal">0</b></div>
+      <div class="payment-kpi-grid standard-finance-kpis">
+        <div class="mini-kpi"><span>專案價（含稅）</span><b id="paymentProjectTotal">0</b></div>
         <div class="mini-kpi"><span>已請款</span><b id="paymentInvoicedTotal">0</b></div>
+        <div class="mini-kpi"><span>尚未請款</span><b id="paymentUnbilledTotal">0</b><small>專案價－已請款</small></div>
+        <div class="mini-kpi payment-outstanding-kpi"><span>應收帳款</span><b id="paymentReceivableTotal">0</b><small>已請款－已收款</small></div>
         <div class="mini-kpi"><span>已收款</span><b id="paymentReceivedTotal">0</b></div>
-        <div class="mini-kpi payment-outstanding-kpi"><span>尚未收款</span><b id="paymentOutstandingTotal">0</b></div>
+        <div class="mini-kpi"><span>全案待收</span><b id="paymentOutstandingTotal">0</b><small>專案價－已收款</small></div>
       </div>
 
       <div class="card project-toolbar payment-toolbar">
@@ -257,12 +270,14 @@
               <col class="payment-col-date" />
               <col class="payment-col-total" />
               <col class="payment-col-invoiced" />
+              <col class="payment-col-invoiced" />
+              <col class="payment-col-invoiced" />
               <col class="payment-col-received" />
               <col class="payment-col-outstanding" />
               <col class="payment-col-status" />
               <col class="payment-col-actions" />
             </colgroup>
-            <thead><tr><th>專案／客戶</th><th>活動日期／案況</th><th class="num">專案價（含稅）</th><th class="num">已請款</th><th class="num">已收款</th><th class="num">尚未收款</th><th>收款狀態</th><th>操作</th></tr></thead>
+            <thead><tr><th>專案／客戶</th><th>活動日期／案況</th><th class="num">專案價（含稅）</th><th class="num">已請款</th><th class="num">尚未請款</th><th class="num">應收帳款</th><th class="num">已收款</th><th class="num">全案待收</th><th>收款狀態</th><th>操作</th></tr></thead>
             <tbody id="paymentProjectTableBody"></tbody>
           </table>
         </div>
@@ -413,7 +428,7 @@
       <div class="panel-head">
         <div>
           <h2>月報表</h2>
-          <p class="hint">統計該月份有跨到檔期的專案，並依支出日期彙整公司支出；設備採購與營運支出分開列示。</p>
+          <p class="hint">「檔期專案金額」統計該月有執行檔期的案件，並非會計營收；本月請款與實收則依各自日期歸月。</p>
         </div>
 
         <div class="panel-actions">
@@ -425,10 +440,10 @@
       <!-- ✅ KPI 左大右小 -->
       <div class="report-kpi">
         <div class="kpi-card big">
-          <div class="kpi-label">本月業績（營收未稅）</div>
+          <div class="kpi-label">檔期專案金額（未稅）</div>
           <div class="kpi-value" id="kpiMonthRevenue">0</div>
           <div class="kpi-sub">
-            <span class="kpi-dot">案件毛利：<span id="kpiMonthProfit">0</span></span>
+            <span class="kpi-dot">檔期案件毛利：<span id="kpiMonthProfit">0</span></span>
             <span class="kpi-dot">已結案營收：<span id="kpiClosedRevenue">0</span></span>
           </div>
         </div>
@@ -467,10 +482,12 @@
               <th>狀態</th>
               <th class="num">報價</th>
               <th>模式</th>
-              <th class="num">已請款</th>
-              <th class="num">已收款</th>
-              <th class="num">未收款</th>
-              <th class="num">營收(未稅)</th>
+              <th class="num">累計已請款</th>
+              <th class="num">尚未請款</th>
+              <th class="num">累計已收款</th>
+              <th class="num">應收帳款</th>
+              <th class="num">全案待收</th>
+              <th class="num">專案金額(未稅)</th>
               <th class="num">外部支出</th>
               <th class="num">案件毛利</th>
             </tr>
@@ -480,7 +497,9 @@
             <tr>
               <td colspan="7" style="text-align:right; font-weight:950;">合計</td>
               <td class="num" id="reportTotalInvoiced"></td>
+              <td class="num" id="reportTotalUnbilled"></td>
               <td class="num" id="reportTotalReceived"></td>
+              <td class="num" id="reportTotalReceivable"></td>
               <td class="num" id="reportTotalOutstanding"></td>
               <td class="num" id="reportTotalRevenue"></td>
               <td class="num" id="reportTotalCost"></td>
@@ -660,7 +679,7 @@
           <section class="form-section"><h3>專案與款項</h3><div class="form-grid">
             <label class="field field-full"><span>連結專案 *</span><select id="paymentProjectId" class="select" required><option value="">請選擇專案</option></select><small id="paymentProjectHint" class="field-help">可選擇既有專案，包括活動前需先收訂金的案子。</small></label>
             <label class="field"><span>款項類型</span><select id="paymentType" class="select"><option value="deposit">訂金</option><option value="balance">尾款</option><option value="full">全額款</option><option value="other">其他</option></select></label>
-            <label class="field"><span>本筆應收金額（含稅）*</span><input id="paymentAmount" class="input" inputmode="numeric" required /><small id="paymentRemainingHint" class="field-help"></small></label>
+            <label class="field"><span>本筆請款金額（含稅）*</span><input id="paymentAmount" class="input" inputmode="numeric" required /><small id="paymentRemainingHint" class="field-help"></small></label>
             <label class="field field-full"><span>款項名稱</span><input id="paymentLabel" class="input" placeholder="例如：第一期訂金 30%" /></label>
           </div></section>
 
@@ -672,13 +691,35 @@
             <label class="field field-full"><span>付款條件</span><input id="paymentTerms" class="input" placeholder="例如：月結 60 天" /><small class="field-help">若客戶資料有付款條件，選擇專案後會自動帶入並試算預計收款日，仍可手動修改。</small></label>
           </div></section>
 
-          <section class="form-section"><h3>實際收款</h3><div class="form-grid">
-            <label class="field"><span>已收金額（含稅）</span><input id="paymentReceivedAmount" class="input" inputmode="numeric" placeholder="尚未收到可留白" /></label>
-            <label class="field"><span>實際收款日</span><input id="paymentReceivedDate" class="input" type="date" /></label>
-            <label class="field field-full"><span>備註</span><textarea id="paymentNote" class="textarea" rows="4" placeholder="可記錄匯款資訊、催款情況或其他補充"></textarea></label>
+          <section class="form-section"><h3>請款備註</h3><div class="form-grid">
+            <label class="field field-full"><span>備註</span><textarea id="paymentNote" class="textarea" rows="4" placeholder="可記錄發票寄送、請款窗口或催款補充"></textarea></label>
+            <p class="field-help field-full">實際入帳請在款項明細按「登記收款」；同一筆請款可保留多次收款日期與金額。</p>
           </div></section>
         </div>
         <div class="drawer-actions"><button class="btn ghost" type="button" data-payment-close>取消</button><button class="btn primary" type="submit">儲存款項</button></div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- 實際收款 Drawer -->
+  <div id="receiptDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-receipt-close aria-label="關閉收款表單"></button>
+    <aside class="drawer-panel narrow payment-drawer" role="dialog" aria-modal="true" aria-labelledby="receiptDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">請款／收款</div><h2 id="receiptDrawerTitle">登記收款</h2></div><button id="receiptDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="receiptForm" class="drawer-form">
+        <input id="receiptId" type="hidden" />
+        <input id="receiptPaymentId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section"><h3>對應請款</h3><p id="receiptBillingLabel" class="receipt-billing-label"></p></section>
+          <section class="form-section"><h3>本次入帳</h3><div class="form-grid">
+            <label class="field"><span>實際收款日 *</span><input id="receiptDate" class="input" type="date" required /></label>
+            <label class="field"><span>本次收款金額（含稅）*</span><input id="receiptAmount" class="input" inputmode="numeric" required /><small id="receiptRemainingHint" class="field-help"></small></label>
+            <label class="field"><span>收款方式</span><select id="receiptMethod" class="select"><option value="bank_transfer">銀行轉帳</option><option value="cash">現金</option><option value="check">支票</option><option value="card">刷卡</option><option value="other">其他</option></select></label>
+            <label class="field"><span>交易／匯款末碼</span><input id="receiptReference" class="input" /></label>
+            <label class="field field-full"><span>備註</span><textarea id="receiptNote" class="textarea" rows="3"></textarea></label>
+          </div></section>
+        </div>
+        <div class="drawer-actions"><button class="btn ghost" type="button" data-receipt-close>取消</button><button class="btn primary" type="submit">儲存收款</button></div>
       </form>
     </aside>
   </div>
@@ -693,11 +734,15 @@
         <div class="drawer-content">
           <section class="form-section"><h3>支出資料</h3><div class="form-grid">
             <label class="field field-full"><span>連結專案 *</span><select id="expenseProjectId" class="select" required><option value="">請選擇專案</option></select></label>
-            <label class="field"><span>支出日期 *</span><input id="expenseDate" class="input" type="date" required /></label>
+            <label class="field"><span>成本／憑證日期 *</span><input id="expenseDate" class="input" type="date" required /><small class="field-help">作為專案成本歸屬月份。</small></label>
             <label class="field"><span>類別</span><select id="expenseCategory" class="select"><option value="outsourcing_equipment">外包設備</option><option value="temporary_staff">臨時人力</option><option value="transport">運輸</option><option value="consumables">耗材</option><option value="venue">場租／其他場地費</option><option value="other">其他</option></select></label>
             <label class="field"><span>廠商／收款方</span><input id="expenseVendor" class="input" /></label>
             <label class="field"><span>支出金額 *</span><input id="expenseAmount" class="input" inputmode="numeric" required /></label>
             <label class="field field-full"><span>金額稅別</span><select id="expenseTaxMode" class="select"><option value="taxed">含稅</option><option value="untaxed">未稅</option></select><small id="expenseUntaxedHint" class="field-help">未稅成本：0</small></label>
+            <label class="field"><span>廠商請款日</span><input id="expenseVendorBillDate" class="input" type="date" /></label>
+            <label class="field"><span>預計付款日</span><input id="expenseExpectedPaymentDate" class="input" type="date" /></label>
+            <label class="field"><span>實際付款日</span><input id="expensePaidDate" class="input" type="date" /><small class="field-help">留白表示尚未付款。</small></label>
+            <label class="field"><span>付款方式</span><select id="expensePaymentMethod" class="select"><option value="bank_transfer">銀行轉帳</option><option value="cash">現金</option><option value="check">支票</option><option value="card">刷卡</option><option value="other">其他</option></select></label>
             <label class="field field-full"><span>備註</span><textarea id="expenseNote" class="textarea" rows="4"></textarea></label>
           </div></section>
         </div>
@@ -715,13 +760,17 @@
         <input id="companyExpenseId" type="hidden" />
         <div class="drawer-content">
           <section class="form-section"><h3>公司支出資料</h3><div class="form-grid">
-            <label class="field"><span>支出日期 *</span><input id="companyExpenseDate" class="input" type="date" required /></label>
+            <label class="field"><span>成本／憑證日期 *</span><input id="companyExpenseDate" class="input" type="date" required /><small class="field-help">作為公司支出歸屬月份。</small></label>
             <label class="field"><span>類別 *</span><select id="companyExpenseCategory" class="select" required><option value="rent">房租／倉租</option><option value="utilities">水電／網路／電話</option><option value="payroll">薪資／勞務／獎金</option><option value="insurance">保險／勞健保</option><option value="software">軟體／訂閱</option><option value="equipment_purchase">設備購買</option><option value="equipment_maintenance">設備維修／保養</option><option value="office">辦公／行政</option><option value="marketing">行銷／業務</option><option value="professional">專業服務／稅務</option><option value="other">其他</option></select></label>
             <label class="field field-full"><span>支出項目 *</span><input id="companyExpenseName" class="input" required placeholder="例如：8 月辦公室租金、CO2 Jet 採購" /></label>
             <label class="field"><span>廠商／收款方</span><input id="companyExpenseVendor" class="input" /></label>
             <label class="field"><span>發票／憑證號碼</span><input id="companyExpenseReceipt" class="input" /></label>
             <label class="field"><span>支出金額 *</span><input id="companyExpenseAmount" class="input" inputmode="numeric" required /></label>
             <label class="field"><span>金額稅別</span><select id="companyExpenseTaxMode" class="select"><option value="taxed">含稅</option><option value="untaxed">未稅</option></select><small id="companyExpenseUntaxedHint" class="field-help">未稅金額：0</small></label>
+            <label class="field"><span>廠商請款日</span><input id="companyExpenseVendorBillDate" class="input" type="date" /></label>
+            <label class="field"><span>預計付款日</span><input id="companyExpenseExpectedPaymentDate" class="input" type="date" /></label>
+            <label class="field"><span>實際付款日</span><input id="companyExpensePaidDate" class="input" type="date" /><small class="field-help">留白表示尚未付款。</small></label>
+            <label class="field"><span>付款方式</span><select id="companyExpensePaymentMethod" class="select"><option value="bank_transfer">銀行轉帳</option><option value="cash">現金</option><option value="check">支票</option><option value="card">刷卡</option><option value="other">其他</option></select></label>
             <label id="companyExpenseEquipmentField" class="field field-full hidden"><span>連結設備（選填）</span><select id="companyExpenseEquipmentId" class="select"><option value="">不連結設備</option></select><small class="field-help">只建立採購支出紀錄，不會自動新增或更改設備庫存；可先在設備清單建檔後再連結。</small></label>
             <label class="field field-full"><span>備註</span><textarea id="companyExpenseNote" class="textarea" rows="4" placeholder="可記錄付款方式、使用期間或其他補充"></textarea></label>
           </div></section>

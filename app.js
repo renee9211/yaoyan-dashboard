@@ -103,19 +103,35 @@ function getProjectTotalTaxed(p) {
   return getTaxModeFromProject(p) === "taxed" ? quote : Math.round(quote * (1 + TAX_RATE));
 }
 
+function getActualReceipts(paymentId) {
+  return state.receipts.filter(receipt => receipt.paymentId === paymentId && !receipt.voided);
+}
+
+function getReceiptRows(payment) {
+  const rows = getActualReceipts(payment.id);
+  if (rows.length) return rows;
+  const legacyAmount = parseIntSafe(payment.receivedAmount);
+  return legacyAmount ? [{ id: `legacy:${payment.id}`, amount: legacyAmount, receivedDate: payment.receivedDate || "", method: "legacy", legacy: true }] : [];
+}
+
+function getPaymentReceived(payment) {
+  return getReceiptRows(payment).reduce((sum, receipt) => sum + parseIntSafe(receipt.amount), 0);
+}
+
 function getProjectPaymentSummary(projectId, projectTotalTaxed = 0) {
   const rows = state.payments.filter(payment => payment.projectId === projectId && !payment.voided);
   const scheduled = rows.reduce((sum, payment) => sum + parseIntSafe(payment.amount), 0);
   const invoiced = rows.filter(payment => payment.requestDate).reduce((sum, payment) => sum + parseIntSafe(payment.amount), 0);
-  const received = rows.reduce((sum, payment) => sum + parseIntSafe(payment.receivedAmount), 0);
+  const received = rows.reduce((sum, payment) => sum + getPaymentReceived(payment), 0);
+  const receivable = rows.filter(payment => payment.requestDate)
+    .reduce((sum, payment) => sum + Math.max(0, parseIntSafe(payment.amount) - getPaymentReceived(payment)), 0);
   return {
     scheduled,
     invoiced,
     received,
-    // 專案總價未定時，仍計入已請款未收的已知款項（例如活動前訂金）。
-    outstanding: projectTotalTaxed
-      ? Math.max(0, projectTotalTaxed - received)
-      : Math.max(0, invoiced - received)
+    unbilled: projectTotalTaxed ? Math.max(0, projectTotalTaxed - invoiced) : 0,
+    receivable,
+    totalOutstanding: projectTotalTaxed ? Math.max(0, projectTotalTaxed - received) : receivable
   };
 }
 
@@ -279,7 +295,9 @@ const dom = {
   reportTotalCost: () => $("#reportTotalCost"),
   reportTotalProfit: () => $("#reportTotalProfit"),
   reportTotalInvoiced: () => $("#reportTotalInvoiced"),
+  reportTotalUnbilled: () => $("#reportTotalUnbilled"),
   reportTotalReceived: () => $("#reportTotalReceived"),
+  reportTotalReceivable: () => $("#reportTotalReceivable"),
   reportTotalOutstanding: () => $("#reportTotalOutstanding"),
   reportCompanyOperatingExpense: () => $("#reportCompanyOperatingExpense"),
   reportCompanyCapitalExpense: () => $("#reportCompanyCapitalExpense"),
@@ -305,6 +323,7 @@ const dom = {
 const projectsCol = collection(db, "projects");
 const equipmentCol = collection(db, "equipment");
 const paymentsCol = collection(db, "payments");
+const receiptsCol = collection(db, "receipts");
 const quotationsCol = collection(db, "quotations");
 const expensesCol = collection(db, "expenses");
 const companyExpensesCol = collection(db, "companyExpenses");
@@ -318,10 +337,11 @@ let currentAccess = null;
 let unsubProjects = null;
 let unsubEquipments = null;
 let unsubPayments = null;
+let unsubReceipts = null;
 let unsubQuotations = null;
 let unsubExpenses = null;
 let unsubCompanyExpenses = null;
-let state = { projects: [], equipments: [], payments: [], quotations: [], expenses: [], companyExpenses: [] };
+let state = { projects: [], equipments: [], payments: [], receipts: [], quotations: [], expenses: [], companyExpenses: [] };
 let selectedProjectStatuses = new Set();
 let projectCurrentPage = 1;
 let equipmentSort = { key: "name", direction: "asc" };
@@ -936,7 +956,7 @@ function paymentTypeLabel(type) {
 function paymentRecordStatus(payment) {
   if (payment.voided) return { key: "void", label: "已作廢", badge: "red" };
   const amount = parseIntSafe(payment.amount);
-  const received = parseIntSafe(payment.receivedAmount);
+  const received = getPaymentReceived(payment);
   if (amount > 0 && received >= amount) return { key: "paid", label: "已收款", badge: "green" };
   if (payment.requestDate && payment.expectedPaymentDate && payment.expectedPaymentDate < toISODate(new Date())) {
     return { key: "overdue", label: "逾期未收", badge: "red" };
@@ -979,10 +999,10 @@ function projectCollectionStatus(project, paymentSummary) {
     return { label: "已收款", badge: "green", sub: `共 ${rows.length} 筆款項` };
   }
   if (rows.some(payment => paymentRecordStatus(payment).key === "overdue")) {
-    return { label: "逾期未收", badge: "red", sub: `尚未收款 ${formatMoney(paymentSummary.outstanding)}` };
+    return { label: "逾期未收", badge: "red", sub: `應收帳款 ${formatMoney(paymentSummary.receivable)}` };
   }
   if (paymentSummary.received > 0) {
-    return { label: "部分收款", badge: "blue", sub: `尚未收款 ${formatMoney(paymentSummary.outstanding)}` };
+    return { label: "部分收款", badge: "blue", sub: `應收帳款 ${formatMoney(paymentSummary.receivable)}` };
   }
   if (paymentSummary.invoiced > 0) {
     return { label: "已請款待收", badge: "orange", sub: `已請款 ${formatMoney(paymentSummary.invoiced)}` };
@@ -1013,16 +1033,18 @@ function renderProjectPaymentsHtml(projectId) {
   if (!rows.length) return `<div class="project-detail-empty">尚未建立款項。可依實際情況新增訂金、尾款或全額款。</div>`;
 
   return `<div class="project-detail-table-scroll"><table class="project-detail-table project-payment-history-table">
-    <thead><tr><th>款項</th><th class="num">應收</th><th>請款／發票</th><th>預計收款</th><th class="num">已收／日期</th><th class="num">未收</th><th>狀態</th></tr></thead>
+    <thead><tr><th>款項</th><th class="num">請款金額</th><th>請款／發票</th><th>預計收款</th><th>實際收款紀錄</th><th class="num">應收餘額</th><th>狀態</th></tr></thead>
     <tbody>${rows.map(payment => {
       const status = paymentRecordStatus(payment);
-      const remaining = Math.max(0, parseIntSafe(payment.amount) - parseIntSafe(payment.receivedAmount));
+      const receipts = getReceiptRows(payment).sort((a, b) => String(a.receivedDate || "").localeCompare(String(b.receivedDate || "")));
+      const received = getPaymentReceived(payment);
+      const remaining = Math.max(0, parseIntSafe(payment.amount) - received);
       return `<tr class="${payment.voided ? "project-payment-void" : ""}">
         <td><b>${escapeHtml(payment.label || paymentTypeLabel(payment.paymentType))}</b><div class="table-sub">${escapeHtml(paymentTypeLabel(payment.paymentType))}</div></td>
         <td class="num">${escapeHtml(formatMoney(parseIntSafe(payment.amount)))}</td>
         <td>${escapeHtml(payment.requestDate || "—")}<div class="table-sub">發票：${escapeHtml(payment.invoiceNumber || "—")}${payment.invoiceDate ? `｜${escapeHtml(payment.invoiceDate)}` : ""}</div></td>
         <td>${escapeHtml(payment.expectedPaymentDate || "—")}</td>
-        <td class="num">${escapeHtml(formatMoney(parseIntSafe(payment.receivedAmount)))}<div class="table-sub">${escapeHtml(payment.receivedDate || "—")}</div></td>
+        <td>${receipts.length ? receipts.map(receipt => `<div><b>${escapeHtml(receipt.receivedDate || "—")}</b>｜${escapeHtml(formatMoney(receipt.amount))}${receipt.legacy ? '<span class="table-sub">｜舊版紀錄</span>' : ""}</div>`).join("") : '<span class="table-sub">尚無入帳</span>'}<div class="table-sub">累計 ${escapeHtml(formatMoney(received))}</div></td>
         <td class="num">${escapeHtml(formatMoney(remaining))}</td>
         <td><span class="badge ${status.badge}">${escapeHtml(status.label)}</span></td>
       </tr>`;
@@ -1300,8 +1322,10 @@ function renderProjectsTable() {
               <div><span>案件毛利</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(profit)) : '<em class="pending-value">待確認</em>'}</b><small>未扣設備折舊及固定費用</small></div>
               <div><span>設備分攤估算</span><b>${equipmentCostEstimate.configured ? escapeHtml(formatMoney(equipmentCostEstimate.amount)) : '<em class="pending-value">尚未估算</em>'}</b><small>${equipmentCostEstimate.total ? `已設定 ${equipmentCostEstimate.configured}/${equipmentCostEstimate.total} 項｜${equipmentCostEstimate.days} 天；不列入案件毛利` : "專案未使用設備"}</small></div>
               <div><span>已請款</span><b>${escapeHtml(formatMoney(paymentSummary.invoiced))}</b></div>
+              <div><span>尚未請款</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(paymentSummary.unbilled)) : "—"}</b></div>
               <div><span>已收款</span><b>${escapeHtml(formatMoney(paymentSummary.received))}</b></div>
-              <div class="outstanding"><span>尚未收款</span><b>${escapeHtml(formatMoney(paymentSummary.outstanding))}</b></div>
+              <div class="outstanding"><span>應收帳款</span><b>${escapeHtml(formatMoney(paymentSummary.receivable))}</b></div>
+              <div><span>全案待收</span><b>${escapeHtml(formatMoney(paymentSummary.totalOutstanding))}</b></div>
             </div>
           </section>
 
@@ -1680,11 +1704,11 @@ function renderReport() {
   const mv = monthInput.value;
   if (!mv) return;
 
-  const list = state.projects.filter(p => isProjectInMonth(p, mv));
+  const list = state.projects.filter(p => p.status !== "lost" && isProjectInMonth(p, mv));
   body.innerHTML = "";
 
   let totalR = 0, totalC = 0, totalP = 0;
-  let totalInvoiced = 0, totalReceived = 0, totalOutstanding = 0;
+  let totalInvoiced = 0, totalUnbilled = 0, totalReceived = 0, totalReceivable = 0, totalOutstanding = 0;
   let closedRevenue = 0;
 
   list.forEach(p => {
@@ -1700,8 +1724,10 @@ function renderReport() {
 
     if (p.status === "closed") closedRevenue += revenueUntaxed;
     totalInvoiced += paymentSummary.invoiced;
+    totalUnbilled += paymentSummary.unbilled;
     totalReceived += paymentSummary.received;
-    totalOutstanding += paymentSummary.outstanding;
+    totalReceivable += paymentSummary.receivable;
+    totalOutstanding += paymentSummary.totalOutstanding;
 
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
     const quoteModeLabel = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
@@ -1716,10 +1742,12 @@ function renderReport() {
       <td class="num">${escapeHtml(formatMoney(p.quote || 0))}</td>
       <td>${escapeHtml(quoteModeLabel)}</td>
       <td class="num">${escapeHtml(formatMoney(paymentSummary.invoiced))}</td>
+      <td class="num">${projectTotalTaxed ? escapeHtml(formatMoney(paymentSummary.unbilled)) : "—"}</td>
       <td class="num">${escapeHtml(formatMoney(paymentSummary.received))}</td>
+      <td class="num">${escapeHtml(formatMoney(paymentSummary.receivable))}</td>
       <td class="num">${projectTotalTaxed
-        ? escapeHtml(formatMoney(paymentSummary.outstanding))
-        : `${escapeHtml(formatMoney(paymentSummary.outstanding))}<div class="table-sub">總價待確認</div>`}</td>
+        ? escapeHtml(formatMoney(paymentSummary.totalOutstanding))
+        : `${escapeHtml(formatMoney(paymentSummary.totalOutstanding))}<div class="table-sub">總價待確認</div>`}</td>
       <td class="num">${escapeHtml(formatMoney(revenueUntaxed || 0))}</td>
       <td class="num">${escapeHtml(formatMoney(cost || 0))}</td>
       <td class="num">${escapeHtml(formatMoney(profit))}</td>
@@ -1732,7 +1760,9 @@ function renderReport() {
   dom.reportTotalCost().textContent = formatMoney(totalC);
   dom.reportTotalProfit().textContent = formatMoney(totalP);
   dom.reportTotalInvoiced() && (dom.reportTotalInvoiced().textContent = formatMoney(totalInvoiced));
+  dom.reportTotalUnbilled() && (dom.reportTotalUnbilled().textContent = formatMoney(totalUnbilled));
   dom.reportTotalReceived() && (dom.reportTotalReceived().textContent = formatMoney(totalReceived));
+  dom.reportTotalReceivable() && (dom.reportTotalReceivable().textContent = formatMoney(totalReceivable));
   dom.reportTotalOutstanding() && (dom.reportTotalOutstanding().textContent = formatMoney(totalOutstanding));
 
   const monthRange = getMonthRange(mv);
@@ -1740,8 +1770,10 @@ function renderReport() {
     .filter(payment => !payment.voided && payment.requestDate && payment.requestDate >= monthRange.start && payment.requestDate <= monthRange.end)
     .reduce((sum, payment) => sum + parseIntSafe(payment.amount), 0);
   const monthlyReceived = state.payments
-    .filter(payment => !payment.voided && payment.receivedDate && payment.receivedDate >= monthRange.start && payment.receivedDate <= monthRange.end)
-    .reduce((sum, payment) => sum + parseIntSafe(payment.receivedAmount), 0);
+    .filter(payment => !payment.voided)
+    .flatMap(payment => getReceiptRows(payment))
+    .filter(receipt => receipt.receivedDate && receipt.receivedDate >= monthRange.start && receipt.receivedDate <= monthRange.end)
+    .reduce((sum, receipt) => sum + parseIntSafe(receipt.amount), 0);
   const monthlyCompanyExpenses = state.companyExpenses
     .filter(expense => !expense.voided && expense.expenseDate && expense.expenseDate >= monthRange.start && expense.expenseDate <= monthRange.end);
   const companyOperatingExpense = monthlyCompanyExpenses
@@ -1771,15 +1803,15 @@ function exportReportCsv() {
   const mv = dom.reportMonth()?.value;
   if (!mv) return alert("請先選擇月份");
 
-  const list = state.projects.filter(p => isProjectInMonth(p, mv));
+  const list = state.projects.filter(p => p.status !== "lost" && isProjectInMonth(p, mv));
 
   // ✅ 欄位順序：期間/狀態 在前；報價/模式 靠近營收前
   const rows = [[
     "專案","客戶","地點",
     "期間","狀態",
     "報價金額","報價模式",
-    "已請款(含稅)","已收款(含稅)","未收款(含稅)",
-    "營收(未稅)","外部支出(未稅)","案件毛利(未扣設備折舊及固定費用)","備註"
+    "累計已請款(含稅)","尚未請款(含稅)","累計已收款(含稅)","應收帳款(含稅)","全案待收(含稅)",
+    "檔期專案金額(未稅)","外部支出(未稅)","案件毛利(未扣設備折舊及固定費用)","備註"
   ]];
 
   list.forEach(p => {
@@ -1800,10 +1832,12 @@ function exportReportCsv() {
       String(parseIntSafe(p.quote)),
       mode,
       String(paymentSummary.invoiced),
+      projectTotalTaxed ? String(paymentSummary.unbilled) : "專案總價待確認",
       String(paymentSummary.received),
+      String(paymentSummary.receivable),
       projectTotalTaxed
-        ? String(paymentSummary.outstanding)
-        : `${paymentSummary.outstanding}（專案總價待確認）`,
+        ? String(paymentSummary.totalOutstanding)
+        : `${paymentSummary.totalOutstanding}（專案總價待確認）`,
       String(revenueUntaxed),
       String(cost),
       String(profit),
@@ -1881,12 +1915,14 @@ function detachListeners() {
   unsubProjects && unsubProjects();
   unsubEquipments && unsubEquipments();
   unsubPayments && unsubPayments();
+  unsubReceipts && unsubReceipts();
   unsubQuotations && unsubQuotations();
   unsubExpenses && unsubExpenses();
   unsubCompanyExpenses && unsubCompanyExpenses();
   unsubProjects = null;
   unsubEquipments = null;
   unsubPayments = null;
+  unsubReceipts = null;
   unsubQuotations = null;
   unsubExpenses = null;
   unsubCompanyExpenses = null;
@@ -1894,6 +1930,7 @@ function detachListeners() {
   state.projects = [];
   state.equipments = [];
   state.payments = [];
+  state.receipts = [];
   state.quotations = [];
   state.expenses = [];
   state.companyExpenses = [];
@@ -1927,6 +1964,15 @@ function attachRealtimeListeners() {
       renderAll();
     },
     (err) => { console.error(err); alert("讀取請款／收款失敗：請先更新 Firestore Rules"); }
+  );
+
+  unsubReceipts = onSnapshot(
+    query(receiptsCol, orderBy("updatedAt", "desc")),
+    (snap) => {
+      state.receipts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderAll();
+    },
+    (err) => { console.error(err); alert("讀取實際收款紀錄失敗：請先更新新版 Firestore Rules"); }
   );
 
   unsubQuotations = onSnapshot(

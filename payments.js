@@ -3,7 +3,7 @@ import { db, watchAuth, getUserAccess, hasPermission, ensureUserDoc, defaultPerm
 import { logAction } from "./audit.js";
 import {
   collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot,
-  query, orderBy, serverTimestamp
+  query, orderBy, serverTimestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -19,7 +19,8 @@ const TODAY = () => {
 const collections = {
   projects: collection(db, "projects"),
   customers: collection(db, "customers"),
-  payments: collection(db, "payments")
+  payments: collection(db, "payments"),
+  receipts: collection(db, "receipts")
 };
 
 const state = {
@@ -29,6 +30,7 @@ const state = {
   projects: [],
   customers: [],
   payments: [],
+  receipts: [],
   unsubs: [],
   currentPage: 1
 };
@@ -89,10 +91,34 @@ function activePayments(projectId) {
   return state.payments.filter(payment => payment.projectId === projectId && !payment.voided);
 }
 
+function actualReceipts(paymentId) {
+  return state.receipts.filter(receipt => receipt.paymentId === paymentId && !receipt.voided);
+}
+
+function receiptRows(payment) {
+  const rows = actualReceipts(payment.id);
+  if (rows.length) return rows;
+  const legacyAmount = integerValue(payment.receivedAmount);
+  return legacyAmount ? [{
+    id: `legacy:${payment.id}`,
+    paymentId: payment.id,
+    amount: legacyAmount,
+    receivedDate: payment.receivedDate || "",
+    method: "",
+    reference: "",
+    note: "舊版收款紀錄",
+    legacy: true
+  }] : [];
+}
+
+function receivedForPayment(payment) {
+  return receiptRows(payment).reduce((sum, receipt) => sum + integerValue(receipt.amount), 0);
+}
+
 function paymentStatus(payment) {
   if (payment.voided) return "void";
   const amount = integerValue(payment.amount);
-  const received = integerValue(payment.receivedAmount);
+  const received = receivedForPayment(payment);
   if (amount > 0 && received >= amount) return "paid";
   if (payment.requestDate && payment.expectedPaymentDate && payment.expectedPaymentDate < TODAY()) return "overdue";
   if (received > 0) return "partial";
@@ -129,7 +155,10 @@ function projectPaymentSummary(project) {
   const total = projectTotalTaxed(project);
   const scheduled = rows.reduce((sum, payment) => sum + integerValue(payment.amount), 0);
   const invoiced = rows.filter(payment => payment.requestDate).reduce((sum, payment) => sum + integerValue(payment.amount), 0);
-  const received = rows.reduce((sum, payment) => sum + integerValue(payment.receivedAmount), 0);
+  const received = rows.reduce((sum, payment) => sum + receivedForPayment(payment), 0);
+  const receivable = rows
+    .filter(payment => payment.requestDate)
+    .reduce((sum, payment) => sum + Math.max(0, integerValue(payment.amount) - receivedForPayment(payment)), 0);
   const hasOverdue = rows.some(payment => paymentStatus(payment) === "overdue");
   let status = "pending";
   if (!total) status = "pricePending";
@@ -143,9 +172,9 @@ function projectPaymentSummary(project) {
     scheduled,
     invoiced,
     received,
-    // 總價未定時，至少仍要計入「已請款但尚未收到」的已知款項，
-    // 否則活動前先開出的訂金會從未收款統計中消失。
-    outstanding: total ? Math.max(0, total - received) : Math.max(0, invoiced - received),
+    unbilled: total ? Math.max(0, total - invoiced) : 0,
+    receivable,
+    totalOutstanding: total ? Math.max(0, total - received) : receivable,
     unscheduled: total ? Math.max(0, total - scheduled) : 0,
     status,
     isTracked: rows.length > 0
@@ -176,6 +205,18 @@ function openDrawer() {
 function closeDrawer() {
   $("#paymentDrawer")?.classList.add("hidden");
   $("#paymentDrawer")?.setAttribute("aria-hidden", "true");
+  if (!$(".drawer:not(.hidden)")) document.body.classList.remove("drawer-open");
+}
+
+function openReceiptDrawer() {
+  $("#receiptDrawer")?.classList.remove("hidden");
+  $("#receiptDrawer")?.setAttribute("aria-hidden", "false");
+  document.body.classList.add("drawer-open");
+}
+
+function closeReceiptDrawer() {
+  $("#receiptDrawer")?.classList.add("hidden");
+  $("#receiptDrawer")?.setAttribute("aria-hidden", "true");
   if (!$(".drawer:not(.hidden)")) document.body.classList.remove("drawer-open");
 }
 
@@ -279,8 +320,6 @@ function resetForm(payment = null, project = null) {
   $("#paymentInvoiceNumber").value = payment?.invoiceNumber || "";
   $("#paymentExpectedDate").value = payment?.expectedPaymentDate || "";
   $("#paymentTerms").value = payment?.paymentTerms || "";
-  $("#paymentReceivedAmount").value = payment?.receivedAmount ? money(payment.receivedAmount) : "";
-  $("#paymentReceivedDate").value = payment?.receivedDate || "";
   $("#paymentNote").value = payment?.note || "";
   $("#paymentDrawerTitle").textContent = payment ? "編輯款項" : "新增款項";
   applyProjectDefaults({ suggestAmount: false });
@@ -288,11 +327,8 @@ function resetForm(payment = null, project = null) {
 
 function openPayment(payment = null, { project = null, receive = false } = {}) {
   if (!canEdit()) return alert("viewer 僅能查看請款與收款資料");
+  if (receive && payment) return openReceipt(payment);
   resetForm(payment, project);
-  if (receive && payment) {
-    $("#paymentReceivedAmount").value = money(payment.amount);
-    $("#paymentReceivedDate").value = TODAY();
-  }
   openDrawer();
   setTimeout(() => $("#paymentProjectId")?.focus(), 50);
 }
@@ -304,12 +340,10 @@ async function savePayment() {
   if (!project) return alert("請選擇要串接的專案");
 
   const amount = integerValue($("#paymentAmount").value);
-  const receivedAmount = integerValue($("#paymentReceivedAmount").value);
   if (!amount) return alert("請填寫本筆應收金額");
-  if (receivedAmount > amount) return alert("已收金額不能大於本筆應收金額");
-
-  const receivedDate = $("#paymentReceivedDate").value || (receivedAmount ? TODAY() : "");
-  if (!receivedAmount && receivedDate) return alert("已填寫收款日，請一併填寫已收金額");
+  const currentPayment = id ? state.payments.find(payment => payment.id === id) : null;
+  const alreadyReceived = currentPayment ? receivedForPayment(currentPayment) : 0;
+  if (amount < alreadyReceived) return alert(`本筆已有 ${money(alreadyReceived)} 元收款紀錄，請款金額不能低於已收金額`);
 
   let requestDate = $("#paymentRequestDate").value;
   const invoiceDate = $("#paymentInvoiceDate").value;
@@ -340,8 +374,9 @@ async function savePayment() {
     invoiceNumber,
     expectedPaymentDate: $("#paymentExpectedDate").value,
     paymentTerms: $("#paymentTerms").value.trim(),
-    receivedAmount,
-    receivedDate,
+    // 舊版欄位保留以相容既有資料；新版實際收款改存 receipts。
+    receivedAmount: integerValue(currentPayment?.receivedAmount),
+    receivedDate: currentPayment?.receivedDate || "",
     note: $("#paymentNote").value.trim(),
     voided: false,
     updatedAt: serverTimestamp(),
@@ -349,7 +384,6 @@ async function savePayment() {
   };
 
   try {
-    const existing = id ? state.payments.find(payment => payment.id === id) : null;
     let targetId = id;
     if (id) {
       await updateDoc(doc(db, "payments", id), payload);
@@ -358,18 +392,139 @@ async function savePayment() {
       targetId = ref.id;
       await setDoc(ref, { ...payload, createdAt: serverTimestamp(), createdBy: state.user.uid });
     }
-    const receivedNow = payload.receivedAmount > integerValue(existing?.receivedAmount);
     await logAction({
-      action: receivedNow ? "receive" : (id ? "update" : "create"),
+      action: id ? "update" : "create",
       module: "payments", targetType: "payment", targetId,
       targetName: `${project.client || ""}｜${project.name || ""}`,
-      summary: `${payload.label}｜應收 ${money(payload.amount)}${payload.receivedAmount ? `｜已收 ${money(payload.receivedAmount)}` : ""}`
+      summary: `${payload.label}｜請款金額 ${money(payload.amount)}`
     });
     closeDrawer();
   } catch (error) {
     console.error(error);
     alert("儲存款項失敗：請確認 Firestore Rules 已加入 payments 權限");
   }
+}
+
+function paymentRemaining(payment, { excludingReceiptId = "" } = {}) {
+  const received = receiptRows(payment)
+    .filter(receipt => receipt.id !== excludingReceiptId)
+    .reduce((sum, receipt) => sum + integerValue(receipt.amount), 0);
+  return Math.max(0, integerValue(payment.amount) - received);
+}
+
+function paymentForReceipt(receipt) {
+  return state.payments.find(payment => payment.id === receipt?.paymentId);
+}
+
+function resetReceiptForm(payment, receipt = null) {
+  const remaining = paymentRemaining(payment, { excludingReceiptId: receipt?.id || "" });
+  $("#receiptId").value = receipt?.legacy ? "" : (receipt?.id || "");
+  $("#receiptPaymentId").value = payment.id;
+  $("#receiptBillingLabel").textContent = `${payment.customerName || "未填客戶"}｜${payment.projectName || "未命名專案"}｜${payment.label || paymentTypeLabel(payment.paymentType)}`;
+  $("#receiptAmount").value = receipt?.amount ? money(receipt.amount) : (remaining ? money(remaining) : "");
+  $("#receiptDate").value = receipt?.receivedDate || TODAY();
+  $("#receiptMethod").value = receipt?.method || "bank_transfer";
+  $("#receiptReference").value = receipt?.reference || "";
+  $("#receiptNote").value = receipt?.legacy ? "" : (receipt?.note || "");
+  $("#receiptRemainingHint").textContent = `本筆請款尚可登記 ${money(remaining)} 元；每次入帳請分開建立。`;
+  $("#receiptDrawerTitle").textContent = receipt && !receipt.legacy ? "編輯收款紀錄" : "登記收款";
+}
+
+function openReceipt(payment, receipt = null) {
+  if (!canEdit()) return alert("你目前沒有登記收款的權限");
+  if (!payment?.requestDate) return alert("請先填寫請款日，再登記實際收款");
+  if (payment.voided) return alert("已作廢的請款不能登記收款");
+  resetReceiptForm(payment, receipt);
+  openReceiptDrawer();
+  setTimeout(() => $("#receiptAmount")?.focus(), 50);
+}
+
+function legacyReceiptPayload(payment) {
+  return {
+    paymentId: payment.id,
+    projectId: payment.projectId || "",
+    projectName: payment.projectName || "",
+    customerName: payment.customerName || "",
+    billingLabel: payment.label || paymentTypeLabel(payment.paymentType),
+    amount: integerValue(payment.receivedAmount),
+    receivedDate: payment.receivedDate || payment.requestDate || TODAY(),
+    method: "legacy",
+    reference: "",
+    note: "由舊版單筆收款欄位自動轉入",
+    voided: false,
+    createdAt: serverTimestamp(),
+    createdBy: state.user.uid,
+    updatedAt: serverTimestamp(),
+    updatedBy: state.user.uid
+  };
+}
+
+async function saveReceipt() {
+  if (!canEdit() || !state.user) return alert("你目前沒有登記收款的權限");
+  const id = $("#receiptId").value;
+  const payment = state.payments.find(item => item.id === $("#receiptPaymentId").value);
+  if (!payment || payment.voided) return alert("找不到可用的請款紀錄");
+  if (!payment.requestDate) return alert("請先填寫請款日，再登記實際收款");
+  const amount = integerValue($("#receiptAmount").value);
+  const receivedDate = $("#receiptDate").value;
+  if (!amount) return alert("請填寫本次實際收款金額");
+  if (!receivedDate) return alert("請填寫實際收款日");
+  const remaining = paymentRemaining(payment, { excludingReceiptId: id });
+  if (amount > remaining) return alert(`本次收款不能超過尚未收取的 ${money(remaining)} 元`);
+
+  const payload = {
+    paymentId: payment.id,
+    projectId: payment.projectId || "",
+    projectName: payment.projectName || "",
+    customerName: payment.customerName || "",
+    billingLabel: payment.label || paymentTypeLabel(payment.paymentType),
+    amount,
+    receivedDate,
+    method: $("#receiptMethod").value,
+    reference: $("#receiptReference").value.trim(),
+    note: $("#receiptNote").value.trim(),
+    voided: false,
+    updatedAt: serverTimestamp(),
+    updatedBy: state.user.uid
+  };
+
+  try {
+    const batch = writeBatch(db);
+    if (!actualReceipts(payment.id).length && integerValue(payment.receivedAmount) > 0) {
+      batch.set(doc(db, "receipts", `${payment.id}__legacy`), legacyReceiptPayload(payment));
+      batch.update(doc(db, "payments", payment.id), { receivedAmount: 0, receivedDate: "", updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+    }
+    let targetId = id;
+    if (id) batch.update(doc(db, "receipts", id), payload);
+    else {
+      const ref = doc(collections.receipts);
+      targetId = ref.id;
+      batch.set(ref, { ...payload, createdAt: serverTimestamp(), createdBy: state.user.uid });
+    }
+    await batch.commit();
+    await logAction({
+      action: "receive", module: "payments", targetType: "receipt", targetId,
+      targetName: `${payment.customerName || ""}｜${payment.projectName || ""}`,
+      summary: `${payload.billingLabel}｜${payload.receivedDate} 入帳 ${money(payload.amount)}`
+    });
+    closeReceiptDrawer();
+  } catch (error) {
+    console.error(error);
+    alert("儲存收款紀錄失敗：請確認新版 Firestore Rules 已發布");
+  }
+}
+
+function receiptMethodLabel(method) {
+  return ({ bank_transfer: "銀行轉帳", cash: "現金", check: "支票", card: "刷卡", other: "其他", legacy: "舊版轉入" })[method] || "—";
+}
+
+function renderReceiptHistory(payment) {
+  const rows = [...receiptRows(payment)].sort((a, b) => String(a.receivedDate || "").localeCompare(String(b.receivedDate || "")));
+  if (!rows.length) return `<div class="table-sub">尚無入帳紀錄</div>`;
+  return `<div class="receipt-history">${rows.map(receipt => `<div class="receipt-history-row">
+    <span><b>${esc(receipt.receivedDate || "日期未填")}</b>｜${money(receipt.amount)}｜${esc(receiptMethodLabel(receipt.method))}${receipt.reference ? `｜${esc(receipt.reference)}` : ""}</span>
+    <span class="receipt-history-actions">${receipt.legacy ? '<span class="table-sub">舊版紀錄</span>' : `<button class="link-button" type="button" data-receipt-edit="${esc(receipt.id)}" ${canEdit() ? "" : "disabled"}>編輯</button><button class="link-button danger" type="button" data-receipt-delete="${esc(receipt.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>`}</span>
+  </div>`).join("")}</div>`;
 }
 
 function renderPaymentDetails(project, summary) {
@@ -382,13 +537,14 @@ function renderPaymentDetails(project, summary) {
 
   const body = rows.map(payment => {
     const status = paymentStatus(payment);
-    const remaining = Math.max(0, integerValue(payment.amount) - integerValue(payment.receivedAmount));
+    const received = receivedForPayment(payment);
+    const remaining = Math.max(0, integerValue(payment.amount) - received);
     return `<tr class="${payment.voided ? "payment-void-row" : ""}">
       <td><b>${esc(payment.label || paymentTypeLabel(payment.paymentType))}</b><div class="table-sub">${esc(paymentTypeLabel(payment.paymentType))}</div></td>
       <td class="num">${money(payment.amount)}</td>
       <td>${dateText(payment.requestDate)}<div class="table-sub">發票：${esc(payment.invoiceNumber || "—")} ${payment.invoiceDate ? `｜${esc(payment.invoiceDate)}` : ""}</div></td>
       <td>${dateText(payment.expectedPaymentDate)}</td>
-      <td class="num">${money(payment.receivedAmount)}<div class="table-sub">${dateText(payment.receivedDate)}</div></td>
+      <td>${renderReceiptHistory(payment)}<div class="table-sub">累計 ${money(received)}</div></td>
       <td class="num">${money(remaining)}</td>
       <td><span class="badge ${paymentStatusBadge(status)}">${esc(paymentStatusLabel(status))}</span></td>
       <td><div class="row-actions">
@@ -401,7 +557,7 @@ function renderPaymentDetails(project, summary) {
   }).join("");
 
   return `<div class="payment-detail-head"><div><b>款項明細</b><span>已排定 ${money(summary.scheduled)}｜尚未排定 ${summary.total ? money(summary.unscheduled) : "總價待確認"}</span></div><button class="btn primary small" type="button" data-payment-add-project="${esc(project.id)}" ${canEdit() ? "" : "disabled"}>＋ 新增本專案款項</button></div>
-    <div class="table-scroll"><table class="table payment-detail-table"><thead><tr><th>款項</th><th class="num">應收</th><th>請款／發票</th><th>預計收款</th><th class="num">已收</th><th class="num">未收</th><th>狀態</th><th>操作</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    <div class="table-scroll"><table class="table payment-detail-table"><thead><tr><th>款項</th><th class="num">請款金額</th><th>請款／發票</th><th>預計收款</th><th>實際收款紀錄</th><th class="num">應收餘額</th><th>狀態</th><th>操作</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function filteredProjects() {
@@ -452,29 +608,30 @@ function renderPayments() {
   renderPagination(list.length);
 
   body.innerHTML = pageList.length ? pageList.map(({ project, summary }) => {
-    const outstandingText = summary.isTracked
-      ? (summary.total
-        ? money(summary.outstanding)
-        : `${money(summary.outstanding)}<div class="table-sub">總價待確認</div>`)
-      : "尚未登記";
+    const totalOutstandingText = summary.total
+      ? money(summary.totalOutstanding)
+      : (summary.isTracked ? `${money(summary.totalOutstanding)}<div class="table-sub">總價待確認</div>` : "尚未登記");
     return `<tr class="payment-project-row" data-payment-toggle-project="${esc(project.id)}">
       <td><b>${esc(project.name || "未命名專案")}</b><div class="table-sub">${esc(project.client || "—")}</div></td>
       <td>${esc(project.startDate || "—")}～${esc(project.endDate || "—")}<div class="table-sub">${esc(projectStatusLabel(project.status))}</div></td>
       <td class="num">${summary.total ? money(summary.total) : '<span class="pending-value">待確認</span>'}</td>
       <td class="num">${money(summary.invoiced)}</td>
+      <td class="num">${summary.total ? money(summary.unbilled) : "—"}</td>
+      <td class="num"><b>${money(summary.receivable)}</b></td>
       <td class="num">${money(summary.received)}</td>
-      <td class="num">${outstandingText}</td>
+      <td class="num">${totalOutstandingText}</td>
       <td><span class="badge ${paymentStatusBadge(summary.status)}">${esc(summary.isTracked ? paymentStatusLabel(summary.status) : "尚未建立款項")}</span></td>
       <td><div class="row-actions"><button class="btn ghost small" type="button" data-payment-add-project="${esc(project.id)}" ${canEdit() ? "" : "disabled"}>新增款項</button><button class="btn ghost small" type="button" data-payment-expand="${esc(project.id)}">查看明細</button></div></td>
-    </tr><tr class="payment-project-detail" data-payment-detail-project="${esc(project.id)}" hidden><td colspan="8">${renderPaymentDetails(project, summary)}</td></tr>`;
-  }).join("") : `<tr><td colspan="8"><div class="empty-state">找不到符合條件的專案</div></td></tr>`;
+    </tr><tr class="payment-project-detail" data-payment-detail-project="${esc(project.id)}" hidden><td colspan="10">${renderPaymentDetails(project, summary)}</td></tr>`;
+  }).join("") : `<tr><td colspan="10"><div class="empty-state">找不到符合條件的專案</div></td></tr>`;
 
-  const trackedProjectIds = new Set(state.payments.filter(payment => !payment.voided).map(payment => payment.projectId));
-  const tracked = state.projects.filter(project => trackedProjectIds.has(project.id)).map(projectPaymentSummary);
+  const tracked = state.projects.filter(project => project.status !== "lost").map(projectPaymentSummary);
   $("#paymentProjectTotal").textContent = money(tracked.reduce((sum, item) => sum + item.total, 0));
   $("#paymentInvoicedTotal").textContent = money(tracked.reduce((sum, item) => sum + item.invoiced, 0));
   $("#paymentReceivedTotal").textContent = money(tracked.reduce((sum, item) => sum + item.received, 0));
-  $("#paymentOutstandingTotal").textContent = money(tracked.reduce((sum, item) => sum + item.outstanding, 0));
+  $("#paymentUnbilledTotal").textContent = money(tracked.reduce((sum, item) => sum + item.unbilled, 0));
+  $("#paymentReceivableTotal").textContent = money(tracked.reduce((sum, item) => sum + item.receivable, 0));
+  $("#paymentOutstandingTotal").textContent = money(tracked.reduce((sum, item) => sum + item.totalOutstanding, 0));
   $("#paymentOpenCreate").disabled = !canEdit();
 }
 
@@ -510,6 +667,7 @@ function detach() {
   state.projects = [];
   state.customers = [];
   state.payments = [];
+  state.receipts = [];
   renderPayments();
 }
 
@@ -517,13 +675,17 @@ function attach() {
   listen("projects", collections.projects, "projects");
   listen("customers", collections.customers, "customers");
   listen("payments", collections.payments, "payments");
+  listen("receipts", collections.receipts, "receipts");
 }
 
 function bindEvents() {
   $("#paymentOpenCreate")?.addEventListener("click", () => openPayment());
   $("#paymentForm")?.addEventListener("submit", event => { event.preventDefault(); savePayment(); });
   $$('[data-payment-close],#paymentDrawerClose').forEach(button => button.addEventListener("click", closeDrawer));
-  ["#paymentAmount", "#paymentReceivedAmount"].forEach(selector => $(selector)?.addEventListener("blur", event => formatMoneyInput(event.target)));
+  $("#paymentAmount")?.addEventListener("blur", event => formatMoneyInput(event.target));
+  $("#receiptForm")?.addEventListener("submit", event => { event.preventDefault(); saveReceipt(); });
+  $$('[data-receipt-close],#receiptDrawerClose').forEach(button => button.addEventListener("click", closeReceiptDrawer));
+  $("#receiptAmount")?.addEventListener("blur", event => formatMoneyInput(event.target));
   $("#paymentProjectId")?.addEventListener("change", () => applyProjectDefaults({ suggestAmount: true }));
   $("#paymentType")?.addEventListener("change", () => {
     const label = $("#paymentLabel");
@@ -557,6 +719,22 @@ function bindEvents() {
     const receive = event.target.closest("[data-payment-receive]");
     const voidButton = event.target.closest("[data-payment-void]");
     const del = event.target.closest("[data-payment-delete]");
+    const receiptEdit = event.target.closest("[data-receipt-edit]");
+    const receiptDelete = event.target.closest("[data-receipt-delete]");
+    if (receiptEdit) {
+      const receipt = state.receipts.find(item => item.id === receiptEdit.dataset.receiptEdit);
+      const payment = paymentForReceipt(receipt);
+      if (receipt && payment) return openReceipt(payment, receipt);
+    }
+    if (receiptDelete) {
+      const receipt = state.receipts.find(item => item.id === receiptDelete.dataset.receiptDelete);
+      const payment = paymentForReceipt(receipt);
+      if (receipt && payment && canDelete() && confirm(`確定刪除 ${receipt.receivedDate || ""} 的收款紀錄 ${money(receipt.amount)} 元？`)) {
+        await deleteDoc(doc(db, "receipts", receipt.id));
+        await logAction({ action: "delete", module: "payments", targetType: "receipt", targetId: receipt.id, targetName: `${payment.customerName || ""}｜${payment.projectName || ""}`, summary: `${receipt.receivedDate || ""}｜${money(receipt.amount)} 元` });
+      }
+      return;
+    }
     if (add) return openPayment(null, { project: state.projects.find(project => project.id === add.dataset.paymentAddProject) });
     if (expand) return toggleProjectDetails(expand.dataset.paymentExpand);
     const id = edit?.dataset.paymentEdit || receive?.dataset.paymentReceive || voidButton?.dataset.paymentVoid || del?.dataset.paymentDelete;
@@ -586,6 +764,7 @@ function bindEvents() {
 
   document.addEventListener("keydown", event => {
     if (event.key === "Escape" && !$("#paymentDrawer")?.classList.contains("hidden")) closeDrawer();
+    if (event.key === "Escape" && !$("#receiptDrawer")?.classList.contains("hidden")) closeReceiptDrawer();
   });
 }
 
