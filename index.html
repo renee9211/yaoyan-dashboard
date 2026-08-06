@@ -294,11 +294,19 @@
     <!-- ===================== 常用報價項目 ===================== -->
     <section id="tab-quotation-items" class="tab-panel">
       <div class="panel-head">
-        <div><h2>常用報價項目</h2><p class="hint">作為建立報價時的預設值；歷史報價保存當下快照，不會跟著牌價變動。</p></div>
+        <div><h2>常用報價項目</h2><p class="hint">作為建立報價時的預設值；點選表格欄位可排序，歷史報價仍保存建立當下的快照。</p></div>
         <button id="quoteItemOpenCreate" class="btn primary" type="button">＋ 新增項目</button>
       </div>
       <div class="card project-toolbar simple-toolbar"><label class="toolbar-search"><span class="sr-only">搜尋品項</span><input id="quoteItemSearch" class="input" type="search" placeholder="搜尋類別、項目或單位" /></label></div>
-      <div class="card table-card"><div class="table-scroll"><table class="table item-table"><thead><tr><th>類別</th><th>項目</th><th class="num">預設單價</th><th>單位</th><th>計價方式</th><th>連結設備</th><th>操作</th></tr></thead><tbody id="quoteItemTableBody"></tbody></table></div></div>
+      <div class="card table-card"><div class="table-scroll"><table class="table item-table"><thead><tr>
+        <th><button class="sort-head active" type="button" data-quote-item-sort="category">類別 <span>↑</span></button></th>
+        <th><button class="sort-head" type="button" data-quote-item-sort="name">項目 <span></span></button></th>
+        <th class="num"><button class="sort-head" type="button" data-quote-item-sort="unitPrice">預設單價 <span></span></button></th>
+        <th><button class="sort-head" type="button" data-quote-item-sort="unit">單位 <span></span></button></th>
+        <th><button class="sort-head" type="button" data-quote-item-sort="calcMode">計價方式 <span></span></button></th>
+        <th><button class="sort-head" type="button" data-quote-item-sort="equipmentName">連結設備 <span></span></button></th>
+        <th>操作</th>
+      </tr></thead><tbody id="quoteItemTableBody"></tbody></table></div></div>
     </section>
 
     <!-- ===================== 系統管理 ===================== -->
@@ -321,9 +329,9 @@
       <div class="panel-head">
         <div>
           <h2>設備清單</h2>
-          <p class="hint">新增/編輯設備後，專案的設備下拉選單會自動刷新。</p>
+          <p class="hint">設備可依類別管理；新增或編輯後，專案設備與常用報價項目的選單會自動刷新。</p>
         </div>
-        <input id="equipmentSearch" class="input compact-search" type="search" placeholder="搜尋設備" />
+        <input id="equipmentSearch" class="input compact-search" type="search" placeholder="搜尋類別、設備或備註" />
       </div>
 
       <form id="equipment-form" class="card form-card">
@@ -333,6 +341,11 @@
           <label class="field">
             <span>設備名稱</span>
             <input id="equipmentName" class="input" placeholder="例如：煙霧機" />
+          </label>
+
+          <label class="field">
+            <span>類別</span>
+            <input id="equipmentCategory" class="input" placeholder="例如：特殊效果設備" />
           </label>
 
           <label class="field">
@@ -363,6 +376,7 @@
         <div class="table-scroll"><table class="table equipment-table">
           <thead>
             <tr>
+              <th><button class="sort-head" type="button" data-equipment-sort="category">類別 <span></span></button></th>
               <th><button class="sort-head active" type="button" data-equipment-sort="name">設備 <span>↑</span></button></th>
               <th class="num"><button class="sort-head" type="button" data-equipment-sort="qty">數量 <span></span></button></th>
               <th>資產資料</th>
@@ -586,7 +600,7 @@
           <label class="field"><span>單位</span><input id="quoteItemUnit" class="input" placeholder="台／式／班／公斤" /></label>
           <label class="field field-full"><span>預設計價方式</span><select id="quoteItemCalcMode" class="select"><option value="auto50">次日起加收 50%</option><option value="daily">每日原價</option><option value="custom">自訂續日比例</option><option value="manual">人工輸入小計</option><option value="included">免費／已包含</option></select></label>
           <label class="field"><span>自訂續日比例（%）</span><input id="quoteItemContinuationRate" class="input" type="number" min="0" step="1" value="50" /></label>
-          <label class="field"><span>連結庫存設備</span><select id="quoteItemEquipmentId" class="select"><option value="">不連結</option></select></label>
+          <label class="field"><span>連結庫存設備</span><select id="quoteItemEquipmentId" class="select"><option value="">不連結</option></select><small class="field-help">設備依類別分組，選擇後會自動帶入設備類別與名稱。</small></label>
           <label class="field field-full"><span>預設備註</span><input id="quoteItemNote" class="input" /></label>
         </div></section></div>
         <div class="drawer-actions"><button class="btn ghost" type="button" data-quote-item-close>取消</button><button class="btn primary" type="submit">儲存項目</button></div>

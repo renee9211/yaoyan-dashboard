@@ -1321,7 +1321,9 @@ body.drawer-open{ overflow:hidden; }
 .permission-cell{ text-align:center; }
 .permission-cell input{ width:18px; height:18px; accent-color:var(--orange); }
 .audit-table{ min-width:1040px; }
-.equipment-table{ min-width:1050px; }
+.equipment-table{ min-width:1240px; }
+.equipment-table th:first-child,.equipment-table td:first-child{ width:138px; }
+.equipment-table td:last-child .row-actions{ flex-wrap:nowrap; }
 .equipment-cost-note{
   padding:10px 12px;
   border-radius:10px;
@@ -1352,6 +1354,7 @@ body.drawer-open{ overflow:hidden; }
 .simple-toolbar{ grid-template-columns:minmax(240px,620px); margin-bottom:12px; }
 .quote-toolbar{ grid-template-columns:minmax(260px,1fr) 190px; margin-bottom:12px; }
 .customer-table,.item-table,.quotation-table{ min-width:900px; }
+.item-table th{ white-space:nowrap; }
 .quotation-table{ min-width:1040px; }
 .quote-kpi-grid{
   display:grid;
@@ -1499,7 +1502,7 @@ body.drawer-open{ overflow:hidden; }
   font-weight:500;
 }
 .quote-a4 .a4-total td{ font-size:9pt; font-variant-numeric:tabular-nums; }
-.quote-a4 .a4-total .project-price th{ background:#f59e0b; color:#111; font-size:9.5pt; font-weight:900; }
+.quote-a4 .a4-total .project-price th{ background:#f59e0b; color:#111; padding-left:.4mm; padding-right:.4mm; font-size:8.5pt; font-weight:900; white-space:nowrap; }
 .quote-a4 .a4-total .project-price td{ background:#fff; font-size:10pt; font-weight:1000; white-space:nowrap; }
 .quote-a4 .a4-company{ display:grid; grid-template-columns:calc(var(--a4-detail-split) - 1px) minmax(0,1fr); min-height:38mm; border:1px solid #111; border-top:0; break-inside:avoid; }
 .quote-a4 .a4-company-info{ padding:2mm; font-size:7.5pt; line-height:1.35; }

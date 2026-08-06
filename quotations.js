@@ -47,7 +47,9 @@ const state = {
   unsubs: [],
   previewData: null,
   numberWasSuggested: false,
-  quotationCurrentPage: 1
+  quotationCurrentPage: 1,
+  quotationItemSort: { key: "category", direction: "asc" },
+  quoteItemCreatedFromEquipment: false
 };
 
 function esc(value) {
@@ -246,15 +248,41 @@ function renderCustomers() {
 }
 
 /* ------------------------- Quotation catalog ------------------------- */
+function linkedEquipment(item) {
+  return state.equipment.find(equipment => equipment.id === item?.equipmentId) || null;
+}
+
+function quoteItemEquipmentName(item) {
+  return linkedEquipment(item)?.name || item?.equipmentName || "";
+}
+
+function quoteItemSortValue(item, key) {
+  if (key === "unitPrice") return numberValue(item.unitPrice);
+  if (key === "calcMode") return calcModeLabel(item.calcMode, item.continuationRate);
+  if (key === "equipmentName") return quoteItemEquipmentName(item) || "未連結";
+  return String(item?.[key] || (key === "category" ? "未分類" : ""));
+}
+
 function refreshEquipmentOptions() {
   const select = $("#quoteItemEquipmentId");
   if (!select) return;
   const current = select.value;
-  select.innerHTML = `<option value="">不連結</option>${state.equipment.map(item => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join("")}`;
-  select.value = current;
+  const grouped = new Map();
+  [...state.equipment]
+    .sort((a, b) => String(a.category || "未分類").localeCompare(String(b.category || "未分類"), "zh-Hant", { numeric: true, sensitivity: "base" })
+      || String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant", { numeric: true, sensitivity: "base" }))
+    .forEach(item => {
+      const category = String(item.category || "未分類").trim() || "未分類";
+      if (!grouped.has(category)) grouped.set(category, []);
+      grouped.get(category).push(item);
+    });
+  const options = [...grouped.entries()].map(([category, items]) => `<optgroup label="${esc(category)}">${items.map(item => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join("")}</optgroup>`).join("");
+  select.innerHTML = `<option value="">不連結</option>${options}`;
+  select.value = [...select.options].some(option => option.value === current) ? current : "";
 }
 
 function resetQuoteItemForm(item = null) {
+  state.quoteItemCreatedFromEquipment = Boolean(item?.__fromEquipment);
   $("#quoteItemId").value = item?.id || "";
   $("#quoteItemCategory").value = item?.category || "";
   $("#quoteItemName").value = item?.name || "";
@@ -265,7 +293,7 @@ function resetQuoteItemForm(item = null) {
   $("#quoteItemNote").value = item?.note || "";
   refreshEquipmentOptions();
   $("#quoteItemEquipmentId").value = item?.equipmentId || "";
-  $("#quoteItemDrawerTitle").textContent = item ? "編輯項目" : "新增項目";
+  $("#quoteItemDrawerTitle").textContent = item?.__fromEquipment ? "由設備建立項目" : item ? "編輯項目" : "新增項目";
 }
 
 function openQuoteItem(item = null) {
@@ -288,6 +316,7 @@ async function saveQuoteItem() {
     continuationRate: numberValue($("#quoteItemContinuationRate").value),
     equipmentId,
     equipmentName: equipment?.name || "",
+    equipmentCategory: equipment?.category || "",
     note: $("#quoteItemNote").value.trim(),
     updatedAt: serverTimestamp(),
     updatedBy: state.user?.uid || ""
@@ -303,6 +332,8 @@ async function saveQuoteItem() {
     }
     await logAction({ action: id ? "update" : "create", module: "catalog", targetType: "quotationItem", targetId, targetName: payload.name, summary: `${payload.category || "未分類"}｜${money(payload.unitPrice)} 元／${payload.unit || "單位未填"}` });
     closeDrawer("#quoteItemDrawer");
+    if (state.quoteItemCreatedFromEquipment) switchTab("quotation-items");
+    state.quoteItemCreatedFromEquipment = false;
   } catch (error) {
     console.error(error);
     alert("品項儲存失敗，請確認 Firestore 規則已加入 quotationItems 權限");
@@ -313,10 +344,27 @@ function renderQuoteItems() {
   const body = $("#quoteItemTableBody");
   if (!body) return;
   const keyword = $("#quoteItemSearch")?.value.trim().toLocaleLowerCase("zh-Hant") || "";
-  const list = state.quotationItems.filter(item => !keyword || [item.category, item.name, item.unit, item.equipmentName]
-    .join(" ").toLocaleLowerCase("zh-Hant").includes(keyword));
+  const list = state.quotationItems
+    .filter(item => !keyword || [item.category, item.name, item.unit, quoteItemEquipmentName(item)]
+      .join(" ").toLocaleLowerCase("zh-Hant").includes(keyword))
+    .sort((a, b) => {
+      const key = state.quotationItemSort.key;
+      const aValue = quoteItemSortValue(a, key);
+      const bValue = quoteItemSortValue(b, key);
+      const result = key === "unitPrice"
+        ? aValue - bValue
+        : String(aValue).localeCompare(String(bValue), "zh-Hant", { numeric: true, sensitivity: "base" });
+      const tie = String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant", { numeric: true, sensitivity: "base" });
+      return (state.quotationItemSort.direction === "asc" ? result : -result) || tie;
+    });
+  $$('[data-quote-item-sort]').forEach(button => {
+    const active = button.dataset.quoteItemSort === state.quotationItemSort.key;
+    button.classList.toggle("active", active);
+    const indicator = $("span", button);
+    if (indicator) indicator.textContent = active ? (state.quotationItemSort.direction === "asc" ? "↑" : "↓") : "";
+  });
   body.innerHTML = list.length ? list.map(item => `
-    <tr><td>${esc(item.category || "未分類")}</td><td><b>${esc(item.name)}</b>${item.note ? `<div class="table-sub">${esc(item.note)}</div>` : ""}</td><td class="num">${item.calcMode === "included" ? "—" : money(item.unitPrice)}</td><td>${esc(item.unit || "—")}</td><td>${esc(calcModeLabel(item.calcMode, item.continuationRate))}</td><td>${esc(item.equipmentName || "—")}</td><td><div class="row-actions"><button class="btn ghost small" type="button" data-item-edit="${esc(item.id)}" ${canManageCatalog() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-item-delete="${esc(item.id)}" ${canDelete() ? "" : "disabled"}>刪除</button></div></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty-state">尚無常用報價項目</div></td></tr>`;
+    <tr><td>${esc(item.category || "未分類")}</td><td><b>${esc(item.name)}</b>${item.note ? `<div class="table-sub">${esc(item.note)}</div>` : ""}</td><td class="num">${item.calcMode === "included" ? "—" : money(item.unitPrice)}</td><td>${esc(item.unit || "—")}</td><td>${esc(calcModeLabel(item.calcMode, item.continuationRate))}</td><td>${esc(quoteItemEquipmentName(item) || "—")}</td><td><div class="row-actions"><button class="btn ghost small" type="button" data-item-edit="${esc(item.id)}" ${canManageCatalog() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-item-delete="${esc(item.id)}" ${canDelete() ? "" : "disabled"}>刪除</button></div></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty-state">尚無常用報價項目</div></td></tr>`;
   refreshCatalogPicker();
 }
 
@@ -343,7 +391,8 @@ function refreshCustomerOptions() {
 function refreshCatalogPicker() {
   const select = $("#quotationCatalogPicker");
   if (!select) return;
-  select.innerHTML = `<option value="">從常用項目新增…</option>${state.quotationItems.map(item => `<option value="${esc(item.id)}">${esc(item.category || "未分類")}｜${esc(item.name)}</option>`).join("")}`;
+  const items = [...state.quotationItems].sort((a, b) => String(a.category || "未分類").localeCompare(String(b.category || "未分類"), "zh-Hant", { numeric: true, sensitivity: "base" }) || String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant", { numeric: true, sensitivity: "base" }));
+  select.innerHTML = `<option value="">從常用項目新增…</option>${items.map(item => `<option value="${esc(item.id)}">${esc(item.category || "未分類")}｜${esc(item.name)}</option>`).join("")}`;
 }
 
 function suggestedNumber(dateISO) {
@@ -395,12 +444,13 @@ function refreshRowEventOptions() {
 }
 
 function rowDataFromCatalog(item = {}) {
+  const equipment = linkedEquipment(item);
   return {
     id: uid(), eventId: "shared", category: item.category || "", name: item.name || "",
     unitPrice: item.unitPrice || 0, qty: 1, unit: item.unit || "", days: 1,
     calcMode: item.calcMode || "auto50", continuationRate: item.continuationRate ?? 50,
     manualSubtotal: item.calcMode === "manual" ? 0 : "", note: item.note || "",
-    catalogItemId: item.id || "", equipmentId: item.equipmentId || "", equipmentName: item.equipmentName || ""
+    catalogItemId: item.id || "", equipmentId: item.equipmentId || "", equipmentName: equipment?.name || item.equipmentName || ""
   };
 }
 
@@ -763,10 +813,6 @@ function previewQuotation(quotation) {
   $("#quotationPreviewModal").classList.remove("hidden");
 }
 
-function eventSummary(events = []) {
-  return events.map(event => `${esc(event.name || "場次")}｜${esc(event.eventDate || "日期未填")}｜${esc(event.location || "地點未填")}${event.setupDate ? `｜進撤場 ${esc(event.setupDate)}` : ""}`).join("<br>");
-}
-
 function quotationDateText(q) {
   const source = q.quotationDate || q.createdAt || new Date();
   const date = typeof source?.toDate === "function" ? source.toDate() : new Date(source);
@@ -793,10 +839,10 @@ function buildA4(q) {
     <table class="a4-info"><tbody>
       <tr><th>客戶名稱<span>Client</span></th><td>${esc(q.customerName)}</td><th>報價日期<span>Quotation Date</span></th><td>${esc(quotationDateText(q))}</td></tr>
       <tr><th>專案名稱<span>Project</span></th><td>${esc(q.projectName)}</td><th>報價編號<span>Quotation No.</span></th><td>${esc(q.number)} / V${esc(q.version || 1)}</td></tr>
-      <tr><th>演出日期<span>Show Date</span></th><td>${esc(showDates)}</td><th>聯絡人<span>Contact Person</span></th><td>${esc(q.contactName || "—")}</td></tr>
+      <tr><th>演出日期<span>Date</span></th><td>${esc(showDates)}</td><th>聯絡人<span>Contact Person</span></th><td>${esc(q.contactName || "—")}</td></tr>
       <tr><th>進撤場日期<span>Load-in/Out Dates</span></th><td>${esc(setupDates)}</td><th>聯絡電話<span>Phone</span></th><td>${esc(q.phone || "—")}</td></tr>
       <tr><th>專案地點<span>Location</span></th><td>${esc(locations)}</td><th>聯絡信箱<span>Email</span></th><td>${esc(q.email || "—")}</td></tr>
-      <tr><th>客戶統編<span>Tax ID</span></th><td>${esc(q.taxId || "—")}</td><th>活動場次<span>Event</span></th><td>${eventSummary(events) || "—"}</td></tr>
+      <tr><th>客戶統編<span>Tax ID</span></th><td colspan="3">${esc(q.taxId || "—")}</td></tr>
     </tbody></table>
     <table class="a4-lines"><thead><tr><th>編號<span>No.</span></th><th>場次<span>Event</span></th><th>項目<span>Item</span></th><th>單價<span>Price</span></th><th>數量<span>Unit</span></th><th>單位</th><th>天數<span>Day</span></th><th>小計<span>Subtotal</span></th><th>備註<span>Note</span></th></tr></thead><tbody>${lineHtml || `<tr><td colspan="9">尚無報價項目</td></tr>`}</tbody></table>
     <div class="a4-payment-grid">
@@ -880,6 +926,19 @@ function bindEvents() {
   $("#quoteItemForm")?.addEventListener("submit", event => { event.preventDefault(); saveQuoteItem(); });
   $$('[data-quote-item-close],#quoteItemDrawerClose').forEach(button => button.addEventListener("click", () => closeDrawer("#quoteItemDrawer")));
   $("#quoteItemSearch")?.addEventListener("input", renderQuoteItems);
+  $$('[data-quote-item-sort]').forEach(button => button.addEventListener("click", () => {
+    const key = button.dataset.quoteItemSort;
+    if (state.quotationItemSort.key === key) state.quotationItemSort.direction = state.quotationItemSort.direction === "asc" ? "desc" : "asc";
+    else state.quotationItemSort = { key, direction: key === "unitPrice" ? "desc" : "asc" };
+    renderQuoteItems();
+  }));
+  $("#quoteItemEquipmentId")?.addEventListener("change", event => {
+    const equipment = state.equipment.find(item => item.id === event.target.value);
+    if (!equipment) return;
+    $("#quoteItemCategory").value = equipment.category || "";
+    $("#quoteItemName").value = equipment.name || "";
+    if (!$("#quoteItemUnit").value.trim()) $("#quoteItemUnit").value = "台";
+  });
   $("#quoteItemPrice")?.addEventListener("blur", event => { event.target.value = event.target.value ? money(event.target.value) : ""; });
   $("#quoteItemTableBody")?.addEventListener("click", async event => {
     const edit = event.target.closest("[data-item-edit]");
@@ -1018,6 +1077,21 @@ function bindEvents() {
     } else {
       alert("此專案尚無報價；viewer 無法新增。");
     }
+  });
+
+  window.addEventListener("yaoyan:create-quote-item-from-equipment", event => {
+    if (!canManageCatalog()) return alert("你目前沒有管理常用報價項目的權限");
+    const equipment = state.equipment.find(item => item.id === event.detail?.equipmentId);
+    if (!equipment) return alert("找不到這筆設備資料，請稍後重試");
+    openQuoteItem({
+      __fromEquipment: true,
+      equipmentId: equipment.id,
+      category: equipment.category || "",
+      name: equipment.name || "",
+      unit: "台",
+      calcMode: "auto50",
+      continuationRate: 50
+    });
   });
 
   $("#quotationPreviewClose")?.addEventListener("click", () => $("#quotationPreviewModal").classList.add("hidden"));

@@ -232,6 +232,7 @@ const dom = {
   equipmentReset: () => $("#equipmentReset"),
   equipmentId: () => $("#equipmentId"),
   equipmentName: () => $("#equipmentName"),
+  equipmentCategory: () => $("#equipmentCategory"),
   equipmentQty: () => $("#equipmentQty"),
   equipmentNote: () => $("#equipmentNote"),
   equipmentPurchasePrice: () => $("#equipmentPurchasePrice"),
@@ -409,6 +410,7 @@ function canCreateProject() { return hasPermission(currentAccess, "createProject
 function canUpdateProject() { return hasPermission(currentAccess, "editProjects"); }
 function canCreateEquipment() { return hasPermission(currentAccess, "createEquipment"); }
 function canUpdateEquipment() { return hasPermission(currentAccess, "editEquipment"); }
+function canManageCatalog() { return hasPermission(currentAccess, "manageCatalog"); }
 function canDelete() { return currentRole === "admin"; }
 
 /* =========================================================
@@ -641,6 +643,7 @@ function closeProjectDrawer({ force = false } = {}) {
 function resetEquipmentForm() {
   dom.equipmentId() && (dom.equipmentId().value = "");
   dom.equipmentName() && (dom.equipmentName().value = "");
+  dom.equipmentCategory() && (dom.equipmentCategory().value = "");
   dom.equipmentQty() && (dom.equipmentQty().value = "");
   dom.equipmentNote() && (dom.equipmentNote().value = "");
   dom.equipmentPurchasePrice() && (dom.equipmentPurchasePrice().value = "");
@@ -653,6 +656,7 @@ function resetEquipmentForm() {
 function fillEquipmentForm(e) {
   dom.equipmentId().value = e.id;
   dom.equipmentName().value = e.name ?? "";
+  dom.equipmentCategory().value = e.category ?? "";
   dom.equipmentQty().value = Number(e.qty ?? 0) || 0;
   dom.equipmentNote().value = e.note ?? "";
   dom.equipmentPurchasePrice().value = formatMoney(parseIntSafe(e.unitPurchasePrice)) || "";
@@ -785,6 +789,7 @@ async function upsertEquipmentFromForm() {
   const oldName = id ? (state.equipments.find(x => x.id === id)?.name || "") : "";
 
   const name = dom.equipmentName().value.trim();
+  const category = dom.equipmentCategory().value.trim();
   const qty = Math.max(0, Math.trunc(Number(dom.equipmentQty().value) || 0));
   const note = dom.equipmentNote().value.trim();
   const unitPurchasePrice = parseIntSafe(dom.equipmentPurchasePrice().value);
@@ -797,7 +802,7 @@ async function upsertEquipmentFromForm() {
   if (unitPurchasePrice && residualValue >= unitPurchasePrice) return alert("預估殘值必須小於購入價");
   if (id && oldName.trim() !== name.trim() && !canUpdateProject()) return alert("設備改名會同步更新所有專案，因此還需要『編輯專案』權限；你仍可修改數量、備註與資產資料。");
 
-  const payload = { name, qty, note, unitPurchasePrice, acquisitionDate, depreciationYears, residualValue, annualUsageDays, updatedAt: serverTimestamp() };
+  const payload = { name, category, qty, note, unitPurchasePrice, acquisitionDate, depreciationYears, residualValue, annualUsageDays, updatedAt: serverTimestamp() };
 
   try {
     if (id) {
@@ -808,10 +813,10 @@ async function upsertEquipmentFromForm() {
       if (String(oldName || "").trim() && String(newName || "").trim() && oldName.trim() !== newName.trim()) {
         await syncEquipmentNameInProjects(oldName, newName);
       }
-      await logAction({ action: "update", module: "equipment", targetType: "equipment", targetId: id, targetName: name, summary: oldName && oldName !== name ? `設備更名：${oldName} → ${name}` : `更新數量為 ${qty}` });
+      await logAction({ action: "update", module: "equipment", targetType: "equipment", targetId: id, targetName: name, summary: oldName && oldName !== name ? `設備更名：${oldName} → ${name}` : `${category || "未分類"}｜更新數量為 ${qty}` });
     } else {
       const ref = await addDoc(equipmentCol, { ...payload, createdAt: serverTimestamp() });
-      await logAction({ action: "create", module: "equipment", targetType: "equipment", targetId: ref.id, targetName: name, summary: `新增設備｜數量 ${qty}` });
+      await logAction({ action: "create", module: "equipment", targetType: "equipment", targetId: ref.id, targetName: name, summary: `新增設備｜${category || "未分類"}｜數量 ${qty}` });
     }
 
     resetEquipmentForm();
@@ -1278,11 +1283,13 @@ function renderEquipmentsTable() {
   body.innerHTML = "";
   const keyword = (dom.equipmentSearch()?.value || "").trim().toLocaleLowerCase("zh-Hant");
   const list = state.equipments
-    .filter(e => !keyword || [e.name, e.note].join(" ").toLocaleLowerCase("zh-Hant").includes(keyword))
+    .filter(e => !keyword || [e.category, e.name, e.note].join(" ").toLocaleLowerCase("zh-Hant").includes(keyword))
     .sort((a, b) => {
       let result;
       if (equipmentSort.key === "qty") result = (Number(a.qty) || 0) - (Number(b.qty) || 0);
+      else if (equipmentSort.key === "category") result = String(a.category || "未分類").localeCompare(String(b.category || "未分類"), "zh-Hant", { numeric: true, sensitivity: "base" });
       else result = String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant", { numeric: true, sensitivity: "base" });
+      if (!result && equipmentSort.key !== "name") result = String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant", { numeric: true, sensitivity: "base" });
       return equipmentSort.direction === "asc" ? result : -result;
     });
 
@@ -1294,7 +1301,7 @@ function renderEquipmentsTable() {
   });
 
   if (!list.length) {
-    body.innerHTML = `<tr><td colspan="6"><div class="empty-state">找不到符合條件的設備</div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="7"><div class="empty-state">找不到符合條件的設備</div></td></tr>`;
     return;
   }
 
@@ -1302,14 +1309,18 @@ function renderEquipmentsTable() {
     const dailyDepreciation = equipmentDailyDepreciation(e);
     const tr = document.createElement("tr");
     tr.innerHTML = `
+      <td><span class="badge neutral">${escapeHtml(e.category || "未分類")}</span></td>
       <td>${escapeHtml(e.name)}</td>
       <td class="num">${escapeHtml(String(e.qty ?? 0))}</td>
       <td>${parseIntSafe(e.unitPurchasePrice) ? `購入價 ${escapeHtml(formatMoney(e.unitPurchasePrice))}<div class="table-sub">${escapeHtml(e.acquisitionDate || "購入日未填")}｜${escapeHtml(String(e.depreciationYears || 6))} 年｜殘值 ${escapeHtml(formatMoney(e.residualValue || 0))}</div>` : '<span class="pending-value">尚未設定</span>'}</td>
       <td class="num">${dailyDepreciation === null ? '<span class="pending-value">尚未估算</span>' : `<b>${escapeHtml(formatMoney(dailyDepreciation))}</b><div class="table-sub">預估 ${escapeHtml(String(e.annualUsageDays))} 天／年</div>`}</td>
       <td>${escapeHtml(e.note ?? "")}</td>
       <td>
-        <button class="btn ghost small" type="button" data-act="edit-eq" data-id="${escapeHtml(e.id)}" ${canUpdateEquipment() ? "" : "disabled"}>編輯</button>
-        <button class="btn ghost small" type="button" data-act="del-eq" data-id="${escapeHtml(e.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
+        <div class="row-actions">
+          <button class="btn ghost small" type="button" data-act="catalog-eq" data-id="${escapeHtml(e.id)}" ${canManageCatalog() ? "" : "disabled"}>建立報價項目</button>
+          <button class="btn ghost small" type="button" data-act="edit-eq" data-id="${escapeHtml(e.id)}" ${canUpdateEquipment() ? "" : "disabled"}>編輯</button>
+          <button class="btn ghost small" type="button" data-act="del-eq" data-id="${escapeHtml(e.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
+        </div>
       </td>
     `;
     body.appendChild(tr);
@@ -1982,6 +1993,10 @@ function bindEvents() {
       const eq = state.equipments.find(x => x.id === id);
       if (eq) fillEquipmentForm(eq);
       window.scrollTo({ top: 0, behavior: "smooth" });
+    } else if (act === "catalog-eq") {
+      const eq = state.equipments.find(x => x.id === id);
+      if (!eq || !canManageCatalog()) return;
+      window.dispatchEvent(new CustomEvent("yaoyan:create-quote-item-from-equipment", { detail: { equipmentId: id } }));
     } else if (act === "del-eq") {
       deleteEquipment(id);
     }
