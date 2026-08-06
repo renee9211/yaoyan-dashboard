@@ -143,6 +143,7 @@
         </div>
         <div class="panel-actions">
           <button id="expenseOpenCreate" class="btn primary" type="button">＋ 新增外部支出</button>
+          <button id="companyExpenseOpenCreate" class="btn primary soft" type="button">＋ 新增公司支出</button>
           <button id="financeExportCsv" class="btn ghost" type="button">匯出應收 CSV</button>
         </div>
       </div>
@@ -167,6 +168,16 @@
         <div class="finance-profit-card emphasized"><span>案件毛利</span><b id="financeMonthContribution">0</b><small>營收－外部支出，未扣設備折舊及固定費用</small></div>
       </div>
 
+      <section class="finance-section company-finance-summary">
+        <div class="finance-section-head"><div><h3>公司支出與營運概況</h3><p>公司支出依支出日期歸月；設備採購屬資本支出，獨立列示且不重複扣入營運餘額。</p></div></div>
+        <div class="company-expense-kpi-grid">
+          <div class="company-expense-kpi"><span>公司營運支出（未稅）</span><b id="companyOperatingExpenseTotal">0</b><small>房租、人事、水電、軟體等</small></div>
+          <div class="company-expense-kpi capital"><span>設備採購（未稅）</span><b id="companyCapitalExpenseTotal">0</b><small>資本支出，不列入當月營運餘額</small></div>
+          <div class="company-expense-kpi"><span>公司總支出（未稅）</span><b id="companyExpenseTotal">0</b><small>營運支出＋設備採購</small></div>
+          <div class="company-expense-kpi result"><span>公司營運餘額（未稅）</span><b id="companyOperatingBalance">0</b><small>全公司案件毛利－公司營運支出；非會計淨利</small></div>
+        </div>
+      </section>
+
       <section class="finance-section">
         <div class="finance-section-head"><div><h3>應收帳齡</h3><p>依「預計收款日」相對於基準日計算；沒有預計收款日的款項獨立列出。</p></div></div>
         <div class="aging-grid">
@@ -182,6 +193,16 @@
       <section class="finance-section">
         <div class="finance-section-head"><div><h3>外部支出明細</h3><p>記錄可確認的實際支出；含稅金額會自動換算為未稅成本供毛利計算。</p></div><span id="expenseResultCount">共 0 筆</span></div>
         <div class="card table-card"><div class="table-scroll"><table class="table expense-table"><thead><tr><th>日期</th><th>專案／客戶</th><th>類別／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅成本</th><th>備註</th><th>操作</th></tr></thead><tbody id="expenseTableBody"></tbody></table></div></div>
+      </section>
+
+      <section class="finance-section">
+        <div class="finance-section-head"><div><h3>公司支出明細</h3><p>不連結單一專案；房租等列為營運支出，設備購買則列為資本支出。</p></div><span id="companyExpenseResultCount">共 0 筆</span></div>
+        <div class="card company-expense-toolbar">
+          <label class="toolbar-search"><span class="sr-only">搜尋公司支出</span><input id="companyExpenseSearch" class="input" type="search" placeholder="搜尋項目、廠商、發票或備註" /></label>
+          <label class="field-inline"><span>類別</span><select id="companyExpenseCategoryFilter" class="select"><option value="all">全部類別</option><option value="rent">房租／倉租</option><option value="utilities">水電／網路／電話</option><option value="payroll">薪資／勞務／獎金</option><option value="insurance">保險／勞健保</option><option value="software">軟體／訂閱</option><option value="equipment_purchase">設備購買</option><option value="equipment_maintenance">設備維修／保養</option><option value="office">辦公／行政</option><option value="marketing">行銷／業務</option><option value="professional">專業服務／稅務</option><option value="other">其他</option></select></label>
+          <button id="companyExpenseExportCsv" class="btn ghost" type="button">匯出公司支出 CSV</button>
+        </div>
+        <div class="card table-card"><div class="table-scroll"><table class="table company-expense-table"><thead><tr><th>日期</th><th>性質／類別</th><th>項目／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅金額</th><th>發票／憑證</th><th>連結設備</th><th>備註</th><th>操作</th></tr></thead><tbody id="companyExpenseTableBody"></tbody></table></div></div>
       </section>
 
       <section class="finance-section">
@@ -314,11 +335,11 @@
       <div class="panel-head"><div><h2>系統管理</h2><p class="hint">權限變更由 admin 管理；操作紀錄建立後不可修改或刪除。</p></div></div>
       <section id="userPermissionSection" class="finance-section hidden">
         <div class="finance-section-head"><div><h3>使用者與細分權限</h3><p>角色提供預設值，也可逐項調整；永久刪除資料仍只限 admin。</p></div></div>
-        <div class="card table-card"><div class="table-scroll"><table class="table permission-table"><thead><tr><th>使用者</th><th>角色</th><th>新增專案</th><th>編輯專案</th><th>報價</th><th>請款收款</th><th>外部支出</th><th>新增設備</th><th>編輯設備</th><th>客戶</th><th>常用品項</th><th>操作紀錄</th><th>操作</th></tr></thead><tbody id="userPermissionBody"></tbody></table></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table permission-table"><thead><tr><th>使用者</th><th>角色</th><th>新增專案</th><th>編輯專案</th><th>報價</th><th>請款收款</th><th>專案外部支出</th><th>公司支出</th><th>新增設備</th><th>編輯設備</th><th>客戶</th><th>常用品項</th><th>操作紀錄</th><th>操作</th></tr></thead><tbody id="userPermissionBody"></tbody></table></div></div>
       </section>
       <section id="auditLogSection" class="finance-section hidden">
         <div class="finance-section-head"><div><h3>操作紀錄</h3><p>記錄第三階段上線後，網站內的新增、修改、作廢、同步與刪除操作。</p></div></div>
-        <div class="card audit-toolbar"><label class="toolbar-search"><span class="sr-only">搜尋操作紀錄</span><input id="auditSearch" class="input" type="search" placeholder="搜尋使用者、專案、客戶或摘要" /></label><label class="field-inline"><span>模組</span><select id="auditModuleFilter" class="select"><option value="all">全部模組</option><option value="projects">專案</option><option value="quotations">報價</option><option value="payments">請款／收款</option><option value="expenses">外部支出</option><option value="customers">客戶</option><option value="catalog">常用品項</option><option value="equipment">設備</option><option value="permissions">權限</option></select></label></div>
+        <div class="card audit-toolbar"><label class="toolbar-search"><span class="sr-only">搜尋操作紀錄</span><input id="auditSearch" class="input" type="search" placeholder="搜尋使用者、專案、客戶或摘要" /></label><label class="field-inline"><span>模組</span><select id="auditModuleFilter" class="select"><option value="all">全部模組</option><option value="projects">專案</option><option value="quotations">報價</option><option value="payments">請款／收款</option><option value="expenses">專案外部支出</option><option value="companyExpenses">公司支出</option><option value="customers">客戶</option><option value="catalog">常用品項</option><option value="equipment">設備</option><option value="permissions">權限</option></select></label></div>
         <div class="card table-card"><div class="table-scroll"><table class="table audit-table"><thead><tr><th>時間</th><th>使用者</th><th>模組</th><th>動作</th><th>對象</th><th>內容</th></tr></thead><tbody id="auditLogBody"></tbody></table></div></div>
       </section>
       <div id="systemNoAccess" class="card empty-state hidden">你目前沒有查看系統管理的權限。</div>
@@ -331,48 +352,13 @@
           <h2>設備清單</h2>
           <p class="hint">設備可依類別管理；新增或編輯後，專案設備與常用報價項目的選單會自動刷新。</p>
         </div>
-        <input id="equipmentSearch" class="input compact-search" type="search" placeholder="搜尋類別、設備或備註" />
+        <div class="panel-actions equipment-panel-actions">
+          <input id="equipmentSearch" class="input compact-search" type="search" placeholder="搜尋類別、設備或備註" />
+          <button id="equipmentOpenCreate" class="btn primary" type="button">＋ 新增設備</button>
+        </div>
       </div>
 
-      <form id="equipment-form" class="card form-card">
-        <div class="form-grid">
-          <input id="equipmentId" type="hidden" />
-
-          <label class="field">
-            <span>設備名稱</span>
-            <input id="equipmentName" class="input" placeholder="例如：煙霧機" />
-          </label>
-
-          <label class="field">
-            <span>類別</span>
-            <input id="equipmentCategory" class="input" placeholder="例如：特殊效果設備" />
-          </label>
-
-          <label class="field">
-            <span>數量</span>
-            <input id="equipmentQty" class="input" type="number" min="0" step="1" />
-          </label>
-
-          <div class="field field-full equipment-cost-note"><span>設備折舊估算（選填）</span><small>只有資料填完整才會顯示每台每日估算；此數字不會自動列入案件毛利。</small></div>
-          <label class="field"><span>單台／單組購入價</span><input id="equipmentPurchasePrice" class="input" inputmode="numeric" placeholder="例如：600,000" /></label>
-          <label class="field"><span>購入日期</span><input id="equipmentAcquisitionDate" class="input" type="date" /></label>
-          <label class="field"><span>折舊年限</span><input id="equipmentDepreciationYears" class="input" type="number" min="1" step="1" value="6" /></label>
-          <label class="field"><span>預估殘值</span><input id="equipmentResidualValue" class="input" inputmode="numeric" placeholder="沒有可填 0" /></label>
-          <label class="field field-full"><span>預估每年使用天數</span><input id="equipmentAnnualUsageDays" class="input" type="number" min="1" step="1" placeholder="例如：50" /><small class="field-help">每台每日折舊＝（購入價－殘值）÷ 折舊年限 ÷ 每年使用天數。</small></label>
-
-          <label class="field field-full">
-            <span>備註</span>
-            <input id="equipmentNote" class="input" placeholder="例如：需保養 / 有耗材" />
-          </label>
-        </div>
-
-        <div class="form-actions">
-          <button class="btn primary" type="submit">儲存設備</button>
-          <button id="equipmentReset" class="btn ghost" type="button">清空表單</button>
-        </div>
-      </form>
-
-      <div class="card table-card" style="margin-top:14px;">
+      <div class="card table-card">
         <div class="table-scroll"><table class="table equipment-table">
           <thead>
             <tr>
@@ -427,7 +413,7 @@
       <div class="panel-head">
         <div>
           <h2>月報表</h2>
-          <p class="hint">統計該月份有跨到檔期的專案；案件毛利＝未稅營收－外部支出，不包含設備折舊及固定費用。</p>
+          <p class="hint">統計該月份有跨到檔期的專案，並依支出日期彙整公司支出；設備採購與營運支出分開列示。</p>
         </div>
 
         <div class="panel-actions">
@@ -461,6 +447,12 @@
           <div class="kpi-label">本月專案數（跨檔期）</div>
           <div class="kpi-value" id="kpiMonthProjects">0</div>
         </div>
+      </div>
+
+      <div class="report-company-grid">
+        <div class="kpi-card"><div class="kpi-label">公司營運支出（未稅）</div><div class="kpi-value" id="reportCompanyOperatingExpense">0</div></div>
+        <div class="kpi-card"><div class="kpi-label">設備採購（未稅）</div><div class="kpi-value" id="reportCompanyCapitalExpense">0</div></div>
+        <div class="kpi-card report-operating-result"><div class="kpi-label">公司營運餘額（未稅）</div><div class="kpi-value" id="reportOperatingBalance">0</div><div class="table-sub">案件毛利－公司營運支出；不扣設備採購</div></div>
       </div>
 
       <div class="card table-card">
@@ -500,6 +492,55 @@
       </div>
     </section>
   </main>
+
+  <!-- 新增／編輯設備 Drawer -->
+  <div id="equipmentDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-equipment-close aria-label="關閉設備表單"></button>
+    <aside class="drawer-panel narrow" role="dialog" aria-modal="true" aria-labelledby="equipmentDrawerTitle">
+      <div class="drawer-head">
+        <div>
+          <div class="drawer-eyebrow">設備清單</div>
+          <h2 id="equipmentDrawerTitle">新增設備</h2>
+        </div>
+        <button id="equipmentDrawerClose" class="icon-btn" type="button" aria-label="關閉">✕</button>
+      </div>
+
+      <form id="equipment-form" class="drawer-form">
+        <input id="equipmentId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section">
+            <h3>基本資料</h3>
+            <div class="form-grid">
+              <label class="field field-full"><span>設備名稱 *</span><input id="equipmentName" class="input" placeholder="例如：煙霧機" required /></label>
+              <label class="field"><span>類別</span><input id="equipmentCategory" class="input" placeholder="例如：特殊效果設備" /></label>
+              <label class="field"><span>數量</span><input id="equipmentQty" class="input" type="number" min="0" step="1" /></label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="equipment-cost-note"><span>設備折舊估算（選填）</span><small>只有資料填完整才會顯示每台每日估算；此數字不會自動列入案件毛利。</small></div>
+            <div class="form-grid">
+              <label class="field"><span>單台／單組購入價</span><input id="equipmentPurchasePrice" class="input" inputmode="numeric" placeholder="例如：600,000" /></label>
+              <label class="field"><span>購入日期</span><input id="equipmentAcquisitionDate" class="input" type="date" /></label>
+              <label class="field"><span>折舊年限</span><input id="equipmentDepreciationYears" class="input" type="number" min="1" step="1" value="6" /></label>
+              <label class="field"><span>預估殘值</span><input id="equipmentResidualValue" class="input" inputmode="numeric" placeholder="沒有可填 0" /></label>
+              <label class="field field-full"><span>預估每年使用天數</span><input id="equipmentAnnualUsageDays" class="input" type="number" min="1" step="1" placeholder="例如：50" /><small class="field-help">每台每日折舊＝（購入價－殘值）÷ 折舊年限 ÷ 每年使用天數。</small></label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <h3>備註</h3>
+            <label class="field"><span class="sr-only">備註</span><textarea id="equipmentNote" class="textarea" rows="4" placeholder="例如：需保養／有耗材"></textarea></label>
+          </section>
+        </div>
+
+        <div class="drawer-actions">
+          <button id="equipmentReset" class="btn ghost" type="button">清空</button>
+          <button class="btn primary" type="submit">儲存設備</button>
+        </div>
+      </form>
+    </aside>
+  </div>
 
   <!-- 新增／編輯專案 Drawer -->
   <div id="projectDrawer" class="drawer hidden" aria-hidden="true">
@@ -661,6 +702,31 @@
           </div></section>
         </div>
         <div class="drawer-actions"><button class="btn ghost" type="button" data-expense-close>取消</button><button class="btn primary" type="submit">儲存外部支出</button></div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- 公司支出 Drawer -->
+  <div id="companyExpenseDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-company-expense-close aria-label="關閉公司支出表單"></button>
+    <aside class="drawer-panel narrow" role="dialog" aria-modal="true" aria-labelledby="companyExpenseDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">財務總覽</div><h2 id="companyExpenseDrawerTitle">新增公司支出</h2></div><button id="companyExpenseDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="companyExpenseForm" class="drawer-form">
+        <input id="companyExpenseId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section"><h3>公司支出資料</h3><div class="form-grid">
+            <label class="field"><span>支出日期 *</span><input id="companyExpenseDate" class="input" type="date" required /></label>
+            <label class="field"><span>類別 *</span><select id="companyExpenseCategory" class="select" required><option value="rent">房租／倉租</option><option value="utilities">水電／網路／電話</option><option value="payroll">薪資／勞務／獎金</option><option value="insurance">保險／勞健保</option><option value="software">軟體／訂閱</option><option value="equipment_purchase">設備購買</option><option value="equipment_maintenance">設備維修／保養</option><option value="office">辦公／行政</option><option value="marketing">行銷／業務</option><option value="professional">專業服務／稅務</option><option value="other">其他</option></select></label>
+            <label class="field field-full"><span>支出項目 *</span><input id="companyExpenseName" class="input" required placeholder="例如：8 月辦公室租金、CO2 Jet 採購" /></label>
+            <label class="field"><span>廠商／收款方</span><input id="companyExpenseVendor" class="input" /></label>
+            <label class="field"><span>發票／憑證號碼</span><input id="companyExpenseReceipt" class="input" /></label>
+            <label class="field"><span>支出金額 *</span><input id="companyExpenseAmount" class="input" inputmode="numeric" required /></label>
+            <label class="field"><span>金額稅別</span><select id="companyExpenseTaxMode" class="select"><option value="taxed">含稅</option><option value="untaxed">未稅</option></select><small id="companyExpenseUntaxedHint" class="field-help">未稅金額：0</small></label>
+            <label id="companyExpenseEquipmentField" class="field field-full hidden"><span>連結設備（選填）</span><select id="companyExpenseEquipmentId" class="select"><option value="">不連結設備</option></select><small class="field-help">只建立採購支出紀錄，不會自動新增或更改設備庫存；可先在設備清單建檔後再連結。</small></label>
+            <label class="field field-full"><span>備註</span><textarea id="companyExpenseNote" class="textarea" rows="4" placeholder="可記錄付款方式、使用期間或其他補充"></textarea></label>
+          </div></section>
+        </div>
+        <div class="drawer-actions"><button class="btn ghost" type="button" data-company-expense-close>取消</button><button class="btn primary" type="submit">儲存公司支出</button></div>
       </form>
     </aside>
   </div>

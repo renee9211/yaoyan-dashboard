@@ -124,6 +124,16 @@ function getExpenseUntaxed(expense) {
   return expense?.taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE));
 }
 
+function getCompanyExpenseUntaxed(expense) {
+  if (parseIntSafe(expense?.costUntaxed)) return parseIntSafe(expense.costUntaxed);
+  const amount = parseIntSafe(expense?.amount);
+  return expense?.taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE));
+}
+
+function isCompanyCapitalExpense(expense) {
+  return expense?.category === "equipment_purchase" || expense?.expenseType === "capital";
+}
+
 function getProjectExternalCost(project) {
   const rows = getProjectExpenses(project.id);
   return rows.length ? rows.reduce((sum, expense) => sum + getExpenseUntaxed(expense), 0) : parseIntSafe(project.cost);
@@ -230,6 +240,10 @@ const dom = {
 
   equipmentForm: () => $("#equipment-form"),
   equipmentReset: () => $("#equipmentReset"),
+  equipmentOpenCreate: () => $("#equipmentOpenCreate"),
+  equipmentDrawer: () => $("#equipmentDrawer"),
+  equipmentDrawerTitle: () => $("#equipmentDrawerTitle"),
+  equipmentDrawerClose: () => $("#equipmentDrawerClose"),
   equipmentId: () => $("#equipmentId"),
   equipmentName: () => $("#equipmentName"),
   equipmentCategory: () => $("#equipmentCategory"),
@@ -258,6 +272,9 @@ const dom = {
   reportTotalInvoiced: () => $("#reportTotalInvoiced"),
   reportTotalReceived: () => $("#reportTotalReceived"),
   reportTotalOutstanding: () => $("#reportTotalOutstanding"),
+  reportCompanyOperatingExpense: () => $("#reportCompanyOperatingExpense"),
+  reportCompanyCapitalExpense: () => $("#reportCompanyCapitalExpense"),
+  reportOperatingBalance: () => $("#reportOperatingBalance"),
 
   // KPI (左大右小)
   kpiMonthRevenue: () => $("#kpiMonthRevenue"),
@@ -281,6 +298,7 @@ const equipmentCol = collection(db, "equipment");
 const paymentsCol = collection(db, "payments");
 const quotationsCol = collection(db, "quotations");
 const expensesCol = collection(db, "expenses");
+const companyExpensesCol = collection(db, "companyExpenses");
 
 /* =========================================================
    4) State
@@ -293,11 +311,14 @@ let unsubEquipments = null;
 let unsubPayments = null;
 let unsubQuotations = null;
 let unsubExpenses = null;
-let state = { projects: [], equipments: [], payments: [], quotations: [], expenses: [] };
+let unsubCompanyExpenses = null;
+let state = { projects: [], equipments: [], payments: [], quotations: [], expenses: [], companyExpenses: [] };
 let selectedProjectStatuses = new Set();
 let projectCurrentPage = 1;
 let equipmentSort = { key: "name", direction: "asc" };
 let projectFormDirty = false;
+let equipmentFormDirty = false;
+let equipmentDrawerReturnFocus = null;
 const openProjectIds = new Set();
 const CALENDAR_VIEW_STORAGE_KEY = "yaoyan-calendar-view";
 let calendarView = (() => {
@@ -666,6 +687,37 @@ function fillEquipmentForm(e) {
   dom.equipmentAnnualUsageDays().value = Number(e.annualUsageDays) || "";
 }
 
+function openEquipmentDrawer(equipment = null) {
+  if (equipment) {
+    if (!canUpdateEquipment()) return alert("你目前沒有編輯設備的權限");
+    fillEquipmentForm(equipment);
+  } else {
+    if (!canCreateEquipment()) return alert("你目前沒有新增設備的權限");
+    resetEquipmentForm();
+  }
+
+  equipmentDrawerReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  dom.equipmentDrawerTitle().textContent = equipment ? "編輯設備" : "新增設備";
+  dom.equipmentDrawer().classList.remove("hidden");
+  dom.equipmentDrawer().setAttribute("aria-hidden", "false");
+  document.body.classList.add("drawer-open");
+  equipmentFormDirty = false;
+  setTimeout(() => dom.equipmentName()?.focus(), 80);
+}
+
+function closeEquipmentDrawer({ force = false } = {}) {
+  if (!force && equipmentFormDirty && !confirm("表單尚未儲存，確定要關閉嗎？")) return false;
+  dom.equipmentDrawer()?.classList.add("hidden");
+  dom.equipmentDrawer()?.setAttribute("aria-hidden", "true");
+  if (!document.querySelector(".drawer:not(.hidden)")) document.body.classList.remove("drawer-open");
+  resetEquipmentForm();
+  equipmentFormDirty = false;
+  const returnFocus = equipmentDrawerReturnFocus;
+  equipmentDrawerReturnFocus = null;
+  setTimeout(() => returnFocus?.focus?.(), 0);
+  return true;
+}
+
 /* =========================================================
    10.5) Sync equipment rename -> projects.equipmentsUsed[].name
 ========================================================= */
@@ -819,7 +871,8 @@ async function upsertEquipmentFromForm() {
       await logAction({ action: "create", module: "equipment", targetType: "equipment", targetId: ref.id, targetName: name, summary: `新增設備｜${category || "未分類"}｜數量 ${qty}` });
     }
 
-    resetEquipmentForm();
+    equipmentFormDirty = false;
+    closeEquipmentDrawer({ force: true });
   } catch (e) {
     console.error(e);
     alert("儲存失敗：權限不足或資料不符合 Firestore rules");
@@ -1675,6 +1728,15 @@ function renderReport() {
   const monthlyReceived = state.payments
     .filter(payment => !payment.voided && payment.receivedDate && payment.receivedDate >= monthRange.start && payment.receivedDate <= monthRange.end)
     .reduce((sum, payment) => sum + parseIntSafe(payment.receivedAmount), 0);
+  const monthlyCompanyExpenses = state.companyExpenses
+    .filter(expense => !expense.voided && expense.expenseDate && expense.expenseDate >= monthRange.start && expense.expenseDate <= monthRange.end);
+  const companyOperatingExpense = monthlyCompanyExpenses
+    .filter(expense => !isCompanyCapitalExpense(expense))
+    .reduce((sum, expense) => sum + getCompanyExpenseUntaxed(expense), 0);
+  const companyCapitalExpense = monthlyCompanyExpenses
+    .filter(isCompanyCapitalExpense)
+    .reduce((sum, expense) => sum + getCompanyExpenseUntaxed(expense), 0);
+  const operatingBalance = totalP - companyOperatingExpense;
 
   // KPI（左大右小）
   dom.kpiMonthRevenue() && (dom.kpiMonthRevenue().textContent = formatMoney(totalR));
@@ -1683,6 +1745,12 @@ function renderReport() {
   dom.kpiReceivedAmount() && (dom.kpiReceivedAmount().textContent = formatMoney(monthlyReceived));
   dom.kpiClosedRevenue() && (dom.kpiClosedRevenue().textContent = formatMoney(closedRevenue));
   dom.kpiMonthProjects() && (dom.kpiMonthProjects().textContent = String(list.length));
+  dom.reportCompanyOperatingExpense() && (dom.reportCompanyOperatingExpense().textContent = formatMoney(companyOperatingExpense));
+  dom.reportCompanyCapitalExpense() && (dom.reportCompanyCapitalExpense().textContent = formatMoney(companyCapitalExpense));
+  if (dom.reportOperatingBalance()) {
+    dom.reportOperatingBalance().textContent = Math.round(operatingBalance).toLocaleString("zh-TW");
+    dom.reportOperatingBalance().classList.toggle("negative-value", operatingBalance < 0);
+  }
 }
 
 function exportReportCsv() {
@@ -1728,6 +1796,26 @@ function exportReportCsv() {
       p.note || ""
     ]);
   });
+
+  const companyRows = state.companyExpenses
+    .filter(expense => !expense.voided && String(expense.expenseDate || "").startsWith(mv))
+    .sort((a, b) => String(b.expenseDate || "").localeCompare(String(a.expenseDate || "")));
+  rows.push([]);
+  rows.push(["公司支出明細"]);
+  rows.push(["日期", "性質", "類別", "支出項目", "廠商／收款方", "支出金額", "稅別", "未稅金額", "發票／憑證", "連結設備", "備註"]);
+  companyRows.forEach(expense => rows.push([
+    expense.expenseDate || "",
+    isCompanyCapitalExpense(expense) ? "資本支出" : "營運支出",
+    ({ rent: "房租／倉租", utilities: "水電／網路／電話", payroll: "薪資／勞務／獎金", insurance: "保險／勞健保", software: "軟體／訂閱", equipment_purchase: "設備購買", equipment_maintenance: "設備維修／保養", office: "辦公／行政", marketing: "行銷／業務", professional: "專業服務／稅務", other: "其他" })[expense.category] || "其他",
+    expense.name || "",
+    expense.vendor || "",
+    String(parseIntSafe(expense.amount)),
+    expense.taxMode === "untaxed" ? "未稅" : "含稅",
+    String(getCompanyExpenseUntaxed(expense)),
+    expense.receiptNumber || "",
+    expense.equipmentName || "",
+    expense.note || ""
+  ]));
 
   const csv = "\uFEFF" + rows.map(r =>
     r.map(x => `"${String(x).replaceAll('"', '""')}"`).join(",")
@@ -1781,17 +1869,20 @@ function detachListeners() {
   unsubPayments && unsubPayments();
   unsubQuotations && unsubQuotations();
   unsubExpenses && unsubExpenses();
+  unsubCompanyExpenses && unsubCompanyExpenses();
   unsubProjects = null;
   unsubEquipments = null;
   unsubPayments = null;
   unsubQuotations = null;
   unsubExpenses = null;
+  unsubCompanyExpenses = null;
 
   state.projects = [];
   state.equipments = [];
   state.payments = [];
   state.quotations = [];
   state.expenses = [];
+  state.companyExpenses = [];
   openProjectIds.clear();
   renderAll();
 }
@@ -1842,6 +1933,15 @@ function attachRealtimeListeners() {
     },
     (err) => { console.error(err); alert("讀取外部支出失敗：請先更新第三階段 Firestore Rules"); }
   );
+
+  unsubCompanyExpenses = onSnapshot(
+    query(companyExpensesCol, orderBy("updatedAt", "desc")),
+    (snap) => {
+      state.companyExpenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderReport();
+    },
+    (err) => { console.error(err); alert("讀取公司支出失敗：請先更新新版 Firestore Rules"); }
+  );
 }
 
 function renderAll() {
@@ -1878,7 +1978,14 @@ function bindEvents() {
     projectFormDirty = true;
     dom.projectName()?.focus();
   });
-  dom.equipmentReset()?.addEventListener("click", () => resetEquipmentForm());
+  dom.equipmentOpenCreate()?.addEventListener("click", () => openEquipmentDrawer());
+  dom.equipmentDrawerClose()?.addEventListener("click", () => closeEquipmentDrawer());
+  dom.equipmentDrawer()?.querySelector("[data-equipment-close]")?.addEventListener("click", () => closeEquipmentDrawer());
+  dom.equipmentReset()?.addEventListener("click", () => {
+    resetEquipmentForm();
+    equipmentFormDirty = true;
+    dom.equipmentName()?.focus();
+  });
 
   dom.projectForm()?.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -1981,6 +2088,8 @@ function bindEvents() {
     e.preventDefault();
     upsertEquipmentFromForm();
   });
+  dom.equipmentForm()?.addEventListener("input", () => { equipmentFormDirty = true; });
+  dom.equipmentForm()?.addEventListener("change", () => { equipmentFormDirty = true; });
 
   dom.equipmentTableBody()?.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-act]");
@@ -1991,8 +2100,7 @@ function bindEvents() {
 
     if (act === "edit-eq") {
       const eq = state.equipments.find(x => x.id === id);
-      if (eq) fillEquipmentForm(eq);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      if (eq) openEquipmentDrawer(eq);
     } else if (act === "catalog-eq") {
       const eq = state.equipments.find(x => x.id === id);
       if (!eq || !canManageCatalog()) return;
@@ -2065,9 +2173,12 @@ function bindEvents() {
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !dom.projectDrawer()?.classList.contains("hidden")) closeProjectDrawer();
+    if (e.key === "Escape" && !dom.equipmentDrawer()?.classList.contains("hidden")) closeEquipmentDrawer();
   });
   window.addEventListener("beforeunload", (e) => {
-    if (!projectFormDirty || dom.projectDrawer()?.classList.contains("hidden")) return;
+    const projectIsDirty = projectFormDirty && !dom.projectDrawer()?.classList.contains("hidden");
+    const equipmentIsDirty = equipmentFormDirty && !dom.equipmentDrawer()?.classList.contains("hidden");
+    if (!projectIsDirty && !equipmentIsDirty) return;
     e.preventDefault();
     e.returnValue = "";
   });

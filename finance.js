@@ -1,4 +1,4 @@
-// Phase 3: receivables, aging, external expenses, audit trail and granular permissions.
+// Phase 3: receivables, project expenses, company expenses, audit trail and granular permissions.
 import {
   db, watchAuth, ensureUserDoc, getUserAccess, hasPermission,
   defaultPermissionsForRole, PERMISSION_KEYS
@@ -17,6 +17,8 @@ const collections = {
   projects: collection(db, "projects"),
   payments: collection(db, "payments"),
   expenses: collection(db, "expenses"),
+  companyExpenses: collection(db, "companyExpenses"),
+  equipment: collection(db, "equipment"),
   users: collection(db, "users"),
   auditLogs: collection(db, "auditLogs")
 };
@@ -27,6 +29,8 @@ const state = {
   projects: [],
   payments: [],
   expenses: [],
+  companyExpenses: [],
+  equipment: [],
   users: [],
   auditLogs: [],
   unsubs: []
@@ -47,6 +51,10 @@ function integerValue(value) {
 }
 
 function money(value) { return integerValue(value).toLocaleString("zh-TW"); }
+function signedMoney(value) {
+  const number = Number(value);
+  return (Number.isFinite(number) ? Math.round(number) : 0).toLocaleString("zh-TW");
+}
 function pad(value) { return String(value).padStart(2, "0"); }
 function isoDate(date = new Date()) { return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`; }
 function monthValue(date = new Date()) { return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`; }
@@ -99,6 +107,16 @@ function expenseUntaxed(expense) {
   if (integerValue(expense?.costUntaxed)) return integerValue(expense.costUntaxed);
   const amount = integerValue(expense?.amount);
   return expense?.taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE));
+}
+
+function companyExpenseUntaxed(expense) {
+  if (integerValue(expense?.costUntaxed)) return integerValue(expense.costUntaxed);
+  const amount = integerValue(expense?.amount);
+  return expense?.taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE));
+}
+
+function isCapitalExpense(expense) {
+  return expense?.category === "equipment_purchase" || expense?.expenseType === "capital";
 }
 
 function projectExpenses(projectId) {
@@ -255,11 +273,50 @@ function renderProfitability(context) {
   $("#financeMonthContribution").textContent = (revenue - expenses).toLocaleString("zh-TW");
 }
 
+function companyExpensesInMonth(month) {
+  return state.companyExpenses.filter(expense => !expense.voided && String(expense.expenseDate || "").startsWith(month));
+}
+
+function companyWideContribution(month) {
+  return state.projects
+    .filter(project => project.status !== "lost" && projectInMonth(project, month))
+    .reduce((sum, project) => sum + projectRevenueUntaxed(project) - projectExternalCost(project), 0);
+}
+
+function renderCompanyExpenseSummary(context) {
+  const rows = companyExpensesInMonth(context.month);
+  const operating = rows.filter(expense => !isCapitalExpense(expense)).reduce((sum, expense) => sum + companyExpenseUntaxed(expense), 0);
+  const capital = rows.filter(isCapitalExpense).reduce((sum, expense) => sum + companyExpenseUntaxed(expense), 0);
+  const balance = companyWideContribution(context.month) - operating;
+  $("#companyOperatingExpenseTotal").textContent = money(operating);
+  $("#companyCapitalExpenseTotal").textContent = money(capital);
+  $("#companyExpenseTotal").textContent = money(operating + capital);
+  $("#companyOperatingBalance").textContent = signedMoney(balance);
+  $("#companyOperatingBalance")?.classList.toggle("negative-value", balance < 0);
+}
+
 function expenseCategoryLabel(value) {
   return ({ outsourcing_equipment: "外包設備", temporary_staff: "臨時人力", transport: "運輸", consumables: "耗材", venue: "場租／其他場地費", other: "其他" })[value] || "其他";
 }
 
+function companyExpenseCategoryLabel(value) {
+  return ({
+    rent: "房租／倉租",
+    utilities: "水電／網路／電話",
+    payroll: "薪資／勞務／獎金",
+    insurance: "保險／勞健保",
+    software: "軟體／訂閱",
+    equipment_purchase: "設備購買",
+    equipment_maintenance: "設備維修／保養",
+    office: "辦公／行政",
+    marketing: "行銷／業務",
+    professional: "專業服務／稅務",
+    other: "其他"
+  })[value] || "其他";
+}
+
 function canManageExpenses() { return hasPermission(state.access, "manageExpenses"); }
+function canManageCompanyExpenses() { return hasPermission(state.access, "manageCompanyExpenses"); }
 function canDelete() { return state.access?.role === "admin"; }
 
 function filteredExpenses(context) {
@@ -285,6 +342,30 @@ function renderExpenses(context) {
     <td>${esc(expense.note || "—")}</td>
     <td><div class="row-actions"><button class="btn ghost small" type="button" data-expense-edit="${esc(expense.id)}" ${canManageExpenses() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-expense-delete="${esc(expense.id)}" ${canDelete() ? "" : "disabled"}>刪除</button></div></td>
   </tr>`).join("") : `<tr><td colspan="8"><div class="empty-state">選定月份尚無逐筆外部支出；舊專案手動成本仍會保留在案件毛利計算。</div></td></tr>`;
+}
+
+function filteredCompanyExpenses(context) {
+  const keyword = $("#companyExpenseSearch")?.value.trim().toLocaleLowerCase("zh-Hant") || "";
+  const category = $("#companyExpenseCategoryFilter")?.value || "all";
+  return companyExpensesInMonth(context.month)
+    .filter(expense => category === "all" || expense.category === category)
+    .filter(expense => !keyword || [expense.name, expense.vendor, expense.receiptNumber, expense.equipmentName, expense.note, companyExpenseCategoryLabel(expense.category)].join(" ").toLocaleLowerCase("zh-Hant").includes(keyword))
+    .sort((a, b) => String(b.expenseDate || "").localeCompare(String(a.expenseDate || "")) || timestampValue(b.updatedAt) - timestampValue(a.updatedAt));
+}
+
+function renderCompanyExpenses(context) {
+  const list = filteredCompanyExpenses(context);
+  if ($("#companyExpenseResultCount")) $("#companyExpenseResultCount").textContent = `共 ${list.length} 筆`;
+  if ($("#companyExpenseOpenCreate")) $("#companyExpenseOpenCreate").disabled = !canManageCompanyExpenses();
+  if (!$("#companyExpenseTableBody")) return;
+  $("#companyExpenseTableBody").innerHTML = list.length ? list.map(expense => `<tr>
+    <td>${esc(expense.expenseDate || "—")}</td>
+    <td><span class="badge ${isCapitalExpense(expense) ? "orange" : "neutral"}">${isCapitalExpense(expense) ? "資本支出" : "營運支出"}</span><div class="table-sub">${esc(companyExpenseCategoryLabel(expense.category))}</div></td>
+    <td><b>${esc(expense.name || "未命名支出")}</b><div class="table-sub">${esc(expense.vendor || "—")}</div></td>
+    <td class="num">${money(expense.amount)}</td><td>${expense.taxMode === "untaxed" ? "未稅" : "含稅"}</td><td class="num"><b>${money(companyExpenseUntaxed(expense))}</b></td>
+    <td>${esc(expense.receiptNumber || "—")}</td><td>${esc(expense.equipmentName || "—")}</td><td>${esc(expense.note || "—")}</td>
+    <td><div class="row-actions"><button class="btn ghost small" type="button" data-company-expense-edit="${esc(expense.id)}" ${canManageCompanyExpenses() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-company-expense-delete="${esc(expense.id)}" ${canDelete() ? "" : "disabled"}>刪除</button></div></td>
+  </tr>`).join("") : `<tr><td colspan="10"><div class="empty-state">選定月份尚無符合條件的公司支出。</div></td></tr>`;
 }
 
 function renderMonthReceived(context) {
@@ -339,7 +420,9 @@ function renderFinance() {
   renderNext30(receivables, context);
   renderMonthReceived(context);
   renderProfitability(context);
+  renderCompanyExpenseSummary(context);
   renderExpenses(context);
+  renderCompanyExpenses(context);
   renderAnalysis(context);
 }
 
@@ -413,9 +496,109 @@ async function saveExpense() {
   }
 }
 
+function refreshCompanyExpenseEquipment(selected = "") {
+  const select = $("#companyExpenseEquipmentId");
+  if (!select) return;
+  const current = selected || select.value;
+  const groups = new Map();
+  state.equipment.forEach(item => {
+    const category = String(item.category || "未分類").trim() || "未分類";
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category).push(item);
+  });
+  select.innerHTML = `<option value="">不連結設備</option>` + [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, "zh-Hant"))
+    .map(([category, items]) => `<optgroup label="${esc(category)}">${items.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant")).map(item => `<option value="${esc(item.id)}">${esc(item.name || "未命名設備")}</option>`).join("")}</optgroup>`)
+    .join("");
+  select.value = current;
+}
+
+function updateCompanyExpenseCategoryUI() {
+  const isEquipmentPurchase = $("#companyExpenseCategory")?.value === "equipment_purchase";
+  $("#companyExpenseEquipmentField")?.classList.toggle("hidden", !isEquipmentPurchase);
+  if (!isEquipmentPurchase && $("#companyExpenseEquipmentId")) $("#companyExpenseEquipmentId").value = "";
+}
+
+function updateCompanyExpenseHint() {
+  const amount = integerValue($("#companyExpenseAmount")?.value);
+  const untaxed = $("#companyExpenseTaxMode")?.value === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE));
+  if ($("#companyExpenseUntaxedHint")) $("#companyExpenseUntaxedHint").textContent = `未稅金額：${money(untaxed)}`;
+}
+
+function openCompanyExpense(expense = null) {
+  if (!canManageCompanyExpenses()) return alert("你目前沒有新增或編輯公司支出的權限");
+  refreshCompanyExpenseEquipment(expense?.equipmentId || "");
+  $("#companyExpenseId").value = expense?.id || "";
+  $("#companyExpenseDate").value = expense?.expenseDate || isoDate();
+  $("#companyExpenseCategory").value = expense?.category || "rent";
+  $("#companyExpenseName").value = expense?.name || "";
+  $("#companyExpenseVendor").value = expense?.vendor || "";
+  $("#companyExpenseReceipt").value = expense?.receiptNumber || "";
+  $("#companyExpenseAmount").value = expense?.amount ? money(expense.amount) : "";
+  $("#companyExpenseTaxMode").value = expense?.taxMode || "taxed";
+  $("#companyExpenseEquipmentId").value = expense?.equipmentId || "";
+  $("#companyExpenseNote").value = expense?.note || "";
+  $("#companyExpenseDrawerTitle").textContent = expense ? "編輯公司支出" : "新增公司支出";
+  updateCompanyExpenseCategoryUI();
+  updateCompanyExpenseHint();
+  $("#companyExpenseDrawer").classList.remove("hidden");
+  $("#companyExpenseDrawer").setAttribute("aria-hidden", "false");
+  document.body.classList.add("drawer-open");
+}
+
+function closeCompanyExpense() {
+  $("#companyExpenseDrawer")?.classList.add("hidden");
+  $("#companyExpenseDrawer")?.setAttribute("aria-hidden", "true");
+  if (!$(`.drawer:not(.hidden)`)) document.body.classList.remove("drawer-open");
+}
+
+async function saveCompanyExpense() {
+  if (!canManageCompanyExpenses() || !state.user) return alert("你目前沒有管理公司支出的權限");
+  const id = $("#companyExpenseId").value;
+  const category = $("#companyExpenseCategory").value;
+  const name = $("#companyExpenseName").value.trim();
+  const amount = integerValue($("#companyExpenseAmount").value);
+  if (!$("#companyExpenseDate").value) return alert("請填寫支出日期");
+  if (!name) return alert("請填寫支出項目");
+  if (!amount) return alert("請填寫支出金額");
+  const taxMode = $("#companyExpenseTaxMode").value === "untaxed" ? "untaxed" : "taxed";
+  const equipment = category === "equipment_purchase" ? state.equipment.find(item => item.id === $("#companyExpenseEquipmentId").value) : null;
+  const payload = {
+    expenseDate: $("#companyExpenseDate").value,
+    category,
+    expenseType: category === "equipment_purchase" ? "capital" : "operating",
+    name,
+    vendor: $("#companyExpenseVendor").value.trim(),
+    receiptNumber: $("#companyExpenseReceipt").value.trim(),
+    amount,
+    taxMode,
+    costUntaxed: taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE)),
+    equipmentId: equipment?.id || "",
+    equipmentName: equipment?.name || "",
+    note: $("#companyExpenseNote").value.trim(),
+    voided: false,
+    updatedAt: serverTimestamp(),
+    updatedBy: state.user.uid
+  };
+  try {
+    let targetId = id;
+    if (id) await updateDoc(doc(db, "companyExpenses", id), payload);
+    else {
+      const ref = doc(collections.companyExpenses);
+      targetId = ref.id;
+      await setDoc(ref, { ...payload, createdAt: serverTimestamp(), createdBy: state.user.uid });
+    }
+    await logAction({ action: id ? "update" : "create", module: "companyExpenses", targetType: "companyExpense", targetId, targetName: name, summary: `${companyExpenseCategoryLabel(category)}｜${money(amount)} 元${payload.vendor ? `｜${payload.vendor}` : ""}` });
+    closeCompanyExpense();
+  } catch (error) {
+    console.error(error);
+    alert("公司支出儲存失敗：請確認新版 Firestore Rules 已發布");
+  }
+}
+
 const permissionLabels = {
   createProjects: "新增專案", editProjects: "編輯專案", manageQuotations: "報價",
-  managePayments: "請款收款", manageExpenses: "外部支出", createEquipment: "新增設備",
+  managePayments: "請款收款", manageExpenses: "專案外部支出", manageCompanyExpenses: "公司支出", createEquipment: "新增設備",
   editEquipment: "編輯設備", manageCustomers: "客戶", manageCatalog: "常用品項", viewAudit: "操作紀錄"
 };
 
@@ -442,7 +625,7 @@ function renderPermissions() {
 }
 
 function moduleLabel(module) {
-  return ({ projects: "專案", quotations: "報價", payments: "請款／收款", expenses: "外部支出", customers: "客戶", catalog: "常用品項", equipment: "設備", permissions: "權限" })[module] || module || "系統";
+  return ({ projects: "專案", quotations: "報價", payments: "請款／收款", expenses: "專案外部支出", companyExpenses: "公司支出", customers: "客戶", catalog: "常用品項", equipment: "設備", permissions: "權限" })[module] || module || "系統";
 }
 
 function actionLabel(action) {
@@ -504,11 +687,26 @@ function exportReceivables() {
   document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
 }
 
+function exportCompanyExpenses() {
+  const context = filterContext();
+  const rows = filteredCompanyExpenses(context);
+  const csv = [
+    ["日期", "性質", "類別", "支出項目", "廠商／收款方", "支出金額", "稅別", "未稅金額", "發票／憑證", "連結設備", "備註"],
+    ...rows.map(expense => [expense.expenseDate || "", isCapitalExpense(expense) ? "資本支出" : "營運支出", companyExpenseCategoryLabel(expense.category), expense.name || "", expense.vendor || "", expense.amount || 0, expense.taxMode === "untaxed" ? "未稅" : "含稅", companyExpenseUntaxed(expense), expense.receiptNumber || "", expense.equipmentName || "", expense.note || ""])
+  ].map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = `公司支出_${context.month}.csv`;
+  document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+}
+
 function listen(collectionRef, target, options = {}) {
   const ref = options.limit ? query(collectionRef, orderBy(options.orderBy || "updatedAt", "desc"), limit(options.limit)) : query(collectionRef, orderBy(options.orderBy || "updatedAt", "desc"));
   const unsubscribe = onSnapshot(ref, snapshot => {
     state[target] = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
     refreshExpenseProjects();
+    refreshCompanyExpenseEquipment();
     renderFinance();
     renderSystemAccess();
   }, error => {
@@ -523,7 +721,7 @@ function listen(collectionRef, target, options = {}) {
 function detach() {
   state.unsubs.forEach(unsubscribe => unsubscribe());
   state.unsubs = [];
-  state.projects = []; state.payments = []; state.expenses = []; state.users = []; state.auditLogs = [];
+  state.projects = []; state.payments = []; state.expenses = []; state.companyExpenses = []; state.equipment = []; state.users = []; state.auditLogs = [];
   renderFinance(); renderSystemAccess();
 }
 
@@ -531,6 +729,8 @@ function attach() {
   listen(collections.projects, "projects");
   listen(collections.payments, "payments");
   listen(collections.expenses, "expenses");
+  listen(collections.companyExpenses, "companyExpenses");
+  listen(collections.equipment, "equipment");
   if (state.access?.role === "admin") listen(collections.users, "users");
   if (state.access?.role === "admin" || hasPermission(state.access, "viewAudit")) listen(collections.auditLogs, "auditLogs", { orderBy: "createdAt", limit: 500 });
 }
@@ -539,11 +739,24 @@ function bindEvents() {
   ["#financeSearch"].forEach(selector => $(selector)?.addEventListener("input", renderFinance));
   ["#financeCustomerFilter", "#financeMonth", "#financeAsOfDate"].forEach(selector => $(selector)?.addEventListener("change", renderFinance));
   $("#financeExportCsv")?.addEventListener("click", exportReceivables);
+  $("#companyExpenseExportCsv")?.addEventListener("click", exportCompanyExpenses);
   $("#expenseOpenCreate")?.addEventListener("click", () => openExpense());
   $("#expenseForm")?.addEventListener("submit", event => { event.preventDefault(); saveExpense(); });
   $$('[data-expense-close],#expenseDrawerClose').forEach(button => button.addEventListener("click", closeExpense));
   ["#expenseAmount", "#expenseTaxMode"].forEach(selector => $(selector)?.addEventListener("input", updateExpenseHint));
   $("#expenseAmount")?.addEventListener("blur", event => { event.target.value = event.target.value ? money(event.target.value) : ""; updateExpenseHint(); });
+  $("#companyExpenseOpenCreate")?.addEventListener("click", () => openCompanyExpense());
+  $("#companyExpenseForm")?.addEventListener("submit", event => { event.preventDefault(); saveCompanyExpense(); });
+  $$('[data-company-expense-close],#companyExpenseDrawerClose').forEach(button => button.addEventListener("click", closeCompanyExpense));
+  $("#companyExpenseCategory")?.addEventListener("change", updateCompanyExpenseCategoryUI);
+  ["#companyExpenseAmount", "#companyExpenseTaxMode"].forEach(selector => $(selector)?.addEventListener("input", updateCompanyExpenseHint));
+  $("#companyExpenseAmount")?.addEventListener("blur", event => { event.target.value = event.target.value ? money(event.target.value) : ""; updateCompanyExpenseHint(); });
+  $("#companyExpenseEquipmentId")?.addEventListener("change", event => {
+    const equipment = state.equipment.find(item => item.id === event.target.value);
+    if (equipment && !$("#companyExpenseName")?.value.trim()) $("#companyExpenseName").value = equipment.name || "";
+  });
+  $("#companyExpenseSearch")?.addEventListener("input", renderFinance);
+  $("#companyExpenseCategoryFilter")?.addEventListener("change", renderFinance);
   $("#expenseTableBody")?.addEventListener("click", async event => {
     const edit = event.target.closest("[data-expense-edit]");
     const del = event.target.closest("[data-expense-delete]");
@@ -553,6 +766,17 @@ function bindEvents() {
     if (del && expense && canDelete() && confirm("確定永久刪除這筆外部支出？")) {
       await deleteDoc(doc(db, "expenses", expense.id));
       await logAction({ action: "delete", module: "expenses", targetType: "expense", targetId: expense.id, targetName: expense.projectName || "", summary: `${expenseCategoryLabel(expense.category)}｜${money(expense.amount)} 元` });
+    }
+  });
+  $("#companyExpenseTableBody")?.addEventListener("click", async event => {
+    const edit = event.target.closest("[data-company-expense-edit]");
+    const del = event.target.closest("[data-company-expense-delete]");
+    const id = edit?.dataset.companyExpenseEdit || del?.dataset.companyExpenseDelete;
+    const expense = state.companyExpenses.find(item => item.id === id);
+    if (edit && expense) return openCompanyExpense(expense);
+    if (del && expense && canDelete() && confirm("確定永久刪除這筆公司支出？")) {
+      await deleteDoc(doc(db, "companyExpenses", expense.id));
+      await logAction({ action: "delete", module: "companyExpenses", targetType: "companyExpense", targetId: expense.id, targetName: expense.name || "", summary: `${companyExpenseCategoryLabel(expense.category)}｜${money(expense.amount)} 元` });
     }
   });
   document.addEventListener("click", event => {

@@ -101,6 +101,7 @@ export const PERMISSION_KEYS = [
   "manageQuotations",
   "managePayments",
   "manageExpenses",
+  "manageCompanyExpenses",
   "createEquipment",
   "editEquipment",
   "manageCustomers",
@@ -118,6 +119,7 @@ export function defaultPermissionsForRole(role = "viewer") {
     manageQuotations: true,
     managePayments: true,
     manageExpenses: true,
+    manageCompanyExpenses: true,
     createEquipment: true,
     manageCustomers: true,
     manageCatalog: true
