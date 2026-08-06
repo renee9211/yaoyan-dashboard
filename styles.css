@@ -507,7 +507,7 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   gap:14px;
   padding:2px 2px 14px;
 }
-.project-detail-heading > div > span{
+.project-detail-title > span{
   display:block;
   margin-bottom:3px;
   color:var(--orange);
@@ -516,6 +516,13 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
   letter-spacing:.08em;
 }
 .project-detail-heading h3{ margin:0; font-size:18px; }
+.project-sync-badges{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:7px;
+  flex-wrap:wrap;
+}
 .project-status-cards{
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));

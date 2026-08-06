@@ -46,6 +46,15 @@ function statusLabel(v) {
   return map[v] || v || "";
 }
 
+function isGoogleCalendarProject(project) {
+  return project?.calendarSource === "google_calendar";
+}
+
+function calendarSyncLabel(project) {
+  if (!isGoogleCalendarProject(project)) return "";
+  return project?.calendarSyncStatus === "cancelled" ? "行事曆已刪除" : "Google Calendar";
+}
+
 const PROJECT_STATUSES = ["planning", "confirmed", "executing", "closed", "lost"];
 const PROJECTS_PER_PAGE = 20;
 
@@ -1217,6 +1226,10 @@ function renderProjectsTable() {
 
     const badgeClass = statusToBadgeClass(p.status);
     const statusText = statusLabel(p.status);
+    const calendarLabel = calendarSyncLabel(p);
+    const calendarBadge = calendarLabel
+      ? `<span class="badge ${p.calendarSyncStatus === "cancelled" ? "red" : "blue"}">${escapeHtml(calendarLabel)}</span>`
+      : "";
 
     const trMain = document.createElement("tr");
     trMain.className = "project-row";
@@ -1225,7 +1238,7 @@ function renderProjectsTable() {
     trMain.innerHTML = `
       <td>
         <div class="project-title">
-          <div class="name">${escapeHtml(p.name || "")}${p.note ? '<span class="note-dot" title="有備註">備註</span>' : ""}</div>
+          <div class="name">${escapeHtml(p.name || "")}${p.note ? '<span class="note-dot" title="有備註">備註</span>' : ""}${calendarBadge}</div>
           <div class="client">${escapeHtml(p.client || "—")}</div>
         </div>
       </td>
@@ -1252,8 +1265,8 @@ function renderProjectsTable() {
       <td colspan="5">
         <div class="details-panel">
           <div class="project-detail-heading">
-            <div><span>完整專案狀態</span><h3>${escapeHtml(p.name || "未命名專案")}</h3></div>
-            <span class="badge ${badgeClass}">${escapeHtml(statusText)}</span>
+          <div class="project-detail-title"><span>完整專案狀態</span><h3>${escapeHtml(p.name || "未命名專案")}</h3></div>
+            <div class="project-sync-badges">${calendarBadge}<span class="badge ${badgeClass}">${escapeHtml(statusText)}</span></div>
           </div>
 
           <div class="project-status-cards">
@@ -1273,6 +1286,7 @@ function renderProjectsTable() {
               <div>
                 <div class="kv"><div class="k">地點</div><div class="v">${escapeHtml(p.location || "—")}</div></div>
                 <div class="kv"><div class="k">案況</div><div class="v">${escapeHtml(statusText)}</div></div>
+                ${isGoogleCalendarProject(p) ? `<div class="kv"><div class="k">建立來源</div><div class="v">${escapeHtml(calendarLabel)}</div></div>` : ""}
               </div>
             </div>
           </section>
@@ -1550,8 +1564,8 @@ function renderCalendar() {
           : p.startDate === dateISO
             ? "開始"
             : projectEnd === dateISO ? "結束" : "進行中";
-        const meta = [rangePoint, statusLabel(p.status), p.client || "未填客戶"].filter(Boolean).join("｜");
-        const title = [p.name || "未命名專案", p.client, `${p.startDate || ""}～${projectEnd || ""}`, statusLabel(p.status)].filter(Boolean).join("｜");
+        const meta = [rangePoint, statusLabel(p.status), calendarSyncLabel(p), p.client || "未填客戶"].filter(Boolean).join("｜");
+        const title = [p.name || "未命名專案", p.client, `${p.startDate || ""}～${projectEnd || ""}`, statusLabel(p.status), calendarSyncLabel(p)].filter(Boolean).join("｜");
         return `<div class="calendar-project status-${escapeHtml(p.status || "planning")}" title="${escapeHtml(title)}"><span class="calendar-project-name">${escapeHtml(p.name || "未命名專案")}</span><span class="calendar-project-meta">${escapeHtml(meta)}</span></div>`;
       }).join("");
       more = activeProjects.length > 6
