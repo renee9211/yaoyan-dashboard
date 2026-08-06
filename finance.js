@@ -5,7 +5,7 @@ import {
 } from "./firebase.js";
 import { logAction } from "./audit.js";
 import {
-  collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot,
+  collection, doc, setDoc, updateDoc, onSnapshot, writeBatch,
   query, orderBy, serverTimestamp, limit
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
@@ -401,7 +401,7 @@ function renderExpenses(context) {
     <td>${esc(expenseCategoryLabel(expense.category))}<div class="table-sub">${esc(expense.vendor || "—")}</div></td>
     <td class="num">${money(expense.amount)}</td><td>${expense.taxMode === "untaxed" ? "未稅" : "含稅"}</td><td class="num"><b>${money(expenseUntaxed(expense))}</b></td><td><span class="badge ${status.badge}">${esc(status.label)}</span></td>
     <td>${esc(expense.note || "—")}</td>
-    <td><div class="row-actions"><button class="btn ghost small" type="button" data-expense-edit="${esc(expense.id)}" ${canManageExpenses() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-expense-delete="${esc(expense.id)}" ${canDelete() ? "" : "disabled"}>刪除</button></div></td>
+    <td><div class="row-actions"><button class="btn ghost small" type="button" data-expense-edit="${esc(expense.id)}" ${canManageExpenses() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-expense-void="${esc(expense.id)}" ${canManageExpenses() ? "" : "disabled"}>作廢</button></div></td>
   </tr>`; }).join("") : `<tr><td colspan="9"><div class="empty-state">選定月份尚無逐筆外部支出；舊專案手動成本仍會保留在案件毛利計算。</div></td></tr>`;
 }
 
@@ -425,7 +425,7 @@ function renderCompanyExpenses(context) {
     <td><b>${esc(expense.name || "未命名支出")}</b><div class="table-sub">${esc(expense.vendor || "—")}</div></td>
     <td class="num">${money(expense.amount)}</td><td>${expense.taxMode === "untaxed" ? "未稅" : "含稅"}</td><td class="num"><b>${money(companyExpenseUntaxed(expense))}</b></td><td><span class="badge ${status.badge}">${esc(status.label)}</span></td>
     <td>${esc(expense.receiptNumber || "—")}</td><td>${esc(expense.equipmentName || "—")}</td><td>${esc(expense.note || "—")}</td>
-    <td><div class="row-actions"><button class="btn ghost small" type="button" data-company-expense-edit="${esc(expense.id)}" ${canManageCompanyExpenses() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-company-expense-delete="${esc(expense.id)}" ${canDelete() ? "" : "disabled"}>刪除</button></div></td>
+    <td><div class="row-actions"><button class="btn ghost small" type="button" data-company-expense-edit="${esc(expense.id)}" ${canManageCompanyExpenses() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-company-expense-void="${esc(expense.id)}" ${canManageCompanyExpenses() ? "" : "disabled"}>作廢</button></div></td>
   </tr>`; }).join("") : `<tr><td colspan="11"><div class="empty-state">選定月份尚無符合條件的公司支出。</div></td></tr>`;
 }
 
@@ -560,9 +560,48 @@ async function saveExpense() {
     note: $("#expenseNote").value.trim(), voided: false,
     updatedAt: serverTimestamp(), updatedBy: state.user.uid
   };
+  const legacyCost = integerValue(project.cost);
+  const activeExistingExpenses = state.expenses.filter(expense => expense.projectId === project.id && !expense.voided && expense.id !== id);
+  const migrateLegacyCost = !id && legacyCost > 0 && activeExistingExpenses.length === 0;
+  if (migrateLegacyCost) {
+    const confirmed = confirm(`此專案目前有舊版「手動外部支出」${money(legacyCost)} 元。\n\n按「確定」後，系統會先建立一筆「期初外部支出」，再新增本次支出，避免舊成本從報表消失。\n\n若手動金額已包含本次支出，請按「取消」，先回專案調整手動合計再新增。`);
+    if (!confirmed) return;
+  }
   try {
     let targetId = id;
     if (id) await updateDoc(doc(db, "expenses", id), payload);
+    else if (migrateLegacyCost) {
+      const batch = writeBatch(db);
+      const ref = doc(collections.expenses);
+      const legacyRef = doc(collections.expenses);
+      targetId = ref.id;
+      batch.set(legacyRef, {
+        projectId: project.id,
+        projectName: project.name || "",
+        customerName: project.client || "",
+        expenseDate: payload.expenseDate || project.startDate || isoDate(),
+        category: "other",
+        vendor: "",
+        amount: legacyCost,
+        taxMode: "untaxed",
+        costUntaxed: legacyCost,
+        vendorBillDate: "",
+        expectedPaymentDate: "",
+        paidDate: "",
+        paymentMethod: "other",
+        payableTracked: false,
+        note: "由舊版專案手動外部支出自動轉入；視為既有已發生成本。",
+        legacyManualCost: true,
+        voided: false,
+        createdAt: serverTimestamp(),
+        createdBy: state.user.uid,
+        updatedAt: serverTimestamp(),
+        updatedBy: state.user.uid
+      });
+      batch.set(ref, { ...payload, createdAt: serverTimestamp(), createdBy: state.user.uid });
+      await batch.commit();
+      await logAction({ action: "sync", module: "expenses", targetType: "expense", targetId: legacyRef.id, targetName: project.name, summary: `舊版手動成本轉為期初外部支出｜${money(legacyCost)} 元` });
+    }
     else {
       const ref = doc(collections.expenses);
       targetId = ref.id;
@@ -702,10 +741,12 @@ function renderPermissions() {
   if (!isAdmin || !$("#userPermissionBody")) return;
   $("#userPermissionBody").innerHTML = state.users.map(user => {
     const role = user.role || "viewer";
+    const approved = user.approved === true || (!("approved" in user) && ["admin", "editor"].includes(role));
     const permissions = normalizedUserPermissions(user);
     const self = user.id === state.user?.uid;
     return `<tr data-user-row="${esc(user.id)}">
       <td><b>${esc(user.displayName || "未填姓名")}</b><div class="table-sub">${esc(user.email || user.id)}</div>${self ? `<span class="detail-latest-tag">目前帳號</span>` : ""}</td>
+      <td><label class="approval-toggle"><input class="user-approved" type="checkbox" ${approved ? "checked" : ""} ${self ? "disabled" : ""} /><span class="badge ${approved ? "green" : "orange"}">${approved ? "已核准" : "待核准"}</span></label></td>
       <td><select class="select compact-select user-role" ${self ? "disabled" : ""}><option value="viewer" ${role === "viewer" ? "selected" : ""}>viewer</option><option value="editor" ${role === "editor" ? "selected" : ""}>editor</option><option value="admin" ${role === "admin" ? "selected" : ""}>admin</option></select></td>
       ${PERMISSION_KEYS.map(key => `<td class="permission-cell"><input type="checkbox" data-permission="${esc(key)}" ${permissions[key] ? "checked" : ""} ${(role === "admin" || self) ? "disabled" : ""} aria-label="${esc(permissionLabels[key] || key)}" /></td>`).join("")}
       <td><button class="btn ghost small" type="button" data-save-user="${esc(user.id)}" ${self ? "disabled" : ""}>儲存</button></td>
@@ -750,11 +791,12 @@ async function saveUserPermissions(userId) {
   const user = state.users.find(item => item.id === userId);
   if (!row || !user) return;
   const role = $(".user-role", row).value;
+  const approved = $(".user-approved", row)?.checked === true;
   const permissions = {};
   PERMISSION_KEYS.forEach(key => { permissions[key] = $(`[data-permission="${CSS.escape(key)}"]`, row)?.checked === true; });
   try {
-    await updateDoc(doc(db, "users", userId), { role, permissions, updatedAt: serverTimestamp(), updatedBy: state.user.uid });
-    await logAction({ action: "permission", module: "permissions", targetType: "user", targetId: userId, targetName: user.displayName || user.email || userId, summary: `角色：${role}｜已開放 ${Object.values(permissions).filter(Boolean).length} 項操作權限` });
+    await updateDoc(doc(db, "users", userId), { role, approved, permissions, updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+    await logAction({ action: "permission", module: "permissions", targetType: "user", targetId: userId, targetName: user.displayName || user.email || userId, summary: `${approved ? "已核准" : "已停用"}｜角色：${role}｜已開放 ${Object.values(permissions).filter(Boolean).length} 項操作權限` });
     alert("權限已儲存；對方重新整理網站後會套用新權限。");
   } catch (error) {
     console.error(error);
@@ -849,24 +891,24 @@ function bindEvents() {
   $("#companyExpenseCategoryFilter")?.addEventListener("change", renderFinance);
   $("#expenseTableBody")?.addEventListener("click", async event => {
     const edit = event.target.closest("[data-expense-edit]");
-    const del = event.target.closest("[data-expense-delete]");
-    const id = edit?.dataset.expenseEdit || del?.dataset.expenseDelete;
+    const voidButton = event.target.closest("[data-expense-void]");
+    const id = edit?.dataset.expenseEdit || voidButton?.dataset.expenseVoid;
     const expense = state.expenses.find(item => item.id === id);
     if (edit && expense) return openExpense(expense);
-    if (del && expense && canDelete() && confirm("確定永久刪除這筆外部支出？")) {
-      await deleteDoc(doc(db, "expenses", expense.id));
-      await logAction({ action: "delete", module: "expenses", targetType: "expense", targetId: expense.id, targetName: expense.projectName || "", summary: `${expenseCategoryLabel(expense.category)}｜${money(expense.amount)} 元` });
+    if (voidButton && expense && canManageExpenses() && confirm("確定作廢這筆外部支出？紀錄會保留供查核，但不再計入成本與應付。")) {
+      await updateDoc(doc(db, "expenses", expense.id), { voided: true, voidedAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+      await logAction({ action: "void", module: "expenses", targetType: "expense", targetId: expense.id, targetName: expense.projectName || "", summary: `${expenseCategoryLabel(expense.category)}｜${money(expense.amount)} 元` });
     }
   });
   $("#companyExpenseTableBody")?.addEventListener("click", async event => {
     const edit = event.target.closest("[data-company-expense-edit]");
-    const del = event.target.closest("[data-company-expense-delete]");
-    const id = edit?.dataset.companyExpenseEdit || del?.dataset.companyExpenseDelete;
+    const voidButton = event.target.closest("[data-company-expense-void]");
+    const id = edit?.dataset.companyExpenseEdit || voidButton?.dataset.companyExpenseVoid;
     const expense = state.companyExpenses.find(item => item.id === id);
     if (edit && expense) return openCompanyExpense(expense);
-    if (del && expense && canDelete() && confirm("確定永久刪除這筆公司支出？")) {
-      await deleteDoc(doc(db, "companyExpenses", expense.id));
-      await logAction({ action: "delete", module: "companyExpenses", targetType: "companyExpense", targetId: expense.id, targetName: expense.name || "", summary: `${companyExpenseCategoryLabel(expense.category)}｜${money(expense.amount)} 元` });
+    if (voidButton && expense && canManageCompanyExpenses() && confirm("確定作廢這筆公司支出？紀錄會保留供查核，但不再計入支出與應付。")) {
+      await updateDoc(doc(db, "companyExpenses", expense.id), { voided: true, voidedAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+      await logAction({ action: "void", module: "companyExpenses", targetType: "companyExpense", targetId: expense.id, targetName: expense.name || "", summary: `${companyExpenseCategoryLabel(expense.category)}｜${money(expense.amount)} 元` });
     }
   });
   document.addEventListener("click", event => {
@@ -913,10 +955,10 @@ function init() {
       state.access = await getUserAccess(user);
     } catch (error) {
       console.error(error);
-      state.access = { role: "viewer", permissions: defaultPermissionsForRole("viewer") };
+      state.access = { role: "viewer", approved: false, permissions: defaultPermissionsForRole("viewer") };
     }
     renderSystemAccess();
-    attach();
+    if (state.access.approved) attach();
   });
 }
 

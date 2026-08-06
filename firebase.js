@@ -77,6 +77,7 @@ export async function ensureUserDoc(user) {
         email: user.email || "",
         displayName: user.displayName || "",
         role: "viewer",
+        approved: false,
         permissions: defaultPermissionsForRole("viewer"),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -127,12 +128,15 @@ export function defaultPermissionsForRole(role = "viewer") {
 }
 
 export async function getUserAccess(user) {
-  if (!user) return { role: "viewer", permissions: defaultPermissionsForRole("viewer") };
+  if (!user) return { role: "viewer", approved: false, permissions: defaultPermissionsForRole("viewer") };
   const snap = await getDoc(doc(db, "users", user.uid));
   const data = snap.exists() ? snap.data() : {};
   const role = data.role || "viewer";
+  const approved = data.approved === true ||
+    (!("approved" in data) && ["admin", "editor"].includes(role));
   return {
     role,
+    approved,
     permissions: {
       ...defaultPermissionsForRole(role),
       ...(data.permissions && typeof data.permissions === "object" ? data.permissions : {})
@@ -141,6 +145,7 @@ export async function getUserAccess(user) {
 }
 
 export function hasPermission(access, permission) {
+  if (!access?.approved) return false;
   if (access?.role === "admin") return true;
   return access?.permissions?.[permission] === true;
 }

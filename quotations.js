@@ -1055,7 +1055,12 @@ function bindEvents() {
       await updateDoc(doc(db, "quotations", quotation.id), { status: "void", updatedAt: serverTimestamp(), updatedBy: state.user.uid });
       await logAction({ action: "void", module: "quotations", targetType: "quotation", targetId: quotation.id, targetName: `${quotation.number} / V${quotation.version || 1}`, summary: `${quotation.customerName || ""}｜${quotation.projectName || ""}` });
     }
-    if (del && quotation && canDelete() && confirm(`確定刪除 ${quotation.number} / V${quotation.version || 1}？一般回溯建議使用「作廢」，不要刪除。`)) {
+    if (del && quotation && canDelete()) {
+      const linkedProject = state.projects.find(project => project.confirmedQuotationId === quotation.id);
+      if (linkedProject || quotation.status === "confirmed") {
+        return alert(`此報價已確認${linkedProject ? `並回寫至專案「${linkedProject.name || ""}」` : ""}，不能永久刪除。請使用「作廢」保留版本與歷史。`);
+      }
+      if (!confirm(`確定刪除尚未確認的 ${quotation.number} / V${quotation.version || 1}？一般回溯建議使用「作廢」。`)) return;
       await deleteDoc(doc(db, "quotations", quotation.id));
       await logAction({ action: "delete", module: "quotations", targetType: "quotation", targetId: quotation.id, targetName: `${quotation.number} / V${quotation.version || 1}`, summary: `${quotation.customerName || ""}｜${quotation.projectName || ""}` });
     }
@@ -1119,10 +1124,10 @@ function init() {
     } catch (error) {
       console.error(error);
       state.role = "viewer";
-      state.access = { role: "viewer", permissions: defaultPermissionsForRole("viewer") };
+      state.access = { role: "viewer", approved: false, permissions: defaultPermissionsForRole("viewer") };
     }
     setMutationButtons();
-    attach();
+    if (state.access.approved) attach();
   });
 }
 

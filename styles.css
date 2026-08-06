@@ -914,6 +914,50 @@ h1{ margin:0 0 4px; font-size:22px; letter-spacing:.01em; }
    Project list controls
 ========================================================= */
 .hidden{ display:none !important; }
+
+.approval-gate{
+  position:fixed;
+  inset:0;
+  z-index:12000;
+  display:grid;
+  place-items:center;
+  padding:24px;
+  background:rgba(17,24,39,.72);
+  backdrop-filter:blur(6px);
+}
+.approval-gate-card{
+  width:min(520px,100%);
+  padding:32px;
+  border-radius:20px;
+  background:#fff;
+  box-shadow:0 24px 80px rgba(0,0,0,.3);
+  text-align:center;
+}
+.approval-gate-card h2{ margin:8px 0 12px; }
+.approval-gate-card p{ margin:8px 0; line-height:1.7; }
+.approval-gate-icon{ font-size:34px; }
+.calendar-managed-notice{
+  padding:12px 14px;
+  border:1px solid #fed7aa;
+  border-radius:12px;
+  background:#fff7ed;
+  color:#9a3412;
+  font-size:13px;
+  line-height:1.6;
+  font-weight:800;
+}
+.calendar-managed-field[readonly]{
+  background:#f8fafc;
+  color:#64748b;
+  cursor:not-allowed;
+}
+.approval-toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  white-space:nowrap;
+}
+.approval-toggle input{ width:16px; height:16px; accent-color:var(--orange); }
 .sr-only{
   position:absolute;
   width:1px;

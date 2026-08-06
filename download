@@ -1,0 +1,60 @@
+"use strict";
+
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const {
+  calendarEventToProject,
+  eventDateRange,
+  formatDateInTimeZone,
+  projectDocumentId
+} = require("./calendar-utils");
+
+test("all-day Google Calendar end date is converted from exclusive to inclusive", () => {
+  assert.deepEqual(eventDateRange({
+    start: { date: "2026-08-10" },
+    end: { date: "2026-08-13" }
+  }), {
+    startDate: "2026-08-10",
+    endDate: "2026-08-12",
+    isAllDay: true
+  });
+});
+
+test("timed event uses Taipei calendar dates", () => {
+  assert.deepEqual(eventDateRange({
+    start: { dateTime: "2026-08-10T23:30:00+08:00" },
+    end: { dateTime: "2026-08-11T01:00:00+08:00" }
+  }), {
+    startDate: "2026-08-10",
+    endDate: "2026-08-11",
+    isAllDay: false
+  });
+  assert.equal(formatDateInTimeZone("2026-08-10T16:30:00Z"), "2026-08-11");
+});
+
+test("event mapping only contains Calendar-controlled project fields", () => {
+  const mapped = calendarEventToProject({
+    id: "event-1",
+    summary: "台北演出",
+    location: "Zepp New Taipei",
+    htmlLink: "https://calendar.google.com/event?eid=test",
+    updated: "2026-08-06T01:00:00.000Z",
+    start: { date: "2026-08-20" },
+    end: { date: "2026-08-21" }
+  }, { calendarId: "yaoyanfx@gmail.com" });
+
+  assert.equal(mapped.name, "台北演出");
+  assert.equal(mapped.location, "Zepp New Taipei");
+  assert.equal(mapped.startDate, "2026-08-20");
+  assert.equal(mapped.endDate, "2026-08-20");
+  assert.equal(mapped.calendarSyncStatus, "active");
+  assert.equal(Object.hasOwn(mapped, "client"), false);
+  assert.equal(Object.hasOwn(mapped, "quote"), false);
+});
+
+test("project document id is deterministic and calendar-specific", () => {
+  const first = projectDocumentId("yaoyanfx@gmail.com", "event-1");
+  assert.equal(first, projectDocumentId("yaoyanfx@gmail.com", "event-1"));
+  assert.notEqual(first, projectDocumentId("other@gmail.com", "event-1"));
+  assert.match(first, /^gcal_[a-f0-9]{64}$/);
+});

@@ -523,7 +523,7 @@ function renderReceiptHistory(payment) {
   if (!rows.length) return `<div class="table-sub">尚無入帳紀錄</div>`;
   return `<div class="receipt-history">${rows.map(receipt => `<div class="receipt-history-row">
     <span><b>${esc(receipt.receivedDate || "日期未填")}</b>｜${money(receipt.amount)}｜${esc(receiptMethodLabel(receipt.method))}${receipt.reference ? `｜${esc(receipt.reference)}` : ""}</span>
-    <span class="receipt-history-actions">${receipt.legacy ? '<span class="table-sub">舊版紀錄</span>' : `<button class="link-button" type="button" data-receipt-edit="${esc(receipt.id)}" ${canEdit() ? "" : "disabled"}>編輯</button><button class="link-button danger" type="button" data-receipt-delete="${esc(receipt.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>`}</span>
+    <span class="receipt-history-actions">${receipt.legacy ? '<span class="table-sub">舊版紀錄</span>' : `<button class="link-button" type="button" data-receipt-edit="${esc(receipt.id)}" ${canEdit() ? "" : "disabled"}>編輯</button><button class="link-button danger" type="button" data-receipt-void="${esc(receipt.id)}" ${canEdit() ? "" : "disabled"}>作廢</button>`}</span>
   </div>`).join("")}</div>`;
 }
 
@@ -720,18 +720,18 @@ function bindEvents() {
     const voidButton = event.target.closest("[data-payment-void]");
     const del = event.target.closest("[data-payment-delete]");
     const receiptEdit = event.target.closest("[data-receipt-edit]");
-    const receiptDelete = event.target.closest("[data-receipt-delete]");
+    const receiptVoid = event.target.closest("[data-receipt-void]");
     if (receiptEdit) {
       const receipt = state.receipts.find(item => item.id === receiptEdit.dataset.receiptEdit);
       const payment = paymentForReceipt(receipt);
       if (receipt && payment) return openReceipt(payment, receipt);
     }
-    if (receiptDelete) {
-      const receipt = state.receipts.find(item => item.id === receiptDelete.dataset.receiptDelete);
+    if (receiptVoid) {
+      const receipt = state.receipts.find(item => item.id === receiptVoid.dataset.receiptVoid);
       const payment = paymentForReceipt(receipt);
-      if (receipt && payment && canDelete() && confirm(`確定刪除 ${receipt.receivedDate || ""} 的收款紀錄 ${money(receipt.amount)} 元？`)) {
-        await deleteDoc(doc(db, "receipts", receipt.id));
-        await logAction({ action: "delete", module: "payments", targetType: "receipt", targetId: receipt.id, targetName: `${payment.customerName || ""}｜${payment.projectName || ""}`, summary: `${receipt.receivedDate || ""}｜${money(receipt.amount)} 元` });
+      if (receipt && payment && canEdit() && confirm(`確定作廢 ${receipt.receivedDate || ""} 的收款紀錄 ${money(receipt.amount)} 元？紀錄會保留，但不再計入已收款。`)) {
+        await updateDoc(doc(db, "receipts", receipt.id), { voided: true, voidedAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+        await logAction({ action: "void", module: "payments", targetType: "receipt", targetId: receipt.id, targetName: `${payment.customerName || ""}｜${payment.projectName || ""}`, summary: `${receipt.receivedDate || ""}｜${money(receipt.amount)} 元` });
       }
       return;
     }
@@ -742,7 +742,12 @@ function bindEvents() {
     if (edit && payment) return openPayment(payment);
     if (receive && payment) return openPayment(payment, { receive: true });
     if (voidButton && payment) return voidPayment(payment);
-    if (del && payment && canDelete() && confirm("確定永久刪除這筆款項？若只是取消請款，建議使用『作廢』保留紀錄。")) {
+    if (del && payment && canDelete()) {
+      const relatedReceipts = state.receipts.filter(receipt => receipt.paymentId === payment.id);
+      if (relatedReceipts.length || integerValue(payment.receivedAmount) > 0) {
+        return alert(`此款項已有 ${relatedReceipts.length || 1} 筆收款紀錄，不能永久刪除。請使用「作廢」保留完整歷史。`);
+      }
+      if (!confirm("確定永久刪除這筆完全沒有收款紀錄的款項？若只是取消請款，建議使用『作廢』。")) return;
       await deleteDoc(doc(db, "payments", payment.id));
       await logAction({ action: "delete", module: "payments", targetType: "payment", targetId: payment.id, targetName: `${payment.customerName || ""}｜${payment.projectName || ""}`, summary: `${payment.label || paymentTypeLabel(payment.paymentType)}｜${money(payment.amount)} 元` });
       return;
@@ -784,9 +789,9 @@ function init() {
     } catch (error) {
       console.error(error);
       state.role = "viewer";
-      state.access = { role: "viewer", permissions: defaultPermissionsForRole("viewer") };
+      state.access = { role: "viewer", approved: false, permissions: defaultPermissionsForRole("viewer") };
     }
-    attach();
+    if (state.access.approved) attach();
   });
 }
 
