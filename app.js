@@ -12,10 +12,20 @@ import {
   handleRedirectResult
 } from "./firebase.js";
 import { logAction } from "./audit.js";
+import { subscribeCollection, createRenderScheduler } from "./data-store.js";
+import {
+  normalizeTaxMode,
+  taxedToUntaxed,
+  projectRevenueUntaxed,
+  projectTotalTaxed,
+  expenseUntaxed,
+  isCapitalExpense,
+  createFinanceCalculator
+} from "./finance-calculations.js";
 
 import {
   collection, doc, addDoc, updateDoc, deleteDoc,
-  onSnapshot, query, orderBy, serverTimestamp, getDocs
+  query, serverTimestamp, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 /* =========================================================
@@ -75,93 +85,57 @@ function formatMoney(n) {
 /* =========================================================
    1) Tax mode (含稅/未稅) + Revenue(未稅) 計算
 ========================================================= */
-const TAX_RATE = 0.05;
-
-function normalizeTaxMode(v) {
-  return (v === "untaxed") ? "untaxed" : "taxed";
-}
-
 function toUntaxedFromTaxed(taxedInt) {
-  const taxed = parseIntSafe(taxedInt);
-  if (!taxed) return 0;
-  return Math.round(taxed / (1 + TAX_RATE));
+  return taxedToUntaxed(taxedInt);
 }
 
 function getTaxModeFromProject(p) { return normalizeTaxMode(p?.quoteTaxMode); }
 function getTaxModeFromForm() { return normalizeTaxMode(dom.projectQuoteTaxMode()?.value); }
 
 function getRevenueUntaxed(p) {
-  const quote = parseIntSafe(p?.quote);
-  const mode = getTaxModeFromProject(p);
-  if (quote > 0) return (mode === "taxed") ? toUntaxedFromTaxed(quote) : quote;
-  return parseIntSafe(p?.revenue);
+  return projectRevenueUntaxed(p);
 }
 
 function getProjectTotalTaxed(p) {
-  const quote = parseIntSafe(p?.quote);
-  if (!quote) return 0;
-  return getTaxModeFromProject(p) === "taxed" ? quote : Math.round(quote * (1 + TAX_RATE));
+  return projectTotalTaxed(p);
 }
 
-function getActualReceipts(paymentId) {
-  return state.receipts.filter(receipt => receipt.paymentId === paymentId && !receipt.voided);
+function financeCalculator() {
+  return createFinanceCalculator(state);
 }
 
 function getReceiptRows(payment) {
-  const rows = getActualReceipts(payment.id);
-  if (rows.length) return rows;
-  const legacyAmount = parseIntSafe(payment.receivedAmount);
-  return legacyAmount ? [{ id: `legacy:${payment.id}`, amount: legacyAmount, receivedDate: payment.receivedDate || "", method: "legacy", legacy: true }] : [];
+  return financeCalculator().receiptRows(payment);
 }
 
 function getPaymentReceived(payment) {
-  return getReceiptRows(payment).reduce((sum, receipt) => sum + parseIntSafe(receipt.amount), 0);
+  return financeCalculator().receivedForPayment(payment);
 }
 
 function getProjectPaymentSummary(projectId, projectTotalTaxed = 0) {
-  const rows = state.payments.filter(payment => payment.projectId === projectId && !payment.voided);
-  const scheduled = rows.reduce((sum, payment) => sum + parseIntSafe(payment.amount), 0);
-  const invoiced = rows.filter(payment => payment.requestDate).reduce((sum, payment) => sum + parseIntSafe(payment.amount), 0);
-  const received = rows.reduce((sum, payment) => sum + getPaymentReceived(payment), 0);
-  const receivable = rows.filter(payment => payment.requestDate)
-    .reduce((sum, payment) => sum + Math.max(0, parseIntSafe(payment.amount) - getPaymentReceived(payment)), 0);
-  return {
-    scheduled,
-    invoiced,
-    received,
-    unbilled: projectTotalTaxed ? Math.max(0, projectTotalTaxed - invoiced) : 0,
-    receivable,
-    totalOutstanding: projectTotalTaxed ? Math.max(0, projectTotalTaxed - received) : receivable
-  };
-}
-
-function calcProfit(p) {
-  return getRevenueUntaxed(p) - getProjectExternalCost(p);
+  const project = state.projects.find(item => item.id === projectId)
+    || { id: projectId, quote: projectTotalTaxed, quoteTaxMode: "taxed" };
+  return financeCalculator().projectPaymentSummary(project);
 }
 
 function getProjectExpenses(projectId) {
-  return state.expenses.filter(expense => expense.projectId === projectId && !expense.voided);
+  return financeCalculator().projectExpenses(projectId);
 }
 
 function getExpenseUntaxed(expense) {
-  if (parseIntSafe(expense?.costUntaxed)) return parseIntSafe(expense.costUntaxed);
-  const amount = parseIntSafe(expense?.amount);
-  return expense?.taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE));
+  return expenseUntaxed(expense);
 }
 
 function getCompanyExpenseUntaxed(expense) {
-  if (parseIntSafe(expense?.costUntaxed)) return parseIntSafe(expense.costUntaxed);
-  const amount = parseIntSafe(expense?.amount);
-  return expense?.taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE));
+  return expenseUntaxed(expense);
 }
 
 function isCompanyCapitalExpense(expense) {
-  return expense?.category === "equipment_purchase" || expense?.expenseType === "capital";
+  return isCapitalExpense(expense);
 }
 
 function getProjectExternalCost(project) {
-  const rows = getProjectExpenses(project.id);
-  return rows.length ? rows.reduce((sum, expense) => sum + getExpenseUntaxed(expense), 0) : parseIntSafe(project.cost);
+  return financeCalculator().projectExternalCost(project);
 }
 
 function equipmentDailyDepreciation(equipment) {
@@ -335,13 +309,7 @@ const companyExpensesCol = collection(db, "companyExpenses");
 let currentUser = null;
 let currentRole = null;
 let currentAccess = null;
-let unsubProjects = null;
-let unsubEquipments = null;
-let unsubPayments = null;
-let unsubReceipts = null;
-let unsubQuotations = null;
-let unsubExpenses = null;
-let unsubCompanyExpenses = null;
+let realtimeUnsubscribers = [];
 let state = { projects: [], equipments: [], payments: [], receipts: [], quotations: [], expenses: [], companyExpenses: [] };
 let selectedProjectStatuses = new Set();
 let projectCurrentPage = 1;
@@ -1786,20 +1754,6 @@ function openOveruseModal(dateISO) {
 /* =========================================================
    15) Report + CSV (欄位順序已調整)
 ========================================================= */
-function getMonthRange(monthValue) {
-  const [y, m] = monthValue.split("-").map(Number);
-  if (!y || !m) return null;
-  const start = `${y}-${pad2(m)}-01`;
-  const endDate = new Date(y, m, 0);
-  const end = toISODate(endDate);
-  return { start, end };
-}
-function isProjectInMonth(p, monthValue) {
-  const r = getMonthRange(monthValue);
-  if (!r || !p.startDate || !p.endDate) return false;
-  return !(p.endDate < r.start || p.startDate > r.end);
-}
-
 function renderReport() {
   const body = dom.reportTableBody();
   const monthInput = dom.reportMonth();
@@ -1808,25 +1762,19 @@ function renderReport() {
   const mv = monthInput.value;
   if (!mv) return;
 
-  const list = state.projects.filter(p => p.status !== "lost" && isProjectInMonth(p, mv));
+  const calculator = financeCalculator();
+  const monthly = calculator.monthlySummary(mv);
+  const list = monthly.projects;
   body.innerHTML = "";
 
-  let totalR = 0, totalC = 0, totalP = 0;
   let totalInvoiced = 0, totalUnbilled = 0, totalReceived = 0, totalReceivable = 0, totalOutstanding = 0;
-  let closedRevenue = 0;
 
   list.forEach(p => {
     const revenueUntaxed = getRevenueUntaxed(p);
     const projectTotalTaxed = getProjectTotalTaxed(p);
-    const paymentSummary = getProjectPaymentSummary(p.id, projectTotalTaxed);
+    const paymentSummary = calculator.projectPaymentSummary(p);
     const cost = getProjectExternalCost(p);
     const profit = revenueUntaxed - cost;
-
-    totalR += revenueUntaxed;
-    totalC += cost;
-    totalP += profit;
-
-    if (p.status === "closed") closedRevenue += revenueUntaxed;
     totalInvoiced += paymentSummary.invoiced;
     totalUnbilled += paymentSummary.unbilled;
     totalReceived += paymentSummary.received;
@@ -1860,46 +1808,27 @@ function renderReport() {
   });
 
   // 表格合計
-  dom.reportTotalRevenue().textContent = formatMoney(totalR);
-  dom.reportTotalCost().textContent = formatMoney(totalC);
-  dom.reportTotalProfit().textContent = formatMoney(totalP);
+  dom.reportTotalRevenue().textContent = formatMoney(monthly.revenue);
+  dom.reportTotalCost().textContent = formatMoney(monthly.externalCost);
+  dom.reportTotalProfit().textContent = formatMoney(monthly.profit);
   dom.reportTotalInvoiced() && (dom.reportTotalInvoiced().textContent = formatMoney(totalInvoiced));
   dom.reportTotalUnbilled() && (dom.reportTotalUnbilled().textContent = formatMoney(totalUnbilled));
   dom.reportTotalReceived() && (dom.reportTotalReceived().textContent = formatMoney(totalReceived));
   dom.reportTotalReceivable() && (dom.reportTotalReceivable().textContent = formatMoney(totalReceivable));
   dom.reportTotalOutstanding() && (dom.reportTotalOutstanding().textContent = formatMoney(totalOutstanding));
 
-  const monthRange = getMonthRange(mv);
-  const monthlyInvoiced = state.payments
-    .filter(payment => !payment.voided && payment.requestDate && payment.requestDate >= monthRange.start && payment.requestDate <= monthRange.end)
-    .reduce((sum, payment) => sum + parseIntSafe(payment.amount), 0);
-  const monthlyReceived = state.payments
-    .filter(payment => !payment.voided)
-    .flatMap(payment => getReceiptRows(payment))
-    .filter(receipt => receipt.receivedDate && receipt.receivedDate >= monthRange.start && receipt.receivedDate <= monthRange.end)
-    .reduce((sum, receipt) => sum + parseIntSafe(receipt.amount), 0);
-  const monthlyCompanyExpenses = state.companyExpenses
-    .filter(expense => !expense.voided && expense.expenseDate && expense.expenseDate >= monthRange.start && expense.expenseDate <= monthRange.end);
-  const companyOperatingExpense = monthlyCompanyExpenses
-    .filter(expense => !isCompanyCapitalExpense(expense))
-    .reduce((sum, expense) => sum + getCompanyExpenseUntaxed(expense), 0);
-  const companyCapitalExpense = monthlyCompanyExpenses
-    .filter(isCompanyCapitalExpense)
-    .reduce((sum, expense) => sum + getCompanyExpenseUntaxed(expense), 0);
-  const operatingBalance = totalP - companyOperatingExpense;
-
   // KPI（左大右小）
-  dom.kpiMonthRevenue() && (dom.kpiMonthRevenue().textContent = formatMoney(totalR));
-  dom.kpiMonthProfit() && (dom.kpiMonthProfit().textContent = formatMoney(totalP));
-  dom.kpiConfirmedQuote() && (dom.kpiConfirmedQuote().textContent = formatMoney(monthlyInvoiced));
-  dom.kpiReceivedAmount() && (dom.kpiReceivedAmount().textContent = formatMoney(monthlyReceived));
-  dom.kpiClosedRevenue() && (dom.kpiClosedRevenue().textContent = formatMoney(closedRevenue));
+  dom.kpiMonthRevenue() && (dom.kpiMonthRevenue().textContent = formatMoney(monthly.revenue));
+  dom.kpiMonthProfit() && (dom.kpiMonthProfit().textContent = formatMoney(monthly.profit));
+  dom.kpiConfirmedQuote() && (dom.kpiConfirmedQuote().textContent = formatMoney(monthly.invoiced));
+  dom.kpiReceivedAmount() && (dom.kpiReceivedAmount().textContent = formatMoney(monthly.received));
+  dom.kpiClosedRevenue() && (dom.kpiClosedRevenue().textContent = formatMoney(monthly.closedRevenue));
   dom.kpiMonthProjects() && (dom.kpiMonthProjects().textContent = String(list.length));
-  dom.reportCompanyOperatingExpense() && (dom.reportCompanyOperatingExpense().textContent = formatMoney(companyOperatingExpense));
-  dom.reportCompanyCapitalExpense() && (dom.reportCompanyCapitalExpense().textContent = formatMoney(companyCapitalExpense));
+  dom.reportCompanyOperatingExpense() && (dom.reportCompanyOperatingExpense().textContent = formatMoney(monthly.companyOperatingExpense));
+  dom.reportCompanyCapitalExpense() && (dom.reportCompanyCapitalExpense().textContent = formatMoney(monthly.companyCapitalExpense));
   if (dom.reportOperatingBalance()) {
-    dom.reportOperatingBalance().textContent = Math.round(operatingBalance).toLocaleString("zh-TW");
-    dom.reportOperatingBalance().classList.toggle("negative-value", operatingBalance < 0);
+    dom.reportOperatingBalance().textContent = Math.round(monthly.operatingBalance).toLocaleString("zh-TW");
+    dom.reportOperatingBalance().classList.toggle("negative-value", monthly.operatingBalance < 0);
   }
 }
 
@@ -1907,7 +1836,7 @@ function exportReportCsv() {
   const mv = dom.reportMonth()?.value;
   if (!mv) return alert("請先選擇月份");
 
-  const list = state.projects.filter(p => p.status !== "lost" && isProjectInMonth(p, mv));
+  const list = financeCalculator().monthlySummary(mv).projects;
 
   // ✅ 欄位順序：期間/狀態 在前；報價/模式 靠近營收前
   const rows = [[
@@ -2016,20 +1945,8 @@ function renderToday() {
    17) Realtime
 ========================================================= */
 function detachListeners() {
-  unsubProjects && unsubProjects();
-  unsubEquipments && unsubEquipments();
-  unsubPayments && unsubPayments();
-  unsubReceipts && unsubReceipts();
-  unsubQuotations && unsubQuotations();
-  unsubExpenses && unsubExpenses();
-  unsubCompanyExpenses && unsubCompanyExpenses();
-  unsubProjects = null;
-  unsubEquipments = null;
-  unsubPayments = null;
-  unsubReceipts = null;
-  unsubQuotations = null;
-  unsubExpenses = null;
-  unsubCompanyExpenses = null;
+  realtimeUnsubscribers.forEach(unsubscribe => unsubscribe());
+  realtimeUnsubscribers = [];
 
   state.projects = [];
   state.equipments = [];
@@ -2042,70 +1959,22 @@ function detachListeners() {
   renderAll();
 }
 
+const scheduleRenderAll = createRenderScheduler(renderAll);
+
 function attachRealtimeListeners() {
-  unsubProjects = onSnapshot(
-    query(projectsCol, orderBy("updatedAt", "desc")),
-    (snap) => {
-      state.projects = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderAll();
-    },
-    (err) => { console.error(err); alert("讀取專案失敗：請確認 Firestore 權限與登入狀態"); }
-  );
-
-  unsubEquipments = onSnapshot(
-    query(equipmentCol, orderBy("updatedAt", "desc")),
-    (snap) => {
-      state.equipments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderAll();
-    },
-    (err) => { console.error(err); alert("讀取設備失敗：請確認 Firestore 權限與登入狀態"); }
-  );
-
-  unsubPayments = onSnapshot(
-    query(paymentsCol, orderBy("updatedAt", "desc")),
-    (snap) => {
-      state.payments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderAll();
-    },
-    (err) => { console.error(err); alert("讀取請款／收款失敗：請先更新 Firestore Rules"); }
-  );
-
-  unsubReceipts = onSnapshot(
-    query(receiptsCol, orderBy("updatedAt", "desc")),
-    (snap) => {
-      state.receipts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderAll();
-    },
-    (err) => { console.error(err); alert("讀取實際收款紀錄失敗：請先更新新版 Firestore Rules"); }
-  );
-
-  unsubQuotations = onSnapshot(
-    query(quotationsCol, orderBy("updatedAt", "desc")),
-    (snap) => {
-      state.quotations = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderProjectsTable();
-    },
-    (err) => { console.error(err); alert("讀取報價狀態失敗：請確認 Firestore Rules 已包含 quotations 權限"); }
-  );
-
-  unsubExpenses = onSnapshot(
-    query(expensesCol, orderBy("updatedAt", "desc")),
-    (snap) => {
-      state.expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderProjectsTable();
-      renderReport();
-    },
-    (err) => { console.error(err); alert("讀取外部支出失敗：請先更新第三階段 Firestore Rules"); }
-  );
-
-  unsubCompanyExpenses = onSnapshot(
-    query(companyExpensesCol, orderBy("updatedAt", "desc")),
-    (snap) => {
-      state.companyExpenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderReport();
-    },
-    (err) => { console.error(err); alert("讀取公司支出失敗：請先更新新版 Firestore Rules"); }
-  );
+  const listen = (name, target, errorMessage) => {
+    realtimeUnsubscribers.push(subscribeCollection(name, rows => {
+      state[target] = rows;
+      scheduleRenderAll();
+    }, { onError: () => alert(errorMessage) }));
+  };
+  listen("projects", "projects", "讀取專案失敗：請確認 Firestore 權限與登入狀態");
+  listen("equipment", "equipments", "讀取設備失敗：請確認 Firestore 權限與登入狀態");
+  listen("payments", "payments", "讀取請款／收款失敗：請先更新 Firestore Rules");
+  listen("receipts", "receipts", "讀取實際收款紀錄失敗：請先更新新版 Firestore Rules");
+  listen("quotations", "quotations", "讀取報價狀態失敗：請確認 Firestore Rules 已包含 quotations 權限");
+  listen("expenses", "expenses", "讀取外部支出失敗：請先更新第三階段 Firestore Rules");
+  listen("companyExpenses", "companyExpenses", "讀取公司支出失敗：請先更新新版 Firestore Rules");
 }
 
 function renderAll() {

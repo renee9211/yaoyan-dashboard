@@ -151,7 +151,7 @@
       <div class="card finance-toolbar">
         <label class="toolbar-search"><span class="sr-only">搜尋應收</span><input id="financeSearch" class="input" type="search" placeholder="搜尋客戶、專案或發票號碼" /></label>
         <label class="field-inline"><span>客戶</span><select id="financeCustomerFilter" class="select"><option value="all">全部客戶</option></select></label>
-        <label class="field-inline"><span>統計月份</span><input id="financeMonth" class="input" type="month" /></label>
+        <label class="field-inline"><span>支出明細月份</span><input id="financeMonth" class="input" type="month" /></label>
         <label class="field-inline"><span>帳齡基準日</span><input id="financeAsOfDate" class="input" type="date" /></label>
       </div>
 
@@ -159,25 +159,7 @@
         <div class="finance-kpi primary"><span>已請款未收</span><b id="financeReceivableTotal">0</b><small>所有未作廢且已請款款項</small></div>
         <div class="finance-kpi danger"><span>逾期未收</span><b id="financeOverdueTotal">0</b><small id="financeOverdueCount">0 筆逾期</small></div>
         <div class="finance-kpi warning"><span>未來 30 天預計收款</span><b id="financeNext30Total">0</b><small id="financeNext30Count">0 筆即將到期</small></div>
-        <div class="finance-kpi"><span>本月已請款</span><b id="financeMonthInvoiced">0</b><small id="financeMonthInvoicedCount">0 筆請款</small></div>
-        <div class="finance-kpi success"><span>本月已收款</span><b id="financeMonthReceived">0</b><small id="financeMonthReceivedCount">0 筆入帳</small></div>
       </div>
-
-      <div class="finance-profit-grid">
-        <div class="finance-profit-card"><span>檔期專案金額（未稅）</span><b id="financeMonthRevenue">0</b><small>選定月份有執行檔期的案件；非會計營收</small></div>
-        <div class="finance-profit-card"><span>專案外部支出（未稅）</span><b id="financeMonthExpenses">0</b><small>逐筆支出；舊案沿用手動成本</small></div>
-        <div class="finance-profit-card emphasized"><span>檔期案件毛利</span><b id="financeMonthContribution">0</b><small>專案金額－外部支出，未扣設備折舊及固定費用</small></div>
-      </div>
-
-      <section class="finance-section company-finance-summary">
-        <div class="finance-section-head"><div><h3>公司支出與營運概況</h3><p>公司支出依成本／憑證日期歸月；設備採購屬資本支出，獨立列示且不重複扣入營運餘額。</p></div></div>
-        <div class="company-expense-kpi-grid">
-          <div class="company-expense-kpi"><span>公司營運支出（未稅）</span><b id="companyOperatingExpenseTotal">0</b><small>房租、人事、水電、軟體等</small></div>
-          <div class="company-expense-kpi capital"><span>設備採購（未稅）</span><b id="companyCapitalExpenseTotal">0</b><small>資本支出，不列入當月營運餘額</small></div>
-          <div class="company-expense-kpi"><span>公司總支出（未稅）</span><b id="companyExpenseTotal">0</b><small>營運支出＋設備採購</small></div>
-          <div class="company-expense-kpi result"><span>公司營運餘額（未稅）</span><b id="companyOperatingBalance">0</b><small>全公司案件毛利－公司營運支出；非會計淨利</small></div>
-        </div>
-      </section>
 
       <section class="finance-section">
         <div class="finance-section-head"><div><h3>廠商應付帳款</h3><p>只列新版有啟用付款追蹤、尚未付款的專案與公司支出；舊支出預設視為已付款。</p></div></div>
@@ -226,14 +208,6 @@
         <div class="card table-card"><div class="table-scroll"><table class="table finance-ar-table"><thead><tr><th>客戶／專案</th><th>款項</th><th>請款／發票</th><th>預計收款</th><th class="num">應收</th><th class="num">已收</th><th class="num">未收</th><th>帳齡</th></tr></thead><tbody id="financeReceivableBody"></tbody></table></div></div>
       </section>
 
-      <section class="finance-section">
-        <div class="finance-section-head"><div><h3>統計分析</h3><p>「已請款」依請款日歸月；「已收款」依實際收款日歸月，避免混用日期基準。</p></div></div>
-        <div class="finance-analysis-grid">
-          <div class="card analysis-card"><h4>客戶別</h4><div class="table-scroll"><table class="table compact-table"><thead><tr><th>客戶</th><th class="num">已請款</th><th class="num">已收</th><th class="num">未收</th><th class="num">逾期</th></tr></thead><tbody id="financeCustomerStatsBody"></tbody></table></div></div>
-          <div class="card analysis-card"><h4>專案別</h4><div class="table-scroll"><table class="table compact-table"><thead><tr><th>專案</th><th class="num">已請款</th><th class="num">已收</th><th class="num">未收</th></tr></thead><tbody id="financeProjectStatsBody"></tbody></table></div></div>
-          <div class="card analysis-card"><h4>月份別</h4><div class="table-scroll"><table class="table compact-table"><thead><tr><th>月份</th><th class="num">請款</th><th class="num">收款</th><th class="num">月底未收</th></tr></thead><tbody id="financeMonthStatsBody"></tbody></table></div></div>
-        </div>
-      </section>
     </section>
 
     <!-- ===================== 請款／收款管理 ===================== -->
@@ -509,6 +483,15 @@
         </table>
         </div>
       </div>
+
+      <section class="finance-section report-analysis-section">
+        <div class="finance-section-head"><div><h3>月報分析</h3><p>請款依請款日、收款依實際入帳日歸月；月底未收則回看該月底前已請款但尚未收到的金額。</p></div></div>
+        <div class="finance-analysis-grid">
+          <div class="card analysis-card"><h4>客戶別累計</h4><div class="table-scroll"><table class="table compact-table"><thead><tr><th>客戶</th><th class="num">已請款</th><th class="num">已收</th><th class="num">未收</th><th class="num">逾期</th></tr></thead><tbody id="financeCustomerStatsBody"></tbody></table></div></div>
+          <div class="card analysis-card"><h4>專案別累計</h4><div class="table-scroll"><table class="table compact-table"><thead><tr><th>專案</th><th class="num">已請款</th><th class="num">已收</th><th class="num">未收</th></tr></thead><tbody id="financeProjectStatsBody"></tbody></table></div></div>
+          <div class="card analysis-card"><h4>近 12 個月份</h4><div class="table-scroll"><table class="table compact-table"><thead><tr><th>月份</th><th class="num">請款</th><th class="num">收款</th><th class="num">月底未收</th></tr></thead><tbody id="financeMonthStatsBody"></tbody></table></div></div>
+        </div>
+      </section>
     </section>
   </main>
 

@@ -1,14 +1,15 @@
 // Phase 2 payment module: project-linked billing, invoices and collections.
 import { db, watchAuth, getUserAccess, hasPermission, ensureUserDoc, defaultPermissionsForRole } from "./firebase.js";
 import { logAction } from "./audit.js";
+import { subscribeCollection, createRenderScheduler } from "./data-store.js";
+import { createFinanceCalculator } from "./finance-calculations.js";
 import {
-  collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot,
-  query, orderBy, serverTimestamp, writeBatch
+  collection, doc, setDoc, updateDoc, deleteDoc,
+  serverTimestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
-const TAX_RATE = 0.05;
 const PAYMENTS_PER_PAGE = 20;
 const TODAY = () => {
   const now = new Date();
@@ -81,10 +82,12 @@ function paymentTypeLabel(type) {
   return ({ deposit: "訂金", balance: "尾款", full: "全額款", other: "其他" })[type] || "其他";
 }
 
+function financeCalculator() {
+  return createFinanceCalculator(state);
+}
+
 function projectTotalTaxed(project) {
-  const quote = integerValue(project?.quote);
-  if (!quote) return 0;
-  return project?.quoteTaxMode === "untaxed" ? Math.round(quote * (1 + TAX_RATE)) : quote;
+  return financeCalculator().projectPaymentSummary(project).total;
 }
 
 function activePayments(projectId) {
@@ -92,38 +95,19 @@ function activePayments(projectId) {
 }
 
 function actualReceipts(paymentId) {
-  return state.receipts.filter(receipt => receipt.paymentId === paymentId && !receipt.voided);
+  return financeCalculator().actualReceipts(paymentId);
 }
 
 function receiptRows(payment) {
-  const rows = actualReceipts(payment.id);
-  if (rows.length) return rows;
-  const legacyAmount = integerValue(payment.receivedAmount);
-  return legacyAmount ? [{
-    id: `legacy:${payment.id}`,
-    paymentId: payment.id,
-    amount: legacyAmount,
-    receivedDate: payment.receivedDate || "",
-    method: "",
-    reference: "",
-    note: "舊版收款紀錄",
-    legacy: true
-  }] : [];
+  return financeCalculator().receiptRows(payment);
 }
 
 function receivedForPayment(payment) {
-  return receiptRows(payment).reduce((sum, receipt) => sum + integerValue(receipt.amount), 0);
+  return financeCalculator().receivedForPayment(payment);
 }
 
 function paymentStatus(payment) {
-  if (payment.voided) return "void";
-  const amount = integerValue(payment.amount);
-  const received = receivedForPayment(payment);
-  if (amount > 0 && received >= amount) return "paid";
-  if (payment.requestDate && payment.expectedPaymentDate && payment.expectedPaymentDate < TODAY()) return "overdue";
-  if (received > 0) return "partial";
-  if (payment.requestDate) return "requested";
-  return "pending";
+  return financeCalculator().paymentStatus(payment, TODAY());
 }
 
 function paymentStatusLabel(status) {
@@ -151,34 +135,7 @@ function paymentStatusBadge(status) {
 }
 
 function projectPaymentSummary(project) {
-  const rows = activePayments(project.id);
-  const total = projectTotalTaxed(project);
-  const scheduled = rows.reduce((sum, payment) => sum + integerValue(payment.amount), 0);
-  const invoiced = rows.filter(payment => payment.requestDate).reduce((sum, payment) => sum + integerValue(payment.amount), 0);
-  const received = rows.reduce((sum, payment) => sum + receivedForPayment(payment), 0);
-  const receivable = rows
-    .filter(payment => payment.requestDate)
-    .reduce((sum, payment) => sum + Math.max(0, integerValue(payment.amount) - receivedForPayment(payment)), 0);
-  const hasOverdue = rows.some(payment => paymentStatus(payment) === "overdue");
-  let status = "pending";
-  if (!total) status = "pricePending";
-  else if (rows.length && received >= total) status = "paid";
-  else if (hasOverdue) status = "overdue";
-  else if (received > 0) status = "partial";
-  else if (invoiced > 0) status = "requested";
-  return {
-    rows,
-    total,
-    scheduled,
-    invoiced,
-    received,
-    unbilled: total ? Math.max(0, total - invoiced) : 0,
-    receivable,
-    totalOutstanding: total ? Math.max(0, total - received) : receivable,
-    unscheduled: total ? Math.max(0, total - scheduled) : 0,
-    status,
-    isTracked: rows.length > 0
-  };
+  return financeCalculator().projectPaymentSummary(project, { today: TODAY() });
 }
 
 function dateText(value) {
@@ -648,16 +605,16 @@ async function voidPayment(payment) {
   await logAction({ action: "void", module: "payments", targetType: "payment", targetId: payment.id, targetName: `${payment.customerName || ""}｜${payment.projectName || ""}`, summary: `${payment.label || paymentTypeLabel(payment.paymentType)}｜${money(payment.amount)} 元` });
 }
 
-function listen(name, collectionRef, target) {
-  const unsubscribe = onSnapshot(query(collectionRef, orderBy("updatedAt", "desc")), snapshot => {
-    state[target] = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
-    refreshProjectOptions();
-    renderPayments();
-  }, error => {
-    console.error(`讀取 ${name} 失敗`, error);
-    state[target] = [];
-    renderPayments();
-  });
+const schedulePaymentsRender = createRenderScheduler(() => {
+  refreshProjectOptions();
+  renderPayments();
+});
+
+function listen(name, target) {
+  const unsubscribe = subscribeCollection(name, rows => {
+    state[target] = rows;
+    schedulePaymentsRender();
+  }, { onError: error => console.error(`讀取 ${name} 失敗`, error) });
   state.unsubs.push(unsubscribe);
 }
 
@@ -672,10 +629,10 @@ function detach() {
 }
 
 function attach() {
-  listen("projects", collections.projects, "projects");
-  listen("customers", collections.customers, "customers");
-  listen("payments", collections.payments, "payments");
-  listen("receipts", collections.receipts, "receipts");
+  listen("projects", "projects");
+  listen("customers", "customers");
+  listen("payments", "payments");
+  listen("receipts", "receipts");
 }
 
 function bindEvents() {

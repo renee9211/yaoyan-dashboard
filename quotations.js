@@ -1,9 +1,10 @@
 // Phase 1 quotation module: customers, quotation catalog, versioned quotations and A4 output.
 import { db, watchAuth, getUserAccess, hasPermission, ensureUserDoc, defaultPermissionsForRole } from "./firebase.js";
 import { logAction } from "./audit.js";
+import { subscribeCollection, createRenderScheduler } from "./data-store.js";
 import {
-  collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot,
-  query, orderBy, serverTimestamp, writeBatch
+  collection, doc, setDoc, updateDoc, deleteDoc,
+  serverTimestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -865,15 +866,13 @@ function printPreview() {
 }
 
 /* ------------------------- Realtime ------------------------- */
-function listen(name, collectionRef, target) {
-  const unsubscribe = onSnapshot(query(collectionRef, orderBy("updatedAt", "desc")), snapshot => {
-    state[target] = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
-    renderAllQuoteModules();
-  }, error => {
-    console.error(`讀取 ${name} 失敗`, error);
-    state[target] = [];
-    renderAllQuoteModules();
-  });
+const scheduleQuoteRender = createRenderScheduler(renderAllQuoteModules);
+
+function listen(name, target) {
+  const unsubscribe = subscribeCollection(name, rows => {
+    state[target] = rows;
+    scheduleQuoteRender();
+  }, { onError: error => console.error(`讀取 ${name} 失敗`, error) });
   state.unsubs.push(unsubscribe);
 }
 
@@ -889,11 +888,11 @@ function detach() {
 }
 
 function attach() {
-  listen("customers", collections.customers, "customers");
-  listen("quotationItems", collections.quotationItems, "quotationItems");
-  listen("quotations", collections.quotations, "quotations");
-  listen("projects", collections.projects, "projects");
-  listen("equipment", collections.equipment, "equipment");
+  listen("customers", "customers");
+  listen("quotationItems", "quotationItems");
+  listen("quotations", "quotations");
+  listen("projects", "projects");
+  listen("equipment", "equipment");
 }
 
 function renderAllQuoteModules() {

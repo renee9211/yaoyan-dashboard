@@ -4,14 +4,20 @@ import {
   defaultPermissionsForRole, PERMISSION_KEYS
 } from "./firebase.js";
 import { logAction } from "./audit.js";
+import { subscribeCollection, createRenderScheduler } from "./data-store.js";
 import {
-  collection, doc, setDoc, updateDoc, onSnapshot, writeBatch,
-  query, orderBy, serverTimestamp, limit
+  taxedToUntaxed,
+  expenseUntaxed as calculateExpenseUntaxed,
+  isCapitalExpense as calculateIsCapitalExpense,
+  createFinanceCalculator
+} from "./finance-calculations.js";
+import {
+  collection, doc, setDoc, updateDoc, writeBatch,
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
-const TAX_RATE = 0.05;
 
 const collections = {
   projects: collection(db, "projects"),
@@ -53,10 +59,6 @@ function integerValue(value) {
 }
 
 function money(value) { return integerValue(value).toLocaleString("zh-TW"); }
-function signedMoney(value) {
-  const number = Number(value);
-  return (Number.isFinite(number) ? Math.round(number) : 0).toLocaleString("zh-TW");
-}
 function pad(value) { return String(value).padStart(2, "0"); }
 function isoDate(date = new Date()) { return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`; }
 function monthValue(date = new Date()) { return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`; }
@@ -93,79 +95,34 @@ function timestampText(value) {
   return new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(time));
 }
 
-function projectTotalTaxed(project) {
-  const quote = integerValue(project?.quote);
-  if (!quote) return 0;
-  return project?.quoteTaxMode === "untaxed" ? Math.round(quote * (1 + TAX_RATE)) : quote;
-}
-
-function projectRevenueUntaxed(project) {
-  const quote = integerValue(project?.quote);
-  if (quote) return project?.quoteTaxMode === "untaxed" ? quote : Math.round(quote / (1 + TAX_RATE));
-  return integerValue(project?.revenue);
-}
-
 function expenseUntaxed(expense) {
-  if (integerValue(expense?.costUntaxed)) return integerValue(expense.costUntaxed);
-  const amount = integerValue(expense?.amount);
-  return expense?.taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE));
+  return calculateExpenseUntaxed(expense);
 }
 
 function companyExpenseUntaxed(expense) {
-  if (integerValue(expense?.costUntaxed)) return integerValue(expense.costUntaxed);
-  const amount = integerValue(expense?.amount);
-  return expense?.taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE));
+  return calculateExpenseUntaxed(expense);
 }
 
 function isCapitalExpense(expense) {
-  return expense?.category === "equipment_purchase" || expense?.expenseType === "capital";
+  return calculateIsCapitalExpense(expense);
 }
 
-function projectExpenses(projectId) {
-  return state.expenses.filter(expense => expense.projectId === projectId && !expense.voided);
-}
-
-function projectExternalCost(project) {
-  const rows = projectExpenses(project.id);
-  return rows.length ? rows.reduce((sum, expense) => sum + expenseUntaxed(expense), 0) : integerValue(project.cost);
+function financeCalculator() {
+  return createFinanceCalculator(state);
 }
 
 function projectFor(id) { return state.projects.find(project => project.id === id); }
 
-function actualReceipts(paymentId) {
-  return state.receipts.filter(receipt => receipt.paymentId === paymentId && !receipt.voided);
-}
-
-function receiptRows(payment) {
-  const rows = actualReceipts(payment.id);
-  if (rows.length) return rows;
-  const legacyAmount = integerValue(payment.receivedAmount);
-  return legacyAmount ? [{ id: `legacy:${payment.id}`, paymentId: payment.id, amount: legacyAmount, receivedDate: payment.receivedDate || "", legacy: true }] : [];
-}
-
 function receivedForPayment(payment, throughDate = "") {
-  return receiptRows(payment)
-    .filter(receipt => !throughDate || (receipt.receivedDate && receipt.receivedDate <= throughDate))
-    .reduce((sum, receipt) => sum + integerValue(receipt.amount), 0);
+  return financeCalculator().receivedForPayment(payment, throughDate);
 }
 
 function allReceiptRows() {
-  return state.payments.filter(payment => !payment.voided).flatMap(payment => receiptRows(payment).map(receipt => ({ ...receipt, payment })));
+  return financeCalculator().allReceiptRows();
 }
 
 function paymentRow(payment) {
-  const project = projectFor(payment.projectId);
-  const amount = integerValue(payment.amount);
-  const received = receivedForPayment(payment);
-  return {
-    ...payment,
-    project,
-    projectName: payment.projectName || project?.name || "未命名專案",
-    customerName: payment.customerName || project?.client || "未填客戶",
-    amount,
-    received,
-    remaining: Math.max(0, amount - received)
-  };
+  return financeCalculator().paymentRow(payment);
 }
 
 function filterContext() {
@@ -274,50 +231,6 @@ function renderReceivables(rows, context) {
   </tr>`).join("") : `<tr><td colspan="8"><div class="empty-state">目前沒有符合條件的已請款未收款項。</div></td></tr>`;
 }
 
-function projectInMonth(project, month) {
-  const start = `${month}-01`;
-  const [year, value] = month.split("-").map(Number);
-  const end = isoDate(new Date(year, value, 0));
-  return project.startDate <= end && project.endDate >= start;
-}
-
-function contextProjects(context) {
-  return state.projects.filter(project => project.status !== "lost" && projectInMonth(project, context.month))
-    .filter(project => context.customer === "all" || project.client === context.customer)
-    .filter(project => !context.keyword || [project.name, project.client, project.location].join(" ").toLocaleLowerCase("zh-Hant").includes(context.keyword));
-}
-
-function renderProfitability(context) {
-  const projects = contextProjects(context);
-  const revenue = projects.reduce((sum, project) => sum + projectRevenueUntaxed(project), 0);
-  const expenses = projects.reduce((sum, project) => sum + projectExternalCost(project), 0);
-  $("#financeMonthRevenue").textContent = money(revenue);
-  $("#financeMonthExpenses").textContent = money(expenses);
-  $("#financeMonthContribution").textContent = (revenue - expenses).toLocaleString("zh-TW");
-}
-
-function companyExpensesInMonth(month) {
-  return state.companyExpenses.filter(expense => !expense.voided && String(expense.expenseDate || "").startsWith(month));
-}
-
-function companyWideContribution(month) {
-  return state.projects
-    .filter(project => project.status !== "lost" && projectInMonth(project, month))
-    .reduce((sum, project) => sum + projectRevenueUntaxed(project) - projectExternalCost(project), 0);
-}
-
-function renderCompanyExpenseSummary(context) {
-  const rows = companyExpensesInMonth(context.month);
-  const operating = rows.filter(expense => !isCapitalExpense(expense)).reduce((sum, expense) => sum + companyExpenseUntaxed(expense), 0);
-  const capital = rows.filter(isCapitalExpense).reduce((sum, expense) => sum + companyExpenseUntaxed(expense), 0);
-  const balance = companyWideContribution(context.month) - operating;
-  $("#companyOperatingExpenseTotal").textContent = money(operating);
-  $("#companyCapitalExpenseTotal").textContent = money(capital);
-  $("#companyExpenseTotal").textContent = money(operating + capital);
-  $("#companyOperatingBalance").textContent = signedMoney(balance);
-  $("#companyOperatingBalance")?.classList.toggle("negative-value", balance < 0);
-}
-
 function expenseCategoryLabel(value) {
   return ({ outsourcing_equipment: "外包設備", temporary_staff: "臨時人力", transport: "運輸", consumables: "耗材", venue: "場租／其他場地費", other: "其他" })[value] || "其他";
 }
@@ -408,7 +321,7 @@ function renderExpenses(context) {
 function filteredCompanyExpenses(context) {
   const keyword = $("#companyExpenseSearch")?.value.trim().toLocaleLowerCase("zh-Hant") || "";
   const category = $("#companyExpenseCategoryFilter")?.value || "all";
-  return companyExpensesInMonth(context.month)
+  return state.companyExpenses.filter(expense => !expense.voided && String(expense.expenseDate || "").startsWith(context.month))
     .filter(expense => category === "all" || expense.category === category)
     .filter(expense => !keyword || [expense.name, expense.vendor, expense.receiptNumber, expense.equipmentName, expense.note, companyExpenseCategoryLabel(expense.category)].join(" ").toLocaleLowerCase("zh-Hant").includes(keyword))
     .sort((a, b) => String(b.expenseDate || "").localeCompare(String(a.expenseDate || "")) || timestampValue(b.updatedAt) - timestampValue(a.updatedAt));
@@ -427,19 +340,6 @@ function renderCompanyExpenses(context) {
     <td>${esc(expense.receiptNumber || "—")}</td><td>${esc(expense.equipmentName || "—")}</td><td>${esc(expense.note || "—")}</td>
     <td><div class="row-actions"><button class="btn ghost small" type="button" data-company-expense-edit="${esc(expense.id)}" ${canManageCompanyExpenses() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-company-expense-void="${esc(expense.id)}" ${canManageCompanyExpenses() ? "" : "disabled"}>作廢</button></div></td>
   </tr>`; }).join("") : `<tr><td colspan="11"><div class="empty-state">選定月份尚無符合條件的公司支出。</div></td></tr>`;
-}
-
-function renderMonthReceived(context) {
-  const invoiced = state.payments.filter(payment => !payment.voided && payment.requestDate?.startsWith(context.month))
-    .map(paymentRow).filter(row => matchesContext(row, context));
-  $("#financeMonthInvoiced").textContent = money(invoiced.reduce((sum, row) => sum + row.amount, 0));
-  $("#financeMonthInvoicedCount").textContent = `${invoiced.length} 筆請款`;
-  const rows = allReceiptRows()
-    .filter(receipt => receipt.receivedDate?.startsWith(context.month) && integerValue(receipt.amount) > 0)
-    .map(receipt => ({ ...paymentRow(receipt.payment), received: integerValue(receipt.amount), receivedDate: receipt.receivedDate }))
-    .filter(row => matchesContext(row, context));
-  $("#financeMonthReceived").textContent = money(rows.reduce((sum, row) => sum + row.received, 0));
-  $("#financeMonthReceivedCount").textContent = `${rows.length} 筆入帳`;
 }
 
 function aggregateBy(rows, keyFn) {
@@ -488,13 +388,10 @@ function renderFinance() {
   renderReceivables(receivables, context);
   renderAging(receivables, context.asOf);
   renderNext30(receivables, context);
-  renderMonthReceived(context);
-  renderProfitability(context);
-  renderCompanyExpenseSummary(context);
   renderPayables(context);
   renderExpenses(context);
   renderCompanyExpenses(context);
-  renderAnalysis(context);
+  renderAnalysis({ keyword: "", customer: "all", month: $("#reportMonth")?.value || monthValue(), asOf: context.asOf });
 }
 
 function refreshExpenseProjects(selected = "") {
@@ -507,7 +404,7 @@ function refreshExpenseProjects(selected = "") {
 
 function updateExpenseHint() {
   const amount = integerValue($("#expenseAmount")?.value);
-  const untaxed = $("#expenseTaxMode")?.value === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE));
+  const untaxed = $("#expenseTaxMode")?.value === "untaxed" ? amount : taxedToUntaxed(amount);
   $("#expenseUntaxedHint").textContent = `未稅成本：${money(untaxed)}`;
 }
 
@@ -551,7 +448,7 @@ async function saveExpense() {
     projectId: project.id, projectName: project.name || "", customerName: project.client || "",
     expenseDate: $("#expenseDate").value, category: $("#expenseCategory").value,
     vendor: $("#expenseVendor").value.trim(), amount, taxMode,
-    costUntaxed: taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE)),
+    costUntaxed: taxMode === "untaxed" ? amount : taxedToUntaxed(amount),
     vendorBillDate: $("#expenseVendorBillDate").value,
     expectedPaymentDate: $("#expenseExpectedPaymentDate").value,
     paidDate: $("#expensePaidDate").value,
@@ -640,7 +537,7 @@ function updateCompanyExpenseCategoryUI() {
 
 function updateCompanyExpenseHint() {
   const amount = integerValue($("#companyExpenseAmount")?.value);
-  const untaxed = $("#companyExpenseTaxMode")?.value === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE));
+  const untaxed = $("#companyExpenseTaxMode")?.value === "untaxed" ? amount : taxedToUntaxed(amount);
   if ($("#companyExpenseUntaxedHint")) $("#companyExpenseUntaxedHint").textContent = `未稅金額：${money(untaxed)}`;
 }
 
@@ -695,7 +592,7 @@ async function saveCompanyExpense() {
     receiptNumber: $("#companyExpenseReceipt").value.trim(),
     amount,
     taxMode,
-    costUntaxed: taxMode === "untaxed" ? amount : Math.round(amount / (1 + TAX_RATE)),
+    costUntaxed: taxMode === "untaxed" ? amount : taxedToUntaxed(amount),
     equipmentId: equipment?.id || "",
     equipmentName: equipment?.name || "",
     vendorBillDate: $("#companyExpenseVendorBillDate").value,
@@ -832,20 +729,18 @@ function exportCompanyExpenses() {
   document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
 }
 
-function listen(collectionRef, target, options = {}) {
-  const ref = options.limit ? query(collectionRef, orderBy(options.orderBy || "updatedAt", "desc"), limit(options.limit)) : query(collectionRef, orderBy(options.orderBy || "updatedAt", "desc"));
-  const unsubscribe = onSnapshot(ref, snapshot => {
-    state[target] = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
-    refreshExpenseProjects();
-    refreshCompanyExpenseEquipment();
-    renderFinance();
-    renderSystemAccess();
-  }, error => {
-    console.error(`讀取 ${target} 失敗`, error);
-    state[target] = [];
-    renderFinance();
-    renderSystemAccess();
-  });
+const scheduleFinanceRender = createRenderScheduler(() => {
+  refreshExpenseProjects();
+  refreshCompanyExpenseEquipment();
+  renderFinance();
+  renderSystemAccess();
+});
+
+function listen(name, target, options = {}) {
+  const unsubscribe = subscribeCollection(name, rows => {
+    state[target] = rows;
+    scheduleFinanceRender();
+  }, { ...options, onError: error => console.error(`讀取 ${target} 失敗`, error) });
   state.unsubs.push(unsubscribe);
 }
 
@@ -857,19 +752,20 @@ function detach() {
 }
 
 function attach() {
-  listen(collections.projects, "projects");
-  listen(collections.payments, "payments");
-  listen(collections.receipts, "receipts");
-  listen(collections.expenses, "expenses");
-  listen(collections.companyExpenses, "companyExpenses");
-  listen(collections.equipment, "equipment");
-  if (state.access?.role === "admin") listen(collections.users, "users");
-  if (state.access?.role === "admin" || hasPermission(state.access, "viewAudit")) listen(collections.auditLogs, "auditLogs", { orderBy: "createdAt", limit: 500 });
+  listen("projects", "projects");
+  listen("payments", "payments");
+  listen("receipts", "receipts");
+  listen("expenses", "expenses");
+  listen("companyExpenses", "companyExpenses");
+  listen("equipment", "equipment");
+  if (state.access?.role === "admin") listen("users", "users");
+  if (state.access?.role === "admin" || hasPermission(state.access, "viewAudit")) listen("auditLogs", "auditLogs", { orderBy: "createdAt", limit: 500 });
 }
 
 function bindEvents() {
   ["#financeSearch"].forEach(selector => $(selector)?.addEventListener("input", renderFinance));
   ["#financeCustomerFilter", "#financeMonth", "#financeAsOfDate"].forEach(selector => $(selector)?.addEventListener("change", renderFinance));
+  $("#reportMonth")?.addEventListener("change", renderFinance);
   $("#financeExportCsv")?.addEventListener("click", exportReceivables);
   $("#companyExpenseExportCsv")?.addEventListener("click", exportCompanyExpenses);
   $("#expenseOpenCreate")?.addEventListener("click", () => openExpense());
