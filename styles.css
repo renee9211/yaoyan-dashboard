@@ -1476,6 +1476,8 @@ body.drawer-open{ overflow:hidden; }
 .customer-table,.item-table,.quotation-table{ min-width:900px; }
 .item-table th{ white-space:nowrap; }
 .quotation-table{ min-width:1040px; }
+.quotation-price-heading span{ display:block; }
+.quotation-date-heading{ white-space:nowrap; }
 .quote-kpi-grid{
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
