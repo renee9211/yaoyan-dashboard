@@ -276,14 +276,17 @@
       </div>
 
       <div class="card project-toolbar quote-toolbar">
-        <label class="toolbar-search"><span class="sr-only">搜尋報價</span><input id="quotationSearch" class="input" type="search" placeholder="搜尋報價編號、專案或客戶" /></label>
+        <label class="field-inline toolbar-search"><span>關鍵字</span><input id="quotationSearch" class="input" type="search" placeholder="報價編號、專案或客戶" /></label>
+        <label class="field-inline"><span>月份</span><input id="quotationMonthFilter" class="input" type="month" /></label>
         <label class="field-inline"><span>狀態</span><select id="quotationStatusFilter" class="select"><option value="all">全部狀態</option><option value="draft">草稿</option><option value="sent">已寄出</option><option value="confirmed">已確認</option><option value="void">作廢</option></select></label>
+        <label class="field-inline"><span>排序</span><select id="quotationSort" class="select"><option value="dateAsc">活動日期｜近到遠</option><option value="dateDesc">活動日期｜遠到近</option><option value="nameAsc">名稱｜A–Z</option><option value="nameDesc">名稱｜Z–A</option><option value="statusAsc">狀態｜草稿到作廢</option><option value="statusDesc">狀態｜作廢到草稿</option></select></label>
       </div>
+      <div id="quotationProjectScope" class="quotation-project-scope hidden" aria-live="polite"></div>
 
       <div class="card table-card quotation-table-card">
         <div class="table-scroll">
           <table class="table quotation-table">
-            <thead><tr><th>報價編號</th><th>專案／客戶</th><th>版本</th><th class="num">專案價（含稅）</th><th>狀態</th><th>更新日期</th><th>操作</th></tr></thead>
+            <thead><tr><th>報價編號</th><th>連結專案名稱</th><th>版本</th><th class="num">專案價（含稅）</th><th>狀態</th><th>活動日期／更新日期</th><th>操作</th></tr></thead>
             <tbody id="quotationTableBody"></tbody>
           </table>
         </div>
@@ -774,7 +777,7 @@
         <div class="drawer-content">
           <section class="form-section"><div class="section-head"><h3>基本資料</h3><span id="quotationVersionLabel">V1</span></div><div class="form-grid quote-basic-grid">
             <label class="field"><span>連結專案</span><select id="quotationProjectId" class="select"><option value="">不連結專案</option></select></label>
-            <label class="field"><span>客戶</span><select id="quotationCustomerId" class="select"><option value="">手動輸入／不連結</option></select></label>
+            <label class="field"><span>客戶（可輸入關鍵字）</span><input id="quotationCustomerSearch" class="input" list="quotationCustomerOptions" placeholder="輸入公司、窗口、電話或 Email" autocomplete="off" /><datalist id="quotationCustomerOptions"></datalist><input id="quotationCustomerId" type="hidden" /></label>
             <label class="field"><span>報價編號 *</span><input id="quotationNumber" class="input" required placeholder="Y26072502" /></label>
             <label class="field"><span>狀態</span><select id="quotationStatus" class="select"><option value="draft">草稿</option><option value="sent">已寄出</option><option value="confirmed">已確認</option><option value="void">作廢</option></select></label>
             <label class="field"><span>客戶／公司名稱 *</span><input id="quotationCustomerName" class="input" required /></label>
@@ -787,7 +790,7 @@
 
           <section class="form-section"><div class="section-head"><h3>活動場次</h3><button id="quotationAddEvent" class="btn ghost small" type="button">＋ 新增場次</button></div><div id="quotationEvents" class="quote-events"></div></section>
 
-          <section class="form-section quote-lines-section"><div class="section-head"><h3>報價明細</h3><div class="inline-actions"><select id="quotationCatalogPicker" class="select compact-select"><option value="">從常用項目新增…</option></select><button id="quotationAddRow" class="btn ghost small" type="button">＋ 空白列</button></div></div><div class="quote-lines-scroll"><table class="quote-lines-table"><thead><tr><th>場次</th><th>類別／項目</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>計價</th><th>續日%</th><th>小計</th><th>備註</th><th></th></tr></thead><tbody id="quotationRows"></tbody></table></div></section>
+          <section class="form-section quote-lines-section"><div class="section-head"><h3>報價明細</h3><div class="inline-actions"><select id="quotationCatalogPicker" class="select compact-select"><option value="">從常用項目新增…</option></select><button id="quotationAddRow" class="btn ghost small" type="button">＋ 空白列</button></div></div><div class="quote-lines-scroll"><table class="quote-lines-table"><thead><tr><th>場次</th><th>類別／項目</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>計價</th><th>續日%</th><th>小計</th><th>備註</th><th>順序／操作</th></tr></thead><tbody id="quotationRows"></tbody></table></div></section>
 
           <section class="form-section quote-summary-section"><div class="quote-summary-layout"><div><h3>付款條件與備註</h3><textarea id="quotationTerms" class="textarea" rows="8"></textarea><label class="field quote-note-field"><span>其他備註</span><textarea id="quotationNote" class="textarea" rows="3"></textarea></label></div><div class="quote-totals">
             <div><span>原未稅合計</span><b id="quotationSubtotal">0</b></div><div><span>營業稅 5%</span><b id="quotationTax">0</b></div><div><span>原含稅總計</span><b id="quotationOriginalTotal">0</b></div>

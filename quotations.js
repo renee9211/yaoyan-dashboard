@@ -49,6 +49,7 @@ const state = {
   previewData: null,
   numberWasSuggested: false,
   quotationCurrentPage: 1,
+  quotationProjectFilterId: "",
   quotationItemSort: { key: "category", direction: "asc" },
   quoteItemCreatedFromEquipment: false
 };
@@ -96,6 +97,13 @@ function timestampText(value) {
   const d = typeof value.toDate === "function" ? value.toDate() : new Date(value);
   if (Number.isNaN(d.getTime())) return "—";
   return new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+}
+
+function timestampValue(value) {
+  if (!value) return 0;
+  const date = typeof value.toDate === "function" ? value.toDate() : new Date(value);
+  const result = date.getTime();
+  return Number.isNaN(result) ? 0 : result;
 }
 
 function canEdit() { return hasPermission(state.access, "manageQuotations"); }
@@ -382,18 +390,53 @@ function refreshProjectOptions() {
 }
 
 function refreshCustomerOptions() {
-  const select = $("#quotationCustomerId");
-  if (!select) return;
-  const current = select.value;
-  select.innerHTML = `<option value="">手動輸入／不連結</option>${state.customers.map(customer => `<option value="${esc(customer.id)}">${esc(customer.name)}</option>`).join("")}`;
-  select.value = current;
+  const list = $("#quotationCustomerOptions");
+  const idInput = $("#quotationCustomerId");
+  const search = $("#quotationCustomerSearch");
+  if (!list || !idInput || !search) return;
+  list.innerHTML = state.customers.map(customer => `<option value="${esc(customerOptionLabel(customer))}"></option>`).join("");
+  const current = state.customers.find(customer => customer.id === idInput.value);
+  if (current && !search.matches(":focus")) search.value = customerOptionLabel(current);
+}
+
+function customerOptionLabel(customer) {
+  return [customer?.name, customer?.contactName, customer?.phone, customer?.email].filter(Boolean).join("｜");
+}
+
+function selectedCustomerFromSearch() {
+  const query = $("#quotationCustomerSearch")?.value.trim() || "";
+  const normalized = query.toLocaleLowerCase("zh-Hant");
+  return state.customers.find(customer => customerOptionLabel(customer).toLocaleLowerCase("zh-Hant") === normalized)
+    || state.customers.find(customer => String(customer.name || "").toLocaleLowerCase("zh-Hant") === normalized)
+    || null;
+}
+
+function applyCustomerSearchSelection() {
+  const customer = selectedCustomerFromSearch();
+  $("#quotationCustomerId").value = customer?.id || "";
+  if (!customer) return;
+  $("#quotationCustomerName").value = customer.name || "";
+  $("#quotationContactName").value = customer.contactName || "";
+  $("#quotationPhone").value = customer.phone || "";
+  $("#quotationEmail").value = customer.email || "";
+  $("#quotationTaxId").value = customer.taxId || "";
 }
 
 function refreshCatalogPicker() {
   const select = $("#quotationCatalogPicker");
   if (!select) return;
   const items = [...state.quotationItems].sort((a, b) => String(a.category || "未分類").localeCompare(String(b.category || "未分類"), "zh-Hant", { numeric: true, sensitivity: "base" }) || String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant", { numeric: true, sensitivity: "base" }));
-  select.innerHTML = `<option value="">從常用項目新增…</option>${items.map(item => `<option value="${esc(item.id)}">${esc(item.category || "未分類")}｜${esc(item.name)}</option>`).join("")}`;
+  const grouped = new Map();
+  items.forEach(item => {
+    const category = String(item.category || "未分類").trim() || "未分類";
+    if (!grouped.has(category)) grouped.set(category, []);
+    grouped.get(category).push(item);
+  });
+  const groups = [...grouped.entries()].map(([category, entries]) => `<optgroup label="${esc(category)}">${entries.map(item => {
+    const equipmentName = quoteItemEquipmentName(item);
+    return `<option value="${esc(item.id)}">${esc(item.name)}${equipmentName ? `｜設備：${esc(equipmentName)}` : ""}</option>`;
+  }).join("")}</optgroup>`).join("");
+  select.innerHTML = `<option value="">從常用項目新增…</option>${groups}`;
 }
 
 function suggestedNumber(dateISO) {
@@ -474,7 +517,7 @@ function addQuotationRow(data = {}) {
     <td><input class="input row-rate" type="number" min="0" step="1" value="${esc(data.continuationRate ?? 50)}" /></td>
     <td><input class="input row-subtotal" inputmode="numeric" value="${mode === "included" ? "—" : esc(money(mode === "manual" ? data.manualSubtotal : calcRowSubtotal({ ...data, calcMode: mode })))}" /></td>
     <td><input class="input row-note" value="${esc(data.note || "")}" /></td>
-    <td><button class="remove-equip-row remove-quote-row" type="button" title="移除明細">✕</button></td>`;
+    <td><div class="quote-row-actions"><button class="quote-order-btn move-quote-row-up" type="button" title="上移" aria-label="上移報價項目">↑</button><button class="quote-order-btn move-quote-row-down" type="button" title="下移" aria-label="下移報價項目">↓</button><button class="remove-equip-row remove-quote-row" type="button" title="移除明細">✕</button></div></td>`;
   $("#quotationRows").appendChild(row);
   syncLineMode(row);
   recalcQuotation();
@@ -548,6 +591,8 @@ function resetQuotationForm(quotation = null, options = {}) {
   refreshCatalogPicker();
   $("#quotationProjectId").value = project?.id || quotation?.projectId || "";
   $("#quotationCustomerId").value = quotation?.customerId || "";
+  const selectedCustomer = state.customers.find(customer => customer.id === (quotation?.customerId || ""));
+  $("#quotationCustomerSearch").value = selectedCustomer ? customerOptionLabel(selectedCustomer) : "";
   const firstDate = project?.startDate || quotation?.events?.[0]?.eventDate || new Date().toISOString().slice(0, 10);
   $("#quotationNumber").value = quotation?.number || suggestedNumber(firstDate);
   state.numberWasSuggested = !quotation;
@@ -724,6 +769,66 @@ function latestBySeries() {
   return map;
 }
 
+function quotationEventDate(q) {
+  const dates = (Array.isArray(q?.events) ? q.events : []).map(event => event?.eventDate).filter(Boolean).sort();
+  if (dates[0]) return dates[0];
+  const source = q?.quotationDate || q?.createdAt || q?.updatedAt;
+  if (!source) return "";
+  const date = typeof source.toDate === "function" ? source.toDate() : new Date(source);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function linkedProjectForQuotation(q) {
+  return state.projects.find(project => project.id === q?.projectId) || null;
+}
+
+function quotationDisplayProjectName(q) {
+  if (!q?.projectId) return "未連結專案";
+  return linkedProjectForQuotation(q)?.name || "連結專案已不存在";
+}
+
+function compareQuotationVersions(a, b) {
+  if (a.number === b.number) return Number(b.version || 1) - Number(a.version || 1);
+  return String(b.number || "").localeCompare(String(a.number || ""), "zh-Hant", { numeric: true });
+}
+
+function sortQuotations(a, b, sortBy) {
+  const eventA = quotationEventDate(a);
+  const eventB = quotationEventDate(b);
+  const nameA = quotationDisplayProjectName(a) === "未連結專案" ? (a.projectName || "") : quotationDisplayProjectName(a);
+  const nameB = quotationDisplayProjectName(b) === "未連結專案" ? (b.projectName || "") : quotationDisplayProjectName(b);
+  const statusOrder = { draft: 0, sent: 1, confirmed: 2, void: 3 };
+  let result = 0;
+  if (sortBy === "dateAsc" || sortBy === "dateDesc") {
+    if (!eventA && eventB) return 1;
+    if (eventA && !eventB) return -1;
+    result = String(eventA).localeCompare(String(eventB));
+    if (sortBy === "dateDesc") result = -result;
+  } else if (sortBy === "nameAsc" || sortBy === "nameDesc") {
+    result = String(nameA).localeCompare(String(nameB), "zh-Hant", { numeric: true, sensitivity: "base" });
+    if (sortBy === "nameDesc") result = -result;
+  } else if (sortBy === "statusAsc" || sortBy === "statusDesc") {
+    result = (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99);
+    if (sortBy === "statusDesc") result = -result;
+  }
+  return result || compareQuotationVersions(a, b) || timestampValue(b.updatedAt || b.createdAt) - timestampValue(a.updatedAt || a.createdAt);
+}
+
+function renderQuotationProjectScope() {
+  const host = $("#quotationProjectScope");
+  if (!host) return;
+  const project = state.projects.find(item => item.id === state.quotationProjectFilterId);
+  if (!project) {
+    state.quotationProjectFilterId = "";
+    host.classList.add("hidden");
+    host.innerHTML = "";
+    return;
+  }
+  host.classList.remove("hidden");
+  host.innerHTML = `<span>目前只顯示連結專案：<b>${esc(project.name || "未命名專案")}</b></span><button type="button" data-clear-quotation-project>清除專案篩選 ×</button>`;
+}
+
 function renderQuotationPagination(totalItems) {
   const host = $("#quotationPagination");
   if (!host) return;
@@ -757,7 +862,9 @@ function renderQuotations() {
   const body = $("#quotationTableBody");
   if (!body) return;
   const keyword = $("#quotationSearch")?.value.trim().toLocaleLowerCase("zh-Hant") || "";
+  const month = $("#quotationMonthFilter")?.value || "";
   const status = $("#quotationStatusFilter")?.value || "all";
+  const sortBy = $("#quotationSort")?.value || "dateAsc";
   const latest = latestBySeries();
   const confirmedBySeries = new Map();
   state.quotations.filter(q => q.status === "confirmed").forEach(q => {
@@ -766,12 +873,13 @@ function renderQuotations() {
     if (!current || Number(q.version || 1) > Number(current.version || 1)) confirmedBySeries.set(key, q);
   });
   const filteredList = [...state.quotations].filter(q => {
+    if (state.quotationProjectFilterId && q.projectId !== state.quotationProjectFilterId) return false;
     if (status !== "all" && q.status !== status) return false;
-    return !keyword || [q.number, q.projectName, q.customerName].join(" ").toLocaleLowerCase("zh-Hant").includes(keyword);
-  }).sort((a, b) => {
-    if (a.number === b.number) return Number(b.version || 1) - Number(a.version || 1);
-    return String(b.number || "").localeCompare(String(a.number || ""), "zh-Hant", { numeric: true });
-  });
+    if (month && !(Array.isArray(q.events) && q.events.some(event => String(event?.eventDate || "").startsWith(month))) && !quotationEventDate(q).startsWith(month)) return false;
+    const linkedName = quotationDisplayProjectName(q);
+    return !keyword || [q.number, q.projectName, linkedName, q.customerName, q.contactName, q.phone, q.email]
+      .join(" ").toLocaleLowerCase("zh-Hant").includes(keyword);
+  }).sort((a, b) => sortQuotations(a, b, sortBy));
   const totalPages = Math.max(1, Math.ceil(filteredList.length / QUOTATIONS_PER_PAGE));
   state.quotationCurrentPage = Math.min(Math.max(1, state.quotationCurrentPage), totalPages);
   const startIndex = (state.quotationCurrentPage - 1) * QUOTATIONS_PER_PAGE;
@@ -780,11 +888,11 @@ function renderQuotations() {
     const isLatest = latest.get(q.seriesId || q.id)?.id === q.id;
     return `<tr>
       <td><button class="quote-link" type="button" data-quotation-preview="${esc(q.id)}">${esc(q.number)}</button></td>
-      <td><b>${esc(q.projectName)}</b><div class="table-sub">${esc(q.customerName || "—")}</div></td>
+      <td><b>${esc(quotationDisplayProjectName(q))}</b><div class="table-sub">${esc(q.customerName || "—")}</div></td>
       <td><span class="badge ${isLatest ? "orange" : "neutral"}">V${esc(q.version || 1)}${isLatest ? " 最新" : ""}</span></td>
       <td class="num"><b>${money(q.projectPriceTaxed)}</b></td>
       <td><span class="badge ${statusBadge(q.status)}">${esc(statusLabel(q.status))}</span></td>
-      <td>${esc(timestampText(q.updatedAt || q.createdAt))}</td>
+      <td><b>${esc(dateText(quotationEventDate(q)))}</b><div class="table-sub">更新 ${esc(timestampText(q.updatedAt || q.createdAt))}</div></td>
       <td><div class="row-actions">
         <button class="btn ghost small" type="button" data-quotation-preview="${esc(q.id)}">預覽</button>
         <button class="btn ghost small" type="button" data-quotation-edit="${esc(q.id)}" ${canEdit() && isLatest && !["confirmed", "void"].includes(q.status) ? "" : "disabled"}>編輯</button>
@@ -796,6 +904,7 @@ function renderQuotations() {
     </tr>`;
   }).join("") : `<tr><td colspan="7"><div class="empty-state">尚無符合條件的報價</div></td></tr>`;
   renderQuotationPagination(filteredList.length);
+  renderQuotationProjectScope();
 
   $("#quotationSeriesCount").textContent = String(latest.size);
   $("#quotationOpenCount").textContent = String([...latest.values()].filter(q => q.status === "draft" || q.status === "sent").length);
@@ -825,9 +934,11 @@ function buildA4(q) {
   const events = Array.isArray(q.events) ? q.events : [];
   const eventMap = new Map(events.map(event => [event.id, event.name]));
   const rows = Array.isArray(q.rows) ? q.rows : [];
+  const showEventColumn = events.length > 1;
   const lineHtml = rows.map((row, index) => {
     const included = row.calcMode === "included";
-    return `<tr><td>${index + 1}</td><td>${esc(row.eventId === "shared" ? "共用" : eventMap.get(row.eventId) || "—")}</td><td>${esc(row.name)}</td><td class="num">${included ? "—" : money(row.unitPrice)}</td><td class="num">${esc(row.qty)}</td><td>${esc(row.unit || "—")}</td><td class="num">${included ? "—" : esc(row.days || 1)}</td><td class="num">${included ? "—" : money(calcRowSubtotal(row))}</td><td>${esc(row.note || "")}</td></tr>`;
+    const eventCell = showEventColumn ? `<td>${esc(row.eventId === "shared" ? "共用" : eventMap.get(row.eventId) || "—")}</td>` : "";
+    return `<tr><td>${index + 1}</td>${eventCell}<td>${esc(row.name)}</td><td class="num">${included ? "—" : money(row.unitPrice)}</td><td class="num">${esc(row.qty)}</td><td>${esc(row.unit || "—")}</td><td class="num">${included ? "—" : esc(row.days || 1)}</td><td class="num">${included ? "—" : money(calcRowSubtotal(row))}</td><td>${esc(row.note || "")}</td></tr>`;
   }).join("");
   const showDates = events.map(event => event.eventDate).filter(Boolean).join("、") || "—";
   const setupDates = events.map(event => event.setupDate).filter(Boolean).join("、") || "—";
@@ -845,7 +956,7 @@ function buildA4(q) {
       <tr><th>專案地點<span>Location</span></th><td>${esc(locations)}</td><th>聯絡信箱<span>Email</span></th><td>${esc(q.email || "—")}</td></tr>
       <tr><th>客戶統編<span>Tax ID</span></th><td colspan="3">${esc(q.taxId || "—")}</td></tr>
     </tbody></table>
-    <table class="a4-lines"><thead><tr><th>編號<span>No.</span></th><th>場次<span>Event</span></th><th>項目<span>Item</span></th><th>單價<span>Price</span></th><th>數量<span>Unit</span></th><th>單位</th><th>天數<span>Day</span></th><th>小計<span>Subtotal</span></th><th>備註<span>Note</span></th></tr></thead><tbody>${lineHtml || `<tr><td colspan="9">尚無報價項目</td></tr>`}</tbody></table>
+    <table class="a4-lines ${showEventColumn ? "" : "single-event"}"><thead><tr><th>編號<span>No.</span></th>${showEventColumn ? "<th>場次<span>Event</span></th>" : ""}<th>項目<span>Item</span></th><th>單價<span>Price</span></th><th>數量<span>Unit</span></th><th>單位</th><th>天數<span>Day</span></th><th>小計<span>Subtotal</span></th><th>備註<span>Note</span></th></tr></thead><tbody>${lineHtml || `<tr><td colspan="${showEventColumn ? 9 : 8}">尚無報價項目</td></tr>`}</tbody></table>
     <div class="a4-payment-grid">
       <div class="a4-terms-block"><div class="a4-section-title">合作與付款條件 Payment Terms</div><div class="a4-terms">${esc(q.terms || DEFAULT_TERMS)}</div>${q.note ? `<p class="a4-note"><b>備註：</b>${esc(q.note)}</p>` : ""}</div>
       <table class="a4-total"><tbody><tr><th>合計<span>Total</span></th><td class="num">$ ${money(q.subtotal)}</td></tr><tr><th>營業稅<span>5% VAT</span></th><td class="num">$ ${money(q.tax)}</td></tr><tr><th>總計<span>Grand Total</span></th><td class="num">$ ${money(q.originalTotal)}</td></tr><tr class="project-price"><th>專案價（含稅）</th><td class="num">$ ${money(q.projectPriceTaxed)}</td></tr></tbody></table>
@@ -958,7 +1069,9 @@ function bindEvents() {
     renderQuotations();
   };
   $("#quotationSearch")?.addEventListener("input", resetQuotationPageAndRender);
+  $("#quotationMonthFilter")?.addEventListener("change", resetQuotationPageAndRender);
   $("#quotationStatusFilter")?.addEventListener("change", resetQuotationPageAndRender);
+  $("#quotationSort")?.addEventListener("change", resetQuotationPageAndRender);
   $("#quotationPagination")?.addEventListener("click", event => {
     const button = event.target.closest("button[data-page]");
     if (!button || button.disabled) return;
@@ -989,15 +1102,8 @@ function bindEvents() {
       $(".event-setup", first).value = project.startDate && project.endDate ? `${project.startDate}–${project.endDate}` : "";
     }
   });
-  $("#quotationCustomerId")?.addEventListener("change", event => {
-    const customer = state.customers.find(item => item.id === event.target.value);
-    if (!customer) return;
-    $("#quotationCustomerName").value = customer.name || "";
-    $("#quotationContactName").value = customer.contactName || "";
-    $("#quotationPhone").value = customer.phone || "";
-    $("#quotationEmail").value = customer.email || "";
-    $("#quotationTaxId").value = customer.taxId || "";
-  });
+  $("#quotationCustomerSearch")?.addEventListener("input", applyCustomerSearchSelection);
+  $("#quotationCustomerSearch")?.addEventListener("change", applyCustomerSearchSelection);
   $("#quotationAddEvent")?.addEventListener("click", () => addEventRow());
   $("#quotationEvents")?.addEventListener("click", event => {
     const remove = event.target.closest(".remove-event");
@@ -1019,9 +1125,16 @@ function bindEvents() {
   });
   $("#quotationRows")?.addEventListener("click", event => {
     const remove = event.target.closest(".remove-quote-row");
-    if (!remove) return;
-    remove.closest(".quotation-line").remove();
-    if (!$(".quotation-line", $("#quotationRows"))) addQuotationRow(rowDataFromCatalog());
+    const moveUp = event.target.closest(".move-quote-row-up");
+    const moveDown = event.target.closest(".move-quote-row-down");
+    const row = event.target.closest(".quotation-line");
+    if (!row) return;
+    if (moveUp && row.previousElementSibling) row.parentElement.insertBefore(row, row.previousElementSibling);
+    else if (moveDown && row.nextElementSibling) row.parentElement.insertBefore(row.nextElementSibling, row);
+    else if (remove) {
+      row.remove();
+      if (!$(".quotation-line", $("#quotationRows"))) addQuotationRow(rowDataFromCatalog());
+    } else return;
     recalcQuotation();
   });
   $("#quotationRows")?.addEventListener("input", event => {
@@ -1066,6 +1179,13 @@ function bindEvents() {
   });
 
   document.addEventListener("click", event => {
+    const clearProjectFilter = event.target.closest("[data-clear-quotation-project]");
+    if (clearProjectFilter) {
+      state.quotationProjectFilterId = "";
+      state.quotationCurrentPage = 1;
+      renderQuotations();
+      return;
+    }
     const projectButton = event.target.closest("[data-quotation-project]");
     if (!projectButton) return;
     const project = state.projects.find(item => item.id === projectButton.dataset.quotationProject);
@@ -1073,7 +1193,8 @@ function bindEvents() {
     const related = state.quotations.filter(q => q.projectId === project.id);
     if (related.length) {
       switchTab("quotations");
-      $("#quotationSearch").value = project.name || project.client || "";
+      state.quotationProjectFilterId = project.id;
+      $("#quotationSearch").value = "";
       state.quotationCurrentPage = 1;
       renderQuotations();
     } else if (canEdit()) {

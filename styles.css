@@ -1470,7 +1470,9 @@ body.drawer-open{ overflow:hidden; }
    Phase 1: Customers, quotation catalog and quotations
 ========================================================= */
 .simple-toolbar{ grid-template-columns:minmax(240px,620px); margin-bottom:12px; }
-.quote-toolbar{ grid-template-columns:minmax(260px,1fr) 190px; margin-bottom:12px; }
+.quote-toolbar{ grid-template-columns:minmax(260px,1fr) repeat(3,minmax(160px,190px)); margin-bottom:8px; }
+.quotation-project-scope{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 12px; padding:9px 12px; border:1px solid rgba(255,126,0,.35); border-radius:12px; background:rgba(255,126,0,.08); color:#7c3f00; font-size:13px; }
+.quotation-project-scope button{ border:0; padding:4px 7px; background:transparent; color:#9a4b00; cursor:pointer; font-weight:900; }
 .customer-table,.item-table,.quotation-table{ min-width:900px; }
 .item-table th{ white-space:nowrap; }
 .quotation-table{ min-width:1040px; }
@@ -1528,6 +1530,9 @@ body.drawer-open{ overflow:hidden; }
 .quote-lines-table .row-mode{ width:145px; }
 .quote-lines-table .row-subtotal{ width:110px; }
 .quote-lines-table .row-note{ width:180px; }
+.quote-row-actions{ display:flex; gap:4px; align-items:center; justify-content:center; }
+.quote-order-btn{ width:28px; height:28px; border:1px solid var(--line); border-radius:8px; background:#fff; color:#4b5563; cursor:pointer; font-weight:1000; }
+.quote-order-btn:hover{ border-color:rgba(255,126,0,.55); color:#9a4b00; }
 .quote-row-title{ display:grid; grid-template-columns:130px 1fr; gap:5px; }
 .quote-summary-layout{ display:grid; grid-template-columns:minmax(0,1.5fr) minmax(300px,.7fr); gap:26px; }
 .quote-note-field{ margin-top:12px; }
@@ -1597,6 +1602,16 @@ body.drawer-open{ overflow:hidden; }
 .quote-a4 .a4-lines th:nth-child(9){ width:auto; }
 .quote-a4 .a4-lines td{ padding:1.5mm 1.4mm; line-height:1.2; overflow-wrap:anywhere; }
 .quote-a4 .a4-lines td:first-child,.quote-a4 .a4-lines td:nth-child(2),.quote-a4 .a4-lines td:nth-child(5),.quote-a4 .a4-lines td:nth-child(6),.quote-a4 .a4-lines td:nth-child(7){ text-align:center; }
+.quote-a4 .a4-lines.single-event th:nth-child(1){ width:10mm; }
+.quote-a4 .a4-lines.single-event th:nth-child(2){ width:69mm; }
+.quote-a4 .a4-lines.single-event th:nth-child(3){ width:22mm; }
+.quote-a4 .a4-lines.single-event th:nth-child(4){ width:13mm; }
+.quote-a4 .a4-lines.single-event th:nth-child(5){ width:13mm; }
+.quote-a4 .a4-lines.single-event th:nth-child(6){ width:13mm; }
+.quote-a4 .a4-lines.single-event th:nth-child(7){ width:var(--a4-subtotal-width); }
+.quote-a4 .a4-lines.single-event th:nth-child(8){ width:auto; }
+.quote-a4 .a4-lines.single-event td:nth-child(2){ text-align:left; }
+.quote-a4 .a4-lines.single-event td:first-child,.quote-a4 .a4-lines.single-event td:nth-child(4),.quote-a4 .a4-lines.single-event td:nth-child(5),.quote-a4 .a4-lines.single-event td:nth-child(6){ text-align:center; }
 .quote-a4 td.num{ text-align:right; }
 .quote-a4 .a4-category td{ padding:1.3mm 2mm; background:#fff4df; color:#8a4800; font-weight:900; }
 .quote-a4 .a4-payment-grid{
@@ -1626,7 +1641,7 @@ body.drawer-open{ overflow:hidden; }
 .quote-a4 .a4-company-info{ padding:2mm; font-size:7.5pt; line-height:1.35; }
 .quote-a4 .a4-company-info > b{ display:block; margin-bottom:1.5mm; font-size:8.5pt; }
 .quote-a4 .a4-sign{ display:flex; flex-direction:column; justify-content:space-between; padding:3mm 5mm; border-left:1px solid #111; font-size:8pt; }
-.quote-a4 .a4-sign i{ display:block; width:48mm; margin:0 auto 1mm; border-bottom:1px solid #111; }
+.quote-a4 .a4-sign i{ display:block; width:100%; max-width:42mm; box-sizing:border-box; margin:0 auto 1mm; border-bottom:1px solid #111; }
 .quote-link{ border:0; padding:0; background:transparent; color:#b45309; text-decoration:underline; cursor:pointer; font-weight:900; }
 .row-actions{ display:flex; gap:6px; flex-wrap:wrap; }
 .status-select-inline{ min-width:112px; }
