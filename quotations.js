@@ -998,11 +998,9 @@ function buildA4(q) {
   const originalSubtotal = q.subtotal !== undefined
     ? integerValue(q.subtotal)
     : Math.round(rows.reduce((sum, row) => sum + (usesLayeredPricing ? calcOriginalRowSubtotal(row) : calcRowSubtotal(row)), 0));
+  const originalTax = q.tax !== undefined ? integerValue(q.tax) : Math.round(originalSubtotal * TAX_RATE);
+  const originalGrandTotal = q.originalTotal !== undefined ? integerValue(q.originalTotal) : originalSubtotal + originalTax;
   const projectPriceTaxed = integerValue(q.projectPriceTaxed);
-  const projectPriceUntaxed = q.projectPriceUntaxed !== undefined
-    ? integerValue(q.projectPriceUntaxed)
-    : (projectPriceTaxed ? Math.round(projectPriceTaxed / (1 + TAX_RATE)) : 0);
-  const projectTax = q.projectTax !== undefined ? integerValue(q.projectTax) : Math.max(0, projectPriceTaxed - projectPriceUntaxed);
   return `<article class="quote-a4">
     <header class="a4-brand-header">
       <img class="a4-logo" src="${esc(COMPANY_LOGO_URL)}" alt="曜炎創意 YAoyan" />
@@ -1019,7 +1017,7 @@ function buildA4(q) {
     <table class="a4-lines ${showEventColumn ? "" : "single-event"}"><thead><tr><th>編號<span>No.</span></th>${showEventColumn ? "<th>場次<span>Event</span></th>" : ""}<th>項目<span>Item</span></th><th>單價<span>Price</span></th><th>數量<span>Unit</span></th><th>單位</th><th>天數<span>Day</span></th><th>小計<span>Subtotal</span></th><th>備註<span>Note</span></th></tr></thead><tbody>${lineHtml || `<tr><td colspan="${showEventColumn ? 9 : 8}">尚無報價項目</td></tr>`}</tbody></table>
     <div class="a4-payment-grid">
       <div class="a4-terms-block"><div class="a4-section-title">合作與付款條件 Payment Terms</div><div class="a4-terms">${esc(q.terms || DEFAULT_TERMS)}</div>${q.note ? `<p class="a4-note"><b>備註：</b>${esc(q.note)}</p>` : ""}</div>
-      <table class="a4-total"><tbody><tr><th>原價合計<span>Original Total</span></th><td class="num">$ ${money(originalSubtotal)}</td></tr><tr><th>專案價<span>Project Price</span></th><td class="num">$ ${money(projectPriceUntaxed)}</td></tr><tr><th>營業稅<span>5% VAT</span></th><td class="num">$ ${money(projectTax)}</td></tr><tr class="project-price"><th>含稅總計</th><td class="num">$ ${money(projectPriceTaxed)}</td></tr></tbody></table>
+      <table class="a4-total"><tbody><tr><th>合計<span>Total</span></th><td class="num">$ ${money(originalSubtotal)}</td></tr><tr><th>營業稅 5%<span>Tax</span></th><td class="num">$ ${money(originalTax)}</td></tr><tr><th>總計<span>Grand Total</span></th><td class="num">$ ${money(originalGrandTotal)}</td></tr><tr class="project-price"><th>專案價（含稅）</th><td class="num">$ ${money(projectPriceTaxed)}</td></tr></tbody></table>
     </div>
     <footer class="a4-company"><div class="a4-company-info"><b>${esc(COMPANY.name)}</b><div>公司統編 Tax ID：${esc(COMPANY.taxId)}</div><div>業務聯絡人 Contact：${esc(COMPANY.contact)}</div><div>聯絡信箱 Email：${esc(COMPANY.email)}</div><div>匯款資訊 Remittance Info：${esc(COMPANY.bank)}<br>${esc(COMPANY.accountName)}／${esc(COMPANY.account)}</div></div><div class="a4-sign"><span>確認無誤煩請簽名回傳：</span><i></i></div></footer>
   </article>`;
