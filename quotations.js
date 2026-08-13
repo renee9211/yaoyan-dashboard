@@ -622,8 +622,6 @@ function recalcQuotation() {
   $("#quotationSubtotal").textContent = money(totals.subtotal);
   $("#quotationDealSubtotal").textContent = money(totals.dealSubtotal);
   $("#quotationCalculatedPrice").textContent = money(totals.calculatedProjectPriceTaxed);
-  $("#quotationDiscount").textContent = money(totals.discount);
-  $("#quotationUntaxedRevenue").textContent = money(totals.projectPriceUntaxed);
   return totals;
 }
 

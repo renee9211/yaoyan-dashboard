@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=phase3-v11-3" />
 </head>
 
 <body>
@@ -790,7 +790,6 @@
           <section class="form-section quote-summary-section"><div class="quote-summary-layout"><div><h3>付款條件與備註</h3><textarea id="quotationTerms" class="textarea" rows="8"></textarea><label class="field quote-note-field"><span>其他備註</span><textarea id="quotationNote" class="textarea" rows="3"></textarea></label></div><div class="quote-totals">
             <div><span>原價未稅合計</span><b id="quotationSubtotal">0</b></div><div><span>內部成交未稅合計</span><b id="quotationDealSubtotal">0</b></div><div><span>系統計算含稅價</span><b id="quotationCalculatedPrice">0</b></div>
             <label><span>專案價（含稅）</span><input id="quotationProjectPrice" class="input money-input" inputmode="numeric" placeholder="預設帶入系統計算含稅價" /><button id="quotationUseCalculatedPrice" class="btn ghost small quote-use-calculated" type="button">帶入系統計算</button></label>
-            <div><span>優惠差額</span><b id="quotationDiscount">0</b></div><div class="grand-total"><span>專案價未稅營收</span><b id="quotationUntaxedRevenue">0</b></div>
           </div></div></section>
         </div>
         <div class="drawer-actions quote-drawer-actions"><div class="drawer-actions-left"><button id="quotationPreviewCurrent" class="btn ghost" type="button">預覽報價單</button></div><button class="btn ghost" type="button" data-quotation-close>取消</button><button class="btn primary" type="submit">儲存報價</button></div>
@@ -822,7 +821,7 @@
   </div>
 
   <script type="module" src="./app.js"></script>
-  <script type="module" src="./quotations.js"></script>
+  <script type="module" src="./quotations.js?v=phase3-v11-3"></script>
   <script type="module" src="./payments.js"></script>
   <script type="module" src="./finance.js"></script>
 </body>

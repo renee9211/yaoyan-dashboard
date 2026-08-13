@@ -1545,8 +1545,7 @@ body.drawer-open{ overflow:hidden; }
 .quote-use-calculated{ align-self:flex-end; }
 .quote-totals span{ color:var(--muted); font-size:12px; font-weight:900; }
 .quote-totals b{ font-size:16px; font-variant-numeric:tabular-nums; }
-.quote-totals .grand-total{ background:var(--orange2); border-bottom:0; }
-.quote-totals .grand-total b{ color:#9a4b00; font-size:20px; }
+.quote-totals > :last-child{ border-bottom:0; }
 .money-input{ text-align:right; font-weight:950; font-size:16px; }
 .quote-drawer-actions{ justify-content:flex-end; }
 .drawer-actions-left{ margin-right:auto; }
