@@ -142,6 +142,14 @@ function calcRowSubtotal(row) {
   return Math.round(price * qty * (1 + Math.max(0, days - 1) * rate / 100));
 }
 
+function calcOriginalRowSubtotal(row) {
+  if (row?.calcMode === "included") return 0;
+  const price = numberValue(row?.unitPrice);
+  const qty = numberValue(row?.qty);
+  const days = Math.max(1, numberValue(row?.days) || 1);
+  return Math.round(price * qty * days);
+}
+
 function calcDealSubtotal(row) {
   if (row?.calcMode === "included") return 0;
   if (row?.dealSubtotal === undefined || row?.dealSubtotal === null || String(row.dealSubtotal).trim() === "") return calcRowSubtotal(row);
@@ -149,7 +157,7 @@ function calcDealSubtotal(row) {
 }
 
 function calcTotals(rows, projectPriceInput = "", useCustomProjectPrice = false) {
-  const subtotal = Math.round((rows || []).reduce((sum, row) => sum + calcRowSubtotal(row), 0));
+  const subtotal = Math.round((rows || []).reduce((sum, row) => sum + calcOriginalRowSubtotal(row), 0));
   const tax = Math.round(subtotal * TAX_RATE);
   const originalTotal = subtotal + tax;
   const dealSubtotal = Math.round((rows || []).reduce((sum, row) => sum + calcDealSubtotal(row), 0));
@@ -530,7 +538,7 @@ function addQuotationRow(data = {}) {
   row.dataset.equipmentId = data.equipmentId || "";
   row.dataset.equipmentName = data.equipmentName || "";
   const mode = data.calcMode || "auto50";
-  const originalSubtotal = calcRowSubtotal({ ...data, calcMode: mode });
+  const originalSubtotal = calcOriginalRowSubtotal({ ...data, calcMode: mode });
   const hasStoredDealSubtotal = data.dealSubtotal !== undefined && data.dealSubtotal !== null && String(data.dealSubtotal).trim() !== "";
   row.dataset.dealSubtotalMode = data.dealSubtotalMode || (hasStoredDealSubtotal ? "manual" : "auto");
   const dealSubtotal = hasStoredDealSubtotal ? integerValue(data.dealSubtotal) : originalSubtotal;
@@ -566,8 +574,8 @@ function syncLineMode(row) {
   qty.disabled = false;
   days.disabled = manual || included;
   rate.disabled = !["custom"].includes(mode);
-  subtotal.readOnly = !manual;
-  subtotal.value = included ? "—" : manual ? subtotal.value.replaceAll("—", "") : money(calcRowSubtotal(readRow(row)));
+  subtotal.readOnly = true;
+  subtotal.value = included ? "—" : money(calcOriginalRowSubtotal(readRow(row)));
   dealSubtotal.disabled = included;
   if (included) {
     dealSubtotal.value = "—";
@@ -605,7 +613,7 @@ function readRows() { return $$(".quotation-line", $("#quotationRows")).map(read
 function recalcQuotation() {
   $$(".quotation-line", $("#quotationRows")).forEach(row => {
     const mode = $(".row-mode", row).value;
-    if (mode !== "manual" && mode !== "included") $(".row-subtotal", row).value = money(calcRowSubtotal(readRow(row)));
+    if (mode !== "included") $(".row-subtotal", row).value = money(calcOriginalRowSubtotal(readRow(row)));
     if (mode === "included") $(".row-deal-subtotal", row).value = "—";
     else if (row.dataset.dealSubtotalMode !== "manual") $(".row-deal-subtotal", row).value = money(calcRowSubtotal(readRow(row)));
   });
@@ -677,6 +685,7 @@ function readQuotationForm() {
   const rows = readRows();
   const totals = calcTotals(rows, $("#quotationProjectPrice").value, state.quotationProjectPriceCustomized);
   return {
+    pricingModel: "layered_v2",
     seriesId: $("#quotationSeriesId").value,
     number: $("#quotationNumber").value.trim(),
     version: Number($("#quotationVersion").value) || 1,
@@ -977,16 +986,20 @@ function buildA4(q) {
   const events = Array.isArray(q.events) ? q.events : [];
   const eventMap = new Map(events.map(event => [event.id, event.name]));
   const rows = Array.isArray(q.rows) ? q.rows : [];
+  const usesLayeredPricing = q.pricingModel === "layered_v2" || q.dealSubtotal !== undefined || rows.some(row => row?.dealSubtotal !== undefined);
   const showEventColumn = events.length > 1;
   const lineHtml = rows.map((row, index) => {
     const included = row.calcMode === "included";
     const eventCell = showEventColumn ? `<td>${esc(row.eventId === "shared" ? "共用" : eventMap.get(row.eventId) || "—")}</td>` : "";
-    return `<tr><td>${index + 1}</td>${eventCell}<td>${esc(row.name)}</td><td class="num">${included ? "—" : money(row.unitPrice)}</td><td class="num">${esc(row.qty)}</td><td>${esc(row.unit || "—")}</td><td class="num">${included ? "—" : esc(row.days || 1)}</td><td class="num">${included ? "—" : money(calcRowSubtotal(row))}</td><td>${esc(row.note || "")}</td></tr>`;
+    const visibleSubtotal = usesLayeredPricing ? calcOriginalRowSubtotal(row) : calcRowSubtotal(row);
+    return `<tr><td>${index + 1}</td>${eventCell}<td>${esc(row.name)}</td><td class="num">${included ? "—" : money(row.unitPrice)}</td><td class="num">${esc(row.qty)}</td><td>${esc(row.unit || "—")}</td><td class="num">${included ? "—" : esc(row.days || 1)}</td><td class="num">${included ? "—" : money(visibleSubtotal)}</td><td>${esc(row.note || "")}</td></tr>`;
   }).join("");
   const showDates = events.map(event => event.eventDate).filter(Boolean).join("、") || "—";
   const setupDates = events.map(event => event.setupDate).filter(Boolean).join("、") || "—";
   const locations = [...new Set(events.map(event => event.location).filter(Boolean))].join("、") || "—";
-  const originalSubtotal = q.subtotal !== undefined ? integerValue(q.subtotal) : Math.round(rows.reduce((sum, row) => sum + calcRowSubtotal(row), 0));
+  const originalSubtotal = q.subtotal !== undefined
+    ? integerValue(q.subtotal)
+    : Math.round(rows.reduce((sum, row) => sum + (usesLayeredPricing ? calcOriginalRowSubtotal(row) : calcRowSubtotal(row)), 0));
   const projectPriceTaxed = integerValue(q.projectPriceTaxed);
   const projectPriceUntaxed = q.projectPriceUntaxed !== undefined
     ? integerValue(q.projectPriceUntaxed)
