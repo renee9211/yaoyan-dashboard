@@ -1517,7 +1517,7 @@ body.drawer-open{ overflow:hidden; }
 .quote-lines-section{ padding-left:0; padding-right:0; }
 .quote-lines-section > .section-head{ padding:0 15px; }
 .quote-lines-scroll{ overflow-x:auto; padding:0 15px 5px; }
-.quote-lines-table{ width:100%; min-width:1460px; border-collapse:separate; border-spacing:0 7px; }
+.quote-lines-table{ width:100%; min-width:1590px; border-collapse:separate; border-spacing:0 7px; }
 .quote-lines-table th{ padding:0 5px 5px; font-size:11px; color:var(--muted); text-align:left; }
 .quote-lines-table td{ padding:4px; background:#f9fafb; vertical-align:middle; }
 .quote-lines-table td:first-child{ border-radius:10px 0 0 10px; }
@@ -1530,7 +1530,8 @@ body.drawer-open{ overflow:hidden; }
 .quote-lines-table .row-qty,.quote-lines-table .row-days,.quote-lines-table .row-rate{ width:72px; }
 .quote-lines-table .row-unit{ width:75px; }
 .quote-lines-table .row-mode{ width:145px; }
-.quote-lines-table .row-subtotal{ width:110px; }
+.quote-lines-table .row-subtotal,.quote-lines-table .row-deal-subtotal{ width:118px; }
+.quote-lines-table .row-deal-subtotal{ border-color:rgba(255,126,0,.38); background:#fffaf3; font-weight:900; }
 .quote-lines-table .row-note{ width:180px; }
 .quote-row-actions{ display:flex; gap:4px; align-items:center; justify-content:center; }
 .quote-order-btn{ width:28px; height:28px; border:1px solid var(--line); border-radius:8px; background:#fff; color:#4b5563; cursor:pointer; font-weight:1000; }
@@ -1541,6 +1542,7 @@ body.drawer-open{ overflow:hidden; }
 .quote-totals{ display:grid; align-content:start; gap:0; border:1px solid var(--line); border-radius:14px; overflow:hidden; }
 .quote-totals > div,.quote-totals > label{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px; border-bottom:1px solid var(--line2); }
 .quote-totals > label{ flex-direction:column; align-items:stretch; background:rgba(255,126,0,.06); }
+.quote-use-calculated{ align-self:flex-end; }
 .quote-totals span{ color:var(--muted); font-size:12px; font-weight:900; }
 .quote-totals b{ font-size:16px; font-variant-numeric:tabular-nums; }
 .quote-totals .grand-total{ background:var(--orange2); border-bottom:0; }

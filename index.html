@@ -74,13 +74,8 @@
         </label>
 
         <label class="field-inline">
-          <span>日期範圍</span>
-          <select id="projectDateRange" class="select">
-            <option value="all">全部日期</option>
-            <option value="month">本月</option>
-            <option value="next3">未來三個月</option>
-            <option value="year">今年</option>
-          </select>
+          <span>月份</span>
+          <input id="projectMonthFilter" class="input" type="month" />
         </label>
 
         <div class="filter-field">
@@ -790,11 +785,11 @@
 
           <section class="form-section"><div class="section-head"><h3>活動場次</h3><button id="quotationAddEvent" class="btn ghost small" type="button">＋ 新增場次</button></div><div id="quotationEvents" class="quote-events"></div></section>
 
-          <section class="form-section quote-lines-section"><div class="section-head"><h3>報價明細</h3><div class="inline-actions"><select id="quotationCatalogPicker" class="select compact-select"><option value="">從常用項目新增…</option></select><button id="quotationAddRow" class="btn ghost small" type="button">＋ 空白列</button></div></div><div class="quote-lines-scroll"><table class="quote-lines-table"><thead><tr><th>場次</th><th>類別／項目</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>計價</th><th>續日%</th><th>小計</th><th>備註</th><th>順序／操作</th></tr></thead><tbody id="quotationRows"></tbody></table></div></section>
+          <section class="form-section quote-lines-section"><div class="section-head"><div><h3>報價明細</h3><p class="field-help">「內部成交小計」僅供內部計算，報價單不會顯示。</p></div><div class="inline-actions"><select id="quotationCatalogPicker" class="select compact-select"><option value="">從常用項目新增…</option></select><button id="quotationAddRow" class="btn ghost small" type="button">＋ 空白列</button></div></div><div class="quote-lines-scroll"><table class="quote-lines-table"><thead><tr><th>場次</th><th>類別／項目</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>計價</th><th>續日%</th><th>原價小計</th><th>內部成交小計</th><th>備註</th><th>順序／操作</th></tr></thead><tbody id="quotationRows"></tbody></table></div></section>
 
           <section class="form-section quote-summary-section"><div class="quote-summary-layout"><div><h3>付款條件與備註</h3><textarea id="quotationTerms" class="textarea" rows="8"></textarea><label class="field quote-note-field"><span>其他備註</span><textarea id="quotationNote" class="textarea" rows="3"></textarea></label></div><div class="quote-totals">
-            <div><span>原未稅合計</span><b id="quotationSubtotal">0</b></div><div><span>營業稅 5%</span><b id="quotationTax">0</b></div><div><span>原含稅總計</span><b id="quotationOriginalTotal">0</b></div>
-            <label><span>專案價（含稅）</span><input id="quotationProjectPrice" class="input money-input" inputmode="numeric" placeholder="預設等於原含稅總計" /></label>
+            <div><span>原價未稅合計</span><b id="quotationSubtotal">0</b></div><div><span>內部成交未稅合計</span><b id="quotationDealSubtotal">0</b></div><div><span>系統計算含稅價</span><b id="quotationCalculatedPrice">0</b></div>
+            <label><span>專案價（含稅）</span><input id="quotationProjectPrice" class="input money-input" inputmode="numeric" placeholder="預設帶入系統計算含稅價" /><button id="quotationUseCalculatedPrice" class="btn ghost small quote-use-calculated" type="button">帶入系統計算</button></label>
             <div><span>優惠差額</span><b id="quotationDiscount">0</b></div><div class="grand-total"><span>專案價未稅營收</span><b id="quotationUntaxedRevenue">0</b></div>
           </div></div></section>
         </div>

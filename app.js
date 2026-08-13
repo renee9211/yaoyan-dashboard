@@ -227,7 +227,7 @@ const dom = {
   addEquipUsage: () => $("#addEquipUsage"),
   equipUsageCount: () => $("#equipUsageCount"),
   projectSearch: () => $("#projectSearch"),
-  projectDateRange: () => $("#projectDateRange"),
+  projectMonthFilter: () => $("#projectMonthFilter"),
   projectStatusFilter: () => $("#projectStatusFilter"),
   projectStatusOptions: () => $("#projectStatusOptions"),
   projectStatusSummary: () => $("#projectStatusSummary"),
@@ -1180,32 +1180,19 @@ function updateProjectFilterUi() {
 
   const hasFilters = Boolean(
     dom.projectSearch()?.value.trim() ||
-    dom.projectDateRange()?.value !== "all" ||
+    dom.projectMonthFilter()?.value ||
     selectedProjectStatuses.size
   );
   dom.projectClearFilters()?.classList.toggle("hidden", !hasFilters);
 }
 
 function getProjectDateFilterRange() {
-  const mode = dom.projectDateRange()?.value || "all";
-  if (mode === "all") return null;
-
-  const now = new Date();
-  let start;
-  let end;
-
-  if (mode === "month") {
-    start = new Date(now.getFullYear(), now.getMonth(), 1);
-    end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  } else if (mode === "next3") {
-    start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    end = new Date(now.getFullYear(), now.getMonth() + 3, now.getDate());
-  } else {
-    start = new Date(now.getFullYear(), 0, 1);
-    end = new Date(now.getFullYear(), 11, 31);
-  }
-
-  return { start: toISODate(start), end: toISODate(end) };
+  const month = dom.projectMonthFilter()?.value || "";
+  if (!/^\d{4}-\d{2}$/.test(month)) return null;
+  const [year, monthNumber] = month.split("-").map(Number);
+  const start = `${month}-01`;
+  const end = toISODate(new Date(year, monthNumber, 0));
+  return { start, end };
 }
 
 function getFilteredSortedProjects() {
@@ -2050,7 +2037,7 @@ function bindEvents() {
     renderProjectsTable();
   };
   dom.projectSearch()?.addEventListener("input", resetProjectPageAndRender);
-  dom.projectDateRange()?.addEventListener("change", resetProjectPageAndRender);
+  dom.projectMonthFilter()?.addEventListener("change", resetProjectPageAndRender);
   dom.projectSortBy()?.addEventListener("change", resetProjectPageAndRender);
   dom.projectStatusOptions()?.addEventListener("change", (e) => {
     const input = e.target.closest('input[type="checkbox"]');
@@ -2069,7 +2056,7 @@ function bindEvents() {
   });
   dom.projectClearFilters()?.addEventListener("click", () => {
     dom.projectSearch().value = "";
-    dom.projectDateRange().value = "all";
+    dom.projectMonthFilter().value = "";
     selectedProjectStatuses.clear();
     $all('input[type="checkbox"]', dom.projectStatusOptions()).forEach(input => { input.checked = false; });
     resetProjectPageAndRender();
