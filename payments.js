@@ -519,6 +519,7 @@ function renderPaymentDetails(project, summary) {
 
 function filteredProjects() {
   const keyword = $("#paymentSearch")?.value.trim().toLocaleLowerCase("zh-Hant") || "";
+  const month = $("#paymentMonthFilter")?.value || "";
   const statusFilter = $("#paymentStatusFilter")?.value || "all";
   const projectStatusFilter = $("#paymentProjectStatusFilter")?.value || "all";
   const sortBy = $("#paymentSort")?.value || "statusAsc";
@@ -528,6 +529,14 @@ function filteredProjects() {
     .filter(project => project.status !== "lost")
     .map(project => ({ project, summary: projectPaymentSummary(project) }))
     .filter(({ project, summary }) => {
+      if (month) {
+        const monthStart = `${month}-01`;
+        const [year, monthNumber] = month.split("-").map(Number);
+        const monthEnd = `${month}-${String(new Date(year, monthNumber, 0).getDate()).padStart(2, "0")}`;
+        const projectStart = String(project.startDate || project.endDate || "");
+        const projectEnd = String(project.endDate || project.startDate || "");
+        if (!projectStart || !projectEnd || projectStart > monthEnd || projectEnd < monthStart) return false;
+      }
       if (projectStatusFilter !== "all" && project.status !== projectStatusFilter) return false;
       if (statusFilter !== "all" && summary.status !== statusFilter) return false;
       if (!keyword) return true;
@@ -567,6 +576,7 @@ function filteredProjects() {
 function updatePaymentFilterUi() {
   const hasFilters = Boolean(
     $("#paymentSearch")?.value.trim() ||
+    $("#paymentMonthFilter")?.value ||
     ($("#paymentStatusFilter")?.value || "all") !== "all" ||
     ($("#paymentProjectStatusFilter")?.value || "all") !== "all"
   );
@@ -691,11 +701,13 @@ function bindEvents() {
 
   const resetPage = () => { state.currentPage = 1; renderPayments(); };
   $("#paymentSearch")?.addEventListener("input", resetPage);
+  $("#paymentMonthFilter")?.addEventListener("change", resetPage);
   $("#paymentStatusFilter")?.addEventListener("change", resetPage);
   $("#paymentProjectStatusFilter")?.addEventListener("change", resetPage);
   $("#paymentSort")?.addEventListener("change", resetPage);
   $("#paymentClearFilters")?.addEventListener("click", () => {
     if ($("#paymentSearch")) $("#paymentSearch").value = "";
+    if ($("#paymentMonthFilter")) $("#paymentMonthFilter").value = "";
     if ($("#paymentStatusFilter")) $("#paymentStatusFilter").value = "all";
     if ($("#paymentProjectStatusFilter")) $("#paymentProjectStatusFilter").value = "all";
     resetPage();

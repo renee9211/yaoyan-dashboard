@@ -1689,7 +1689,7 @@ body.drawer-open{ overflow:hidden; }
 }
 .payment-outstanding-kpi b{ color:#9a4b00; }
 .payment-toolbar{
-  grid-template-columns:minmax(280px,1fr) 190px 170px 220px auto;
+  grid-template-columns:minmax(260px,1fr) 160px 190px 170px 220px auto;
   margin-bottom:0;
 }
 .payment-project-table{
