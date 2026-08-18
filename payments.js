@@ -521,19 +521,56 @@ function filteredProjects() {
   const keyword = $("#paymentSearch")?.value.trim().toLocaleLowerCase("zh-Hant") || "";
   const statusFilter = $("#paymentStatusFilter")?.value || "all";
   const projectStatusFilter = $("#paymentProjectStatusFilter")?.value || "all";
+  const sortBy = $("#paymentSort")?.value || "statusAsc";
   const statusRank = { overdue: 0, partial: 1, requested: 2, pending: 3, pricePending: 4, paid: 5 };
 
-  return state.projects
+  const list = state.projects
     .filter(project => project.status !== "lost")
     .map(project => ({ project, summary: projectPaymentSummary(project) }))
     .filter(({ project, summary }) => {
       if (projectStatusFilter !== "all" && project.status !== projectStatusFilter) return false;
       if (statusFilter !== "all" && summary.status !== statusFilter) return false;
       if (!keyword) return true;
-      const invoiceText = state.payments.filter(payment => payment.projectId === project.id).map(payment => payment.invoiceNumber || "").join(" ");
-      return [project.name, project.client, project.location, invoiceText].join(" ").toLocaleLowerCase("zh-Hant").includes(keyword);
-    })
-    .sort((a, b) => (statusRank[a.summary.status] ?? 9) - (statusRank[b.summary.status] ?? 9) || String(b.project.endDate || "").localeCompare(String(a.project.endDate || "")));
+      const projectPayments = state.payments.filter(payment => payment.projectId === project.id);
+      const paymentIds = new Set(projectPayments.map(payment => payment.id));
+      const paymentText = projectPayments.map(payment => [payment.invoiceNumber, payment.label, paymentTypeLabel(payment.paymentType), payment.requestDate, payment.expectedPaymentDate].join(" ")).join(" ");
+      const receiptText = state.receipts
+        .filter(receipt => receipt.projectId === project.id || paymentIds.has(receipt.paymentId))
+        .map(receipt => [receipt.reference, receipt.receivedDate, receipt.method].join(" ")).join(" ");
+      return [project.name, project.client, project.location, projectStatusLabel(project.status), paymentStatusLabel(summary.status), paymentText, receiptText]
+        .join(" ").toLocaleLowerCase("zh-Hant").includes(keyword);
+    });
+
+  return list.sort((a, b) => {
+    let result = 0;
+    if (sortBy === "statusAsc" || sortBy === "statusDesc") {
+      result = (statusRank[a.summary.status] ?? 9) - (statusRank[b.summary.status] ?? 9);
+      if (sortBy === "statusDesc") result = -result;
+    } else if (sortBy === "dateAsc" || sortBy === "dateDesc") {
+      const dateA = String(a.project.startDate || "");
+      const dateB = String(b.project.startDate || "");
+      if (!dateA && dateB) return 1;
+      if (dateA && !dateB) return -1;
+      result = dateA.localeCompare(dateB);
+      if (sortBy === "dateDesc") result = -result;
+    } else if (sortBy === "nameAsc" || sortBy === "nameDesc") {
+      result = String(a.project.name || "").localeCompare(String(b.project.name || ""), "zh-Hant", { numeric: true, sensitivity: "base" });
+      if (sortBy === "nameDesc") result = -result;
+    } else if (sortBy === "outstandingAsc" || sortBy === "outstandingDesc") {
+      result = integerValue(a.summary.totalOutstanding) - integerValue(b.summary.totalOutstanding);
+      if (sortBy === "outstandingDesc") result = -result;
+    }
+    return result || String(b.project.endDate || "").localeCompare(String(a.project.endDate || "")) || String(a.project.name || "").localeCompare(String(b.project.name || ""), "zh-Hant", { numeric: true });
+  });
+}
+
+function updatePaymentFilterUi() {
+  const hasFilters = Boolean(
+    $("#paymentSearch")?.value.trim() ||
+    ($("#paymentStatusFilter")?.value || "all") !== "all" ||
+    ($("#paymentProjectStatusFilter")?.value || "all") !== "all"
+  );
+  $("#paymentClearFilters")?.classList.toggle("hidden", !hasFilters);
 }
 
 function renderPagination(totalItems) {
@@ -556,6 +593,7 @@ function renderPagination(totalItems) {
 function renderPayments() {
   const body = $("#paymentProjectTableBody");
   if (!body) return;
+  updatePaymentFilterUi();
   const list = filteredProjects();
   const totalPages = Math.max(1, Math.ceil(list.length / PAYMENTS_PER_PAGE));
   state.currentPage = Math.min(state.currentPage, totalPages);
@@ -655,6 +693,13 @@ function bindEvents() {
   $("#paymentSearch")?.addEventListener("input", resetPage);
   $("#paymentStatusFilter")?.addEventListener("change", resetPage);
   $("#paymentProjectStatusFilter")?.addEventListener("change", resetPage);
+  $("#paymentSort")?.addEventListener("change", resetPage);
+  $("#paymentClearFilters")?.addEventListener("click", () => {
+    if ($("#paymentSearch")) $("#paymentSearch").value = "";
+    if ($("#paymentStatusFilter")) $("#paymentStatusFilter").value = "all";
+    if ($("#paymentProjectStatusFilter")) $("#paymentProjectStatusFilter").value = "all";
+    resetPage();
+  });
   $("#paymentPagination")?.addEventListener("click", event => {
     const button = event.target.closest("button[data-page]");
     if (!button || button.disabled) return;

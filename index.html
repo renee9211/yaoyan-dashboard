@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css?v=phase3-v11-6" />
+  <link rel="stylesheet" href="styles.css?v=phase3-v11-7" />
 </head>
 
 <body>
@@ -236,9 +236,11 @@
       </div>
 
       <div class="card project-toolbar payment-toolbar">
-        <label class="toolbar-search"><span class="sr-only">搜尋專案或客戶</span><input id="paymentSearch" class="input" type="search" placeholder="搜尋專案、客戶、發票號碼" /></label>
+        <label class="field-inline toolbar-search"><span>關鍵字</span><input id="paymentSearch" class="input" type="search" placeholder="搜尋專案、客戶、款項或發票" /></label>
         <label class="field-inline"><span>收款狀態</span><select id="paymentStatusFilter" class="select"><option value="all">全部狀態</option><option value="pending">待請款</option><option value="requested">已請款待收</option><option value="partial">部分收款</option><option value="paid">已收款</option><option value="overdue">逾期未收</option><option value="pricePending">總價待確認</option></select></label>
         <label class="field-inline"><span>案況</span><select id="paymentProjectStatusFilter" class="select"><option value="all">全部案況</option><option value="planning">規劃中</option><option value="confirmed">已成案</option><option value="executing">執行中</option><option value="closed">已結案</option></select></label>
+        <label class="field-inline"><span>排序</span><select id="paymentSort" class="select"><option value="statusAsc">收款狀態｜需處理優先</option><option value="statusDesc">收款狀態｜已完成優先</option><option value="dateAsc">活動日期｜近到遠</option><option value="dateDesc">活動日期｜遠到近</option><option value="nameAsc">專案名稱｜A–Z</option><option value="nameDesc">專案名稱｜Z–A</option><option value="outstandingDesc">全案待收｜高到低</option><option value="outstandingAsc">全案待收｜低到高</option></select></label>
+        <button id="paymentClearFilters" class="btn ghost small filter-clear hidden" type="button">清除篩選</button>
       </div>
 
       <div class="list-meta"><span id="paymentResultCount">共 0 個專案</span></div>
@@ -840,7 +842,7 @@
 
   <script type="module" src="./app.js?v=phase3-v11-5"></script>
   <script type="module" src="./quotations.js?v=phase3-v11-5"></script>
-  <script type="module" src="./payments.js"></script>
+  <script type="module" src="./payments.js?v=phase3-v11-7"></script>
   <script type="module" src="./finance.js?v=phase3-v11-6"></script>
 </body>
 </html>
