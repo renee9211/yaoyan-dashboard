@@ -1282,7 +1282,7 @@ body.drawer-open{ overflow:hidden; }
 ========================================================= */
 .finance-toolbar{
   display:grid;
-  grid-template-columns:minmax(260px,1fr) 220px 170px 170px;
+  grid-template-columns:minmax(260px,1fr) 210px 165px 165px auto;
   align-items:end;
   gap:10px;
   padding:12px;
@@ -1362,7 +1362,7 @@ body.drawer-open{ overflow:hidden; }
 .negative-value{ color:#b91c1c !important; }
 .company-expense-toolbar{
   display:grid;
-  grid-template-columns:minmax(260px,1fr) 240px auto;
+  grid-template-columns:minmax(260px,1fr) 210px 210px auto auto;
   align-items:end;
   gap:10px;
   padding:12px;
@@ -1388,6 +1388,10 @@ body.drawer-open{ overflow:hidden; }
 }
 .finance-section-head h3{ margin:0; font-size:16px; }
 .finance-section-head p,.finance-section-head > span{ margin:4px 0 0; color:var(--muted); font-size:12px; font-weight:750; }
+.finance-section-actions{ display:flex; align-items:flex-end; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+.finance-section-actions > span{ align-self:center; color:var(--muted); font-size:12px; font-weight:850; white-space:nowrap; }
+.finance-sort-field{ min-width:195px; }
+.finance-sort-field > span{ font-size:11px; }
 .aging-grid{
   display:grid;
   grid-template-columns:repeat(6,minmax(0,1fr));
@@ -1479,6 +1483,9 @@ body.drawer-open{ overflow:hidden; }
   .finance-toolbar .toolbar-search{ grid-column:auto; }
   .company-expense-toolbar .toolbar-search{ grid-column:auto; }
   .finance-section-head{ align-items:flex-start; flex-direction:column; }
+  .finance-section-actions{ width:100%; align-items:stretch; flex-direction:column; }
+  .finance-section-actions > span{ align-self:flex-start; }
+  .finance-sort-field{ width:100%; min-width:0; }
   .finance-kpi{ min-height:104px; }
 }
 

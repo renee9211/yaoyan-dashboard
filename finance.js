@@ -44,6 +44,22 @@ const state = {
   unsubs: []
 };
 
+const FINANCE_PAGE_SIZE = 20;
+const financePages = {
+  payables: 1,
+  expenses: 1,
+  companyExpenses: 1,
+  next30: 1,
+  receivables: 1
+};
+const financePaginationConfig = {
+  payables: { host: "#financePayablePagination", label: "應付帳款" },
+  expenses: { host: "#expensePagination", label: "外部支出" },
+  companyExpenses: { host: "#companyExpensePagination", label: "公司支出" },
+  next30: { host: "#financeNext30Pagination", label: "預計收款" },
+  receivables: { host: "#financeReceivablePagination", label: "應收帳款" }
+};
+
 function esc(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -134,6 +150,81 @@ function filterContext() {
   };
 }
 
+function resetFinancePages(keys = Object.keys(financePages)) {
+  keys.forEach(key => { if (key in financePages) financePages[key] = 1; });
+}
+
+function sortFinanceRows(rows, sortBy, { dateValue, amountValue, nameValue }) {
+  const list = [...rows];
+  list.sort((a, b) => {
+    if (sortBy === "dateAsc" || sortBy === "dateDesc") {
+      const dateA = String(dateValue(a) || "");
+      const dateB = String(dateValue(b) || "");
+      if (!dateA && !dateB) return 0;
+      if (!dateA) return 1;
+      if (!dateB) return -1;
+      const result = dateA.localeCompare(dateB);
+      return sortBy === "dateDesc" ? -result : result;
+    }
+    if (sortBy === "amountAsc" || sortBy === "amountDesc") {
+      const result = integerValue(amountValue(a)) - integerValue(amountValue(b));
+      return sortBy === "amountDesc" ? -result : result;
+    }
+    const result = String(nameValue(a) || "").localeCompare(String(nameValue(b) || ""), "zh-Hant", { numeric: true, sensitivity: "base" });
+    return sortBy === "nameDesc" ? -result : result;
+  });
+  return list;
+}
+
+function financeResultText(totalItems, key) {
+  if (!totalItems) return "共 0 筆";
+  const page = financePages[key] || 1;
+  const start = (page - 1) * FINANCE_PAGE_SIZE + 1;
+  const end = Math.min(page * FINANCE_PAGE_SIZE, totalItems);
+  return totalItems > FINANCE_PAGE_SIZE ? `共 ${totalItems} 筆（顯示 ${start}–${end}）` : `共 ${totalItems} 筆`;
+}
+
+function renderFinancePagination(key, totalItems) {
+  const config = financePaginationConfig[key];
+  const host = config ? $(config.host) : null;
+  if (!host) return;
+  const totalPages = Math.max(1, Math.ceil(totalItems / FINANCE_PAGE_SIZE));
+  financePages[key] = Math.min(Math.max(1, financePages[key] || 1), totalPages);
+  if (totalPages <= 1) {
+    host.innerHTML = "";
+    return;
+  }
+  const visiblePages = new Set([1, totalPages]);
+  for (let page = financePages[key] - 2; page <= financePages[key] + 2; page += 1) {
+    if (page >= 1 && page <= totalPages) visiblePages.add(page);
+  }
+  const pageButtons = [...visiblePages].sort((a, b) => a - b).map((page, index, pages) => {
+    const gap = index > 0 && page - pages[index - 1] > 1 ? `<span class="pagination-ellipsis" aria-hidden="true">…</span>` : "";
+    return `${gap}<button class="page-number ${page === financePages[key] ? "active" : ""}" type="button" data-page="${page}" ${page === financePages[key] ? 'aria-current="page"' : ""}>${page}</button>`;
+  }).join("");
+  const pageOptions = Array.from({ length: totalPages }, (_, index) => index + 1)
+    .map(page => `<option value="${page}" ${page === financePages[key] ? "selected" : ""}>${page}</option>`).join("");
+  host.innerHTML = `
+    <button class="page-direction" type="button" data-page="${financePages[key] - 1}" ${financePages[key] === 1 ? "disabled" : ""}>上一頁</button>
+    <div class="pagination-pages">${pageButtons}</div>
+    <span class="pagination-summary">第 ${financePages[key]} / ${totalPages} 頁</span>
+    <label class="pagination-jump"><span>跳至</span><select data-page-select aria-label="選擇${esc(config.label)}頁數">${pageOptions}</select><span>頁</span></label>
+    <button class="page-direction" type="button" data-page="${financePages[key] + 1}" ${financePages[key] === totalPages ? "disabled" : ""}>下一頁</button>`;
+}
+
+function paginateFinanceRows(rows, key) {
+  renderFinancePagination(key, rows.length);
+  const start = (financePages[key] - 1) * FINANCE_PAGE_SIZE;
+  return rows.slice(start, start + FINANCE_PAGE_SIZE);
+}
+
+function updateFinanceFilterUi(context) {
+  const hasFilters = Boolean(context.keyword || context.customer !== "all" || context.month !== monthValue() || context.asOf !== isoDate());
+  $("#financeClearFilters")?.classList.toggle("hidden", !hasFilters);
+  const companyHasFilters = Boolean($("#companyExpenseSearch")?.value.trim() || ($("#companyExpenseCategoryFilter")?.value || "all") !== "all");
+  $("#companyExpenseClearFilters")?.classList.toggle("hidden", !companyHasFilters);
+}
+
 function matchesContext(row, context, { includeKeyword = true } = {}) {
   if (context.customer !== "all" && row.customerName !== context.customer) return false;
   if (!includeKeyword || !context.keyword) return true;
@@ -202,11 +293,16 @@ function renderAging(rows, asOf) {
 
 function renderNext30(rows, context) {
   const end = addDays(context.asOf, 30);
-  const list = rows.filter(row => row.expectedPaymentDate && row.expectedPaymentDate >= context.asOf && row.expectedPaymentDate <= end)
-    .sort((a, b) => a.expectedPaymentDate.localeCompare(b.expectedPaymentDate));
+  const list = sortFinanceRows(
+    rows.filter(row => row.expectedPaymentDate && row.expectedPaymentDate >= context.asOf && row.expectedPaymentDate <= end),
+    $("#financeNext30Sort")?.value || "dateAsc",
+    { dateValue: row => row.expectedPaymentDate, amountValue: row => row.remaining, nameValue: row => row.customerName || row.projectName }
+  );
   $("#financeNext30Total").textContent = money(list.reduce((sum, row) => sum + row.remaining, 0));
   $("#financeNext30Count").textContent = `${list.length} 筆即將到期`;
-  $("#financeNext30Body").innerHTML = list.length ? list.map(row => `<tr>
+  if ($("#financeNext30ResultCount")) $("#financeNext30ResultCount").textContent = financeResultText(list.length, "next30");
+  const pageList = paginateFinanceRows(list, "next30");
+  $("#financeNext30Body").innerHTML = pageList.length ? pageList.map(row => `<tr>
     <td><b>${esc(row.expectedPaymentDate)}</b></td>
     <td><b>${esc(row.customerName)}</b><div class="table-sub">${esc(row.projectName)}</div></td>
     <td>${esc(row.label || "款項")}<div class="table-sub">發票：${esc(row.invoiceNumber || "—")}</div></td>
@@ -215,13 +311,18 @@ function renderNext30(rows, context) {
 }
 
 function renderReceivables(rows, context) {
-  const sorted = [...rows].sort((a, b) => String(a.expectedPaymentDate || "9999").localeCompare(String(b.expectedPaymentDate || "9999")));
+  const sorted = sortFinanceRows(rows, $("#financeReceivableSort")?.value || "dateAsc", {
+    dateValue: row => row.expectedPaymentDate,
+    amountValue: row => row.remaining,
+    nameValue: row => row.customerName || row.projectName
+  });
   $("#financeReceivableTotal").textContent = money(sorted.reduce((sum, row) => sum + row.remaining, 0));
-  $("#financeReceivableCount").textContent = `共 ${sorted.length} 筆`;
+  $("#financeReceivableCount").textContent = financeResultText(sorted.length, "receivables");
   const overdue = sorted.filter(row => (daysPastDue(row.expectedPaymentDate, context.asOf) || 0) > 0);
   $("#financeOverdueTotal").textContent = money(overdue.reduce((sum, row) => sum + row.remaining, 0));
   $("#financeOverdueCount").textContent = `${overdue.length} 筆逾期`;
-  $("#financeReceivableBody").innerHTML = sorted.length ? sorted.map(row => `<tr>
+  const pageList = paginateFinanceRows(sorted, "receivables");
+  $("#financeReceivableBody").innerHTML = pageList.length ? pageList.map(row => `<tr>
     <td><b>${esc(row.customerName)}</b><div class="table-sub">${esc(row.projectName)}</div></td>
     <td>${esc(row.label || "款項")}</td>
     <td>${esc(row.requestDate || "—")}<div class="table-sub">發票：${esc(row.invoiceNumber || "—")} ${row.invoiceDate ? `｜${esc(row.invoiceDate)}` : ""}</div></td>
@@ -272,12 +373,15 @@ function payableRows(context) {
   return [...projectRows, ...companyRows]
     .filter(expense => expense.payableTracked === true && !expense.paidDate)
     .filter(expense => context.customer === "all" || expense.customerName === context.customer)
-    .filter(expense => !context.keyword || [expense.vendor, expense.itemName, expense.sourceName, expense.customerName, expense.note].join(" ").toLocaleLowerCase("zh-Hant").includes(context.keyword))
-    .sort((a, b) => String(a.expectedPaymentDate || "9999").localeCompare(String(b.expectedPaymentDate || "9999")));
+    .filter(expense => !context.keyword || [expense.vendor, expense.itemName, expense.sourceName, expense.customerName, expense.note].join(" ").toLocaleLowerCase("zh-Hant").includes(context.keyword));
 }
 
 function renderPayables(context) {
-  const rows = payableRows(context);
+  const rows = sortFinanceRows(payableRows(context), $("#financePayableSort")?.value || "dateAsc", {
+    dateValue: expense => expense.expectedPaymentDate,
+    amountValue: expense => expense.amount,
+    nameValue: expense => expense.vendor || expense.itemName
+  });
   const overdue = rows.filter(expense => payableStatus(expense, context.asOf).key === "overdue");
   const end = addDays(context.asOf, 30);
   const next30 = rows.filter(expense => expense.expectedPaymentDate && expense.expectedPaymentDate >= context.asOf && expense.expectedPaymentDate <= end);
@@ -287,7 +391,9 @@ function renderPayables(context) {
   $("#financePayableOverdueCount").textContent = `${overdue.length} 筆`;
   $("#financePayableNext30").textContent = money(next30.reduce((sum, expense) => sum + integerValue(expense.amount), 0));
   $("#financePayableNext30Count").textContent = `${next30.length} 筆`;
-  $("#financePayableBody").innerHTML = rows.length ? rows.map(expense => {
+  if ($("#financePayableResultCount")) $("#financePayableResultCount").textContent = financeResultText(rows.length, "payables");
+  const pageList = paginateFinanceRows(rows, "payables");
+  $("#financePayableBody").innerHTML = pageList.length ? pageList.map(expense => {
     const status = payableStatus(expense, context.asOf);
     return `<tr><td>${esc(expense.expectedPaymentDate || "—")}</td><td><b>${esc(expense.vendor || "未填廠商")}</b><div class="table-sub">${esc(expense.itemName)}</div></td><td>${esc(expense.source)}<div class="table-sub">${esc(expense.sourceName)}</div></td><td class="num"><b>${money(expense.amount)}</b></td><td><span class="badge ${status.badge}">${esc(status.label)}</span></td></tr>`;
   }).join("") : `<tr><td colspan="5"><div class="empty-state">目前沒有待付的廠商款項。</div></td></tr>`;
@@ -300,15 +406,19 @@ function filteredExpenses(context) {
       return { ...expense, projectName: expense.projectName || project?.name || "未命名專案", customerName: expense.customerName || project?.client || "未填客戶" };
     })
     .filter(expense => !context.month || String(expense.expenseDate || "").startsWith(context.month))
-    .filter(expense => matchesContext(expense, context))
-    .sort((a, b) => String(b.expenseDate || "").localeCompare(String(a.expenseDate || "")));
+    .filter(expense => matchesContext(expense, context));
 }
 
 function renderExpenses(context) {
-  const list = filteredExpenses(context);
-  $("#expenseResultCount").textContent = `共 ${list.length} 筆`;
+  const list = sortFinanceRows(filteredExpenses(context), $("#expenseSort")?.value || "dateDesc", {
+    dateValue: expense => expense.expenseDate,
+    amountValue: expense => expense.amount,
+    nameValue: expense => expense.projectName || expense.customerName
+  });
+  $("#expenseResultCount").textContent = financeResultText(list.length, "expenses");
   $("#expenseOpenCreate").disabled = !canManageExpenses();
-  $("#expenseTableBody").innerHTML = list.length ? list.map(expense => { const status = payableStatus(expense, context.asOf); return `<tr>
+  const pageList = paginateFinanceRows(list, "expenses");
+  $("#expenseTableBody").innerHTML = pageList.length ? pageList.map(expense => { const status = payableStatus(expense, context.asOf); return `<tr>
     <td>${esc(expense.expenseDate || "—")}</td>
     <td><b>${esc(expense.projectName)}</b><div class="table-sub">${esc(expense.customerName)}</div></td>
     <td>${esc(expenseCategoryLabel(expense.category))}<div class="table-sub">${esc(expense.vendor || "—")}</div></td>
@@ -321,18 +431,23 @@ function renderExpenses(context) {
 function filteredCompanyExpenses(context) {
   const keyword = $("#companyExpenseSearch")?.value.trim().toLocaleLowerCase("zh-Hant") || "";
   const category = $("#companyExpenseCategoryFilter")?.value || "all";
-  return state.companyExpenses.filter(expense => !expense.voided && String(expense.expenseDate || "").startsWith(context.month))
+  const list = state.companyExpenses.filter(expense => !expense.voided && String(expense.expenseDate || "").startsWith(context.month))
     .filter(expense => category === "all" || expense.category === category)
-    .filter(expense => !keyword || [expense.name, expense.vendor, expense.receiptNumber, expense.equipmentName, expense.note, companyExpenseCategoryLabel(expense.category)].join(" ").toLocaleLowerCase("zh-Hant").includes(keyword))
-    .sort((a, b) => String(b.expenseDate || "").localeCompare(String(a.expenseDate || "")) || timestampValue(b.updatedAt) - timestampValue(a.updatedAt));
+    .filter(expense => !keyword || [expense.name, expense.vendor, expense.receiptNumber, expense.equipmentName, expense.note, companyExpenseCategoryLabel(expense.category)].join(" ").toLocaleLowerCase("zh-Hant").includes(keyword));
+  return sortFinanceRows(list, $("#companyExpenseSort")?.value || "dateDesc", {
+    dateValue: expense => expense.expenseDate,
+    amountValue: expense => expense.amount,
+    nameValue: expense => expense.name || expense.vendor
+  });
 }
 
 function renderCompanyExpenses(context) {
   const list = filteredCompanyExpenses(context);
-  if ($("#companyExpenseResultCount")) $("#companyExpenseResultCount").textContent = `共 ${list.length} 筆`;
   if ($("#companyExpenseOpenCreate")) $("#companyExpenseOpenCreate").disabled = !canManageCompanyExpenses();
   if (!$("#companyExpenseTableBody")) return;
-  $("#companyExpenseTableBody").innerHTML = list.length ? list.map(expense => { const status = payableStatus(expense, context.asOf); return `<tr>
+  if ($("#companyExpenseResultCount")) $("#companyExpenseResultCount").textContent = financeResultText(list.length, "companyExpenses");
+  const pageList = paginateFinanceRows(list, "companyExpenses");
+  $("#companyExpenseTableBody").innerHTML = pageList.length ? pageList.map(expense => { const status = payableStatus(expense, context.asOf); return `<tr>
     <td>${esc(expense.expenseDate || "—")}</td>
     <td><span class="badge ${isCapitalExpense(expense) ? "orange" : "neutral"}">${isCapitalExpense(expense) ? "資本支出" : "營運支出"}</span><div class="table-sub">${esc(companyExpenseCategoryLabel(expense.category))}</div></td>
     <td><b>${esc(expense.name || "未命名支出")}</b><div class="table-sub">${esc(expense.vendor || "—")}</div></td>
@@ -384,6 +499,7 @@ function renderFinance() {
   if (!$("#tab-finance")) return;
   refreshCustomerOptions();
   const context = filterContext();
+  updateFinanceFilterUi(context);
   const receivables = activePaymentRows(context);
   renderReceivables(receivables, context);
   renderAging(receivables, context.asOf);
@@ -748,6 +864,7 @@ function detach() {
   state.unsubs.forEach(unsubscribe => unsubscribe());
   state.unsubs = [];
   state.projects = []; state.payments = []; state.receipts = []; state.expenses = []; state.companyExpenses = []; state.equipment = []; state.users = []; state.auditLogs = [];
+  resetFinancePages();
   renderFinance(); renderSystemAccess();
 }
 
@@ -763,8 +880,43 @@ function attach() {
 }
 
 function bindEvents() {
-  ["#financeSearch"].forEach(selector => $(selector)?.addEventListener("input", renderFinance));
-  ["#financeCustomerFilter", "#financeMonth", "#financeAsOfDate"].forEach(selector => $(selector)?.addEventListener("change", renderFinance));
+  const resetAllFinancePagesAndRender = () => { resetFinancePages(); renderFinance(); };
+  $("#financeSearch")?.addEventListener("input", resetAllFinancePagesAndRender);
+  ["#financeCustomerFilter", "#financeMonth", "#financeAsOfDate"].forEach(selector => $(selector)?.addEventListener("change", resetAllFinancePagesAndRender));
+  $("#financeClearFilters")?.addEventListener("click", () => {
+    if ($("#financeSearch")) $("#financeSearch").value = "";
+    if ($("#financeCustomerFilter")) $("#financeCustomerFilter").value = "all";
+    if ($("#financeMonth")) $("#financeMonth").value = monthValue();
+    if ($("#financeAsOfDate")) $("#financeAsOfDate").value = isoDate();
+    resetAllFinancePagesAndRender();
+  });
+  const financeSortKeys = {
+    "#financePayableSort": "payables",
+    "#expenseSort": "expenses",
+    "#financeNext30Sort": "next30",
+    "#financeReceivableSort": "receivables"
+  };
+  Object.entries(financeSortKeys).forEach(([selector, key]) => $(selector)?.addEventListener("change", () => {
+    resetFinancePages([key]);
+    renderFinance();
+  }));
+  Object.entries(financePaginationConfig).forEach(([key, config]) => {
+    const host = $(config.host);
+    host?.addEventListener("click", event => {
+      const button = event.target.closest("button[data-page]");
+      if (!button || button.disabled) return;
+      financePages[key] = Number(button.dataset.page) || 1;
+      renderFinance();
+      host.closest(".finance-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    host?.addEventListener("change", event => {
+      const select = event.target.closest("select[data-page-select]");
+      if (!select) return;
+      financePages[key] = Number(select.value) || 1;
+      renderFinance();
+      host.closest(".finance-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
   $("#reportMonth")?.addEventListener("change", renderFinance);
   $("#financeExportCsv")?.addEventListener("click", exportReceivables);
   $("#companyExpenseExportCsv")?.addEventListener("click", exportCompanyExpenses);
@@ -783,8 +935,15 @@ function bindEvents() {
     const equipment = state.equipment.find(item => item.id === event.target.value);
     if (equipment && !$("#companyExpenseName")?.value.trim()) $("#companyExpenseName").value = equipment.name || "";
   });
-  $("#companyExpenseSearch")?.addEventListener("input", renderFinance);
-  $("#companyExpenseCategoryFilter")?.addEventListener("change", renderFinance);
+  const resetCompanyExpensePageAndRender = () => { resetFinancePages(["companyExpenses"]); renderFinance(); };
+  $("#companyExpenseSearch")?.addEventListener("input", resetCompanyExpensePageAndRender);
+  $("#companyExpenseCategoryFilter")?.addEventListener("change", resetCompanyExpensePageAndRender);
+  $("#companyExpenseSort")?.addEventListener("change", resetCompanyExpensePageAndRender);
+  $("#companyExpenseClearFilters")?.addEventListener("click", () => {
+    if ($("#companyExpenseSearch")) $("#companyExpenseSearch").value = "";
+    if ($("#companyExpenseCategoryFilter")) $("#companyExpenseCategoryFilter").value = "all";
+    resetCompanyExpensePageAndRender();
+  });
   $("#expenseTableBody")?.addEventListener("click", async event => {
     const edit = event.target.closest("[data-expense-edit]");
     const voidButton = event.target.closest("[data-expense-void]");
@@ -814,6 +973,7 @@ function bindEvents() {
     if (!project) return;
     document.querySelector('.tab-button[data-tab="finance"]')?.click();
     if ($("#financeSearch")) $("#financeSearch").value = project.name || project.client || "";
+    resetFinancePages();
     renderFinance();
   });
   $("#userPermissionBody")?.addEventListener("change", event => {

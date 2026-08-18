@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css?v=phase3-v11-5" />
+  <link rel="stylesheet" href="styles.css?v=phase3-v11-6" />
 </head>
 
 <body>
@@ -152,10 +152,11 @@
       </div>
 
       <div class="card finance-toolbar">
-        <label class="toolbar-search"><span class="sr-only">搜尋應收</span><input id="financeSearch" class="input" type="search" placeholder="搜尋客戶、專案或發票號碼" /></label>
+        <label class="toolbar-search"><span class="sr-only">搜尋財務資料</span><input id="financeSearch" class="input" type="search" placeholder="搜尋客戶、專案、發票、廠商或備註" /></label>
         <label class="field-inline"><span>客戶</span><select id="financeCustomerFilter" class="select"><option value="all">全部客戶</option></select></label>
         <label class="field-inline"><span>支出明細月份</span><input id="financeMonth" class="input" type="month" /></label>
         <label class="field-inline"><span>帳齡基準日</span><input id="financeAsOfDate" class="input" type="date" /></label>
+        <button id="financeClearFilters" class="btn ghost small filter-clear hidden" type="button">清除篩選</button>
       </div>
 
       <div class="finance-kpi-grid">
@@ -165,13 +166,13 @@
       </div>
 
       <section class="finance-section">
-        <div class="finance-section-head"><div><h3>廠商應付帳款</h3><p>只列新版有啟用付款追蹤、尚未付款的專案與公司支出；舊支出預設視為已付款。</p></div></div>
+        <div class="finance-section-head"><div><h3>廠商應付帳款</h3><p>只列新版有啟用付款追蹤、尚未付款的專案與公司支出；舊支出預設視為已付款。</p></div><div class="finance-section-actions"><span id="financePayableResultCount">共 0 筆</span><label class="field-inline finance-sort-field"><span>排序</span><select id="financePayableSort" class="select"><option value="dateAsc">到期日｜近到遠</option><option value="dateDesc">到期日｜遠到近</option><option value="amountDesc">金額｜高到低</option><option value="amountAsc">金額｜低到高</option><option value="nameAsc">廠商｜A–Z</option><option value="nameDesc">廠商｜Z–A</option></select></label></div></div>
         <div class="payable-kpi-grid">
           <div class="aging-card"><span>應付未付</span><b id="financePayableTotal">0</b><small id="financePayableCount">0 筆</small></div>
           <div class="aging-card critical"><span>逾期未付</span><b id="financePayableOverdue">0</b><small id="financePayableOverdueCount">0 筆</small></div>
           <div class="aging-card current"><span>未來 30 天到期</span><b id="financePayableNext30">0</b><small id="financePayableNext30Count">0 筆</small></div>
         </div>
-        <div class="card table-card"><div class="table-scroll"><table class="table payable-table"><thead><tr><th>預計付款日</th><th>廠商／項目</th><th>來源</th><th class="num">應付金額</th><th>狀態</th></tr></thead><tbody id="financePayableBody"></tbody></table></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table payable-table"><thead><tr><th>預計付款日</th><th>廠商／項目</th><th>來源</th><th class="num">應付金額</th><th>狀態</th></tr></thead><tbody id="financePayableBody"></tbody></table></div><div id="financePayablePagination" class="pagination"></div></div>
       </section>
 
       <section class="finance-section">
@@ -187,8 +188,8 @@
       </section>
 
       <section class="finance-section">
-        <div class="finance-section-head"><div><h3>外部支出明細</h3><p>記錄已確認的專案成本；付款日另行追蹤，含稅金額會自動換算為未稅成本供毛利計算。</p></div><span id="expenseResultCount">共 0 筆</span></div>
-        <div class="card table-card"><div class="table-scroll"><table class="table expense-table"><thead><tr><th>成本日期</th><th>專案／客戶</th><th>類別／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅成本</th><th>付款狀態</th><th>備註</th><th>操作</th></tr></thead><tbody id="expenseTableBody"></tbody></table></div></div>
+        <div class="finance-section-head"><div><h3>外部支出明細</h3><p>記錄已確認的專案成本；付款日另行追蹤，含稅金額會自動換算為未稅成本供毛利計算。</p></div><div class="finance-section-actions"><span id="expenseResultCount">共 0 筆</span><label class="field-inline finance-sort-field"><span>排序</span><select id="expenseSort" class="select"><option value="dateDesc">成本日｜近到遠</option><option value="dateAsc">成本日｜遠到近</option><option value="amountDesc">金額｜高到低</option><option value="amountAsc">金額｜低到高</option><option value="nameAsc">專案｜A–Z</option><option value="nameDesc">專案｜Z–A</option></select></label></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table expense-table"><thead><tr><th>成本日期</th><th>專案／客戶</th><th>類別／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅成本</th><th>付款狀態</th><th>備註</th><th>操作</th></tr></thead><tbody id="expenseTableBody"></tbody></table></div><div id="expensePagination" class="pagination"></div></div>
       </section>
 
       <section class="finance-section">
@@ -196,19 +197,21 @@
         <div class="card company-expense-toolbar">
           <label class="toolbar-search"><span class="sr-only">搜尋公司支出</span><input id="companyExpenseSearch" class="input" type="search" placeholder="搜尋項目、廠商、發票或備註" /></label>
           <label class="field-inline"><span>類別</span><select id="companyExpenseCategoryFilter" class="select"><option value="all">全部類別</option><option value="rent">房租／倉租</option><option value="utilities">水電／網路／電話</option><option value="payroll">薪資／勞務／獎金</option><option value="insurance">保險／勞健保</option><option value="software">軟體／訂閱</option><option value="equipment_purchase">設備購買</option><option value="equipment_maintenance">設備維修／保養</option><option value="office">辦公／行政</option><option value="marketing">行銷／業務</option><option value="professional">專業服務／稅務</option><option value="other">其他</option></select></label>
+          <label class="field-inline"><span>排序</span><select id="companyExpenseSort" class="select"><option value="dateDesc">成本日｜近到遠</option><option value="dateAsc">成本日｜遠到近</option><option value="amountDesc">金額｜高到低</option><option value="amountAsc">金額｜低到高</option><option value="nameAsc">項目｜A–Z</option><option value="nameDesc">項目｜Z–A</option></select></label>
           <button id="companyExpenseExportCsv" class="btn ghost" type="button">匯出公司支出 CSV</button>
+          <button id="companyExpenseClearFilters" class="btn ghost small filter-clear hidden" type="button">清除篩選</button>
         </div>
-        <div class="card table-card"><div class="table-scroll"><table class="table company-expense-table"><thead><tr><th>成本日期</th><th>性質／類別</th><th>項目／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅金額</th><th>付款狀態</th><th>發票／憑證</th><th>連結設備</th><th>備註</th><th>操作</th></tr></thead><tbody id="companyExpenseTableBody"></tbody></table></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table company-expense-table"><thead><tr><th>成本日期</th><th>性質／類別</th><th>項目／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅金額</th><th>付款狀態</th><th>發票／憑證</th><th>連結設備</th><th>備註</th><th>操作</th></tr></thead><tbody id="companyExpenseTableBody"></tbody></table></div><div id="companyExpensePagination" class="pagination"></div></div>
       </section>
 
       <section class="finance-section">
-        <div class="finance-section-head"><div><h3>未來 30 天預計收款</h3><p>僅列出已請款、仍有未收金額，且預計收款日在基準日起 30 天內的款項。</p></div></div>
-        <div class="card table-card"><div class="table-scroll"><table class="table finance-due-table"><thead><tr><th>預計收款日</th><th>客戶／專案</th><th>款項／發票</th><th class="num">應收</th><th class="num">已收</th><th class="num">本次預計收款</th></tr></thead><tbody id="financeNext30Body"></tbody></table></div></div>
+        <div class="finance-section-head"><div><h3>未來 30 天預計收款</h3><p>僅列出已請款、仍有未收金額，且預計收款日在基準日起 30 天內的款項。</p></div><div class="finance-section-actions"><span id="financeNext30ResultCount">共 0 筆</span><label class="field-inline finance-sort-field"><span>排序</span><select id="financeNext30Sort" class="select"><option value="dateAsc">收款日｜近到遠</option><option value="dateDesc">收款日｜遠到近</option><option value="amountDesc">金額｜高到低</option><option value="amountAsc">金額｜低到高</option><option value="nameAsc">客戶｜A–Z</option><option value="nameDesc">客戶｜Z–A</option></select></label></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table finance-due-table"><thead><tr><th>預計收款日</th><th>客戶／專案</th><th>款項／發票</th><th class="num">應收</th><th class="num">已收</th><th class="num">本次預計收款</th></tr></thead><tbody id="financeNext30Body"></tbody></table></div><div id="financeNext30Pagination" class="pagination"></div></div>
       </section>
 
       <section class="finance-section">
-        <div class="finance-section-head"><div><h3>應收帳款明細</h3><p id="financeReceivableCount">共 0 筆</p></div></div>
-        <div class="card table-card"><div class="table-scroll"><table class="table finance-ar-table"><thead><tr><th>客戶／專案</th><th>款項</th><th>請款／發票</th><th>預計收款</th><th class="num">應收</th><th class="num">已收</th><th class="num">未收</th><th>帳齡</th></tr></thead><tbody id="financeReceivableBody"></tbody></table></div></div>
+        <div class="finance-section-head"><div><h3>應收帳款明細</h3><p>列出所有已請款、尚未收清的款項。</p></div><div class="finance-section-actions"><span id="financeReceivableCount">共 0 筆</span><label class="field-inline finance-sort-field"><span>排序</span><select id="financeReceivableSort" class="select"><option value="dateAsc">收款日｜近到遠</option><option value="dateDesc">收款日｜遠到近</option><option value="amountDesc">未收｜高到低</option><option value="amountAsc">未收｜低到高</option><option value="nameAsc">客戶｜A–Z</option><option value="nameDesc">客戶｜Z–A</option></select></label></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table finance-ar-table"><thead><tr><th>客戶／專案</th><th>款項</th><th>請款／發票</th><th>預計收款</th><th class="num">應收</th><th class="num">已收</th><th class="num">未收</th><th>帳齡</th></tr></thead><tbody id="financeReceivableBody"></tbody></table></div><div id="financeReceivablePagination" class="pagination"></div></div>
       </section>
 
     </section>
@@ -838,6 +841,6 @@
   <script type="module" src="./app.js?v=phase3-v11-5"></script>
   <script type="module" src="./quotations.js?v=phase3-v11-5"></script>
   <script type="module" src="./payments.js"></script>
-  <script type="module" src="./finance.js"></script>
+  <script type="module" src="./finance.js?v=phase3-v11-6"></script>
 </body>
 </html>
