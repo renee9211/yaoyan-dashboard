@@ -25,7 +25,7 @@ import {
 
 import {
   collection, doc, addDoc, updateDoc, deleteDoc,
-  query, serverTimestamp, getDocs
+  query, serverTimestamp, getDocs, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 /* =========================================================
@@ -237,6 +237,12 @@ const dom = {
   projectTableBody: () => $("#projectTableBody"),
   projectResultCount: () => $("#projectResultCount"),
   projectPagination: () => $("#projectPagination"),
+  projectBatchBar: () => $("#projectBatchBar"),
+  projectBatchCount: () => $("#projectBatchCount"),
+  projectBatchStatus: () => $("#projectBatchStatus"),
+  projectBatchApply: () => $("#projectBatchApply"),
+  projectBatchClear: () => $("#projectBatchClear"),
+  projectSelectAll: () => $("#projectSelectAll"),
 
   equipmentForm: () => $("#equipment-form"),
   equipmentReset: () => $("#equipmentReset"),
@@ -312,6 +318,7 @@ let currentAccess = null;
 let realtimeUnsubscribers = [];
 let state = { projects: [], equipments: [], payments: [], receipts: [], quotations: [], expenses: [], companyExpenses: [] };
 let selectedProjectStatuses = new Set();
+const selectedProjectIds = new Set();
 let projectCurrentPage = 1;
 let equipmentSort = { key: "name", direction: "asc" };
 let projectFormDirty = false;
@@ -914,6 +921,73 @@ function getProjectCloseIssues(project) {
   return issues;
 }
 
+function projectBatchPayload(project, nextStatus) {
+  const payload = { status: nextStatus, updatedAt: serverTimestamp() };
+  if (nextStatus === "closed") {
+    payload.forcedCloseReason = "";
+    payload.closeCheckIssues = [];
+    payload.closedAt = serverTimestamp();
+    payload.closedBy = currentUser.uid;
+  } else if (project.status === "closed") {
+    payload.reopenedAt = serverTimestamp();
+    payload.reopenedBy = currentUser.uid;
+  }
+  return payload;
+}
+
+async function applyProjectBatchStatus() {
+  if (!canUpdateProject()) return alert("你目前沒有編輯既有專案的權限");
+  const nextStatus = dom.projectBatchStatus()?.value || "";
+  if (!PROJECT_STATUSES.includes(nextStatus)) return alert("請先選擇要套用的專案狀態");
+  const selected = state.projects.filter(project => selectedProjectIds.has(project.id));
+  const changed = selected.filter(project => project.status !== nextStatus);
+  if (!changed.length) return alert("選取的專案目前已經是這個狀態");
+
+  if (nextStatus === "closed") {
+    const blocked = changed
+      .map(project => ({ project, issues: getProjectCloseIssues(project) }))
+      .filter(item => item.issues.length);
+    if (blocked.length) {
+      const details = blocked.slice(0, 8)
+        .map(({ project, issues }) => `• ${project.name || "未命名專案"}：${issues.join("、")}`)
+        .join("\n");
+      const more = blocked.length > 8 ? `\n…另有 ${blocked.length - 8} 筆` : "";
+      return alert(`以下專案未通過結案檢查，因此本次沒有修改任何資料：\n\n${details}${more}\n\n請先完成檢查項目；admin 若需強制結案，請使用單筆編輯並填寫原因。`);
+    }
+  }
+
+  const names = changed.slice(0, 5).map(project => project.name || "未命名專案").join("、");
+  if (!confirm(`確定將「${names}${changed.length > 5 ? "…" : ""}」共 ${changed.length} 筆專案改為「${statusLabel(nextStatus)}」？`)) return;
+
+  const applyButton = dom.projectBatchApply();
+  if (applyButton) applyButton.disabled = true;
+  try {
+    for (let offset = 0; offset < changed.length; offset += 400) {
+      const batch = writeBatch(db);
+      changed.slice(offset, offset + 400).forEach(project => {
+        batch.update(doc(db, "projects", project.id), projectBatchPayload(project, nextStatus));
+      });
+      await batch.commit();
+    }
+    await logAction({
+      action: "batch_update",
+      module: "projects",
+      targetType: "projectBatch",
+      targetId: "",
+      targetName: `${changed.length} 個專案`,
+      summary: `批次修改狀態為「${statusLabel(nextStatus)}」｜${changed.map(project => project.name || "未命名專案").join("、")}`
+    });
+    selectedProjectIds.clear();
+    if (dom.projectBatchStatus()) dom.projectBatchStatus().value = "";
+    renderProjectsTable();
+    alert(`已完成 ${changed.length} 筆專案狀態更新。`);
+  } catch (error) {
+    console.error(error);
+    alert("批次更新失敗：請確認專案編輯權限與網路狀態");
+    renderProjectsTable();
+  }
+}
+
 async function upsertEquipmentFromForm() {
   if (!currentUser) return alert("請先登入再儲存（右上角 Google 登入）");
 
@@ -1265,6 +1339,8 @@ function renderProjectsTable() {
   projectCurrentPage = Math.min(projectCurrentPage, totalPages);
   const startIndex = (projectCurrentPage - 1) * PROJECTS_PER_PAGE;
   const pageList = list.slice(startIndex, startIndex + PROJECTS_PER_PAGE);
+  const existingIds = new Set(state.projects.map(project => project.id));
+  [...selectedProjectIds].forEach(id => { if (!existingIds.has(id)) selectedProjectIds.delete(id); });
 
   if (dom.projectResultCount()) {
     const range = list.length ? `（顯示 ${startIndex + 1}–${Math.min(startIndex + PROJECTS_PER_PAGE, list.length)}）` : "";
@@ -1274,7 +1350,8 @@ function renderProjectsTable() {
   body.innerHTML = "";
 
   if (!pageList.length) {
-    body.innerHTML = `<tr><td colspan="5"><div class="empty-state">找不到符合條件的專案</div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="6"><div class="empty-state">找不到符合條件的專案</div></td></tr>`;
+    updateProjectBatchUi([]);
     return;
   }
 
@@ -1313,6 +1390,7 @@ function renderProjectsTable() {
     trMain.dataset.id = p.id;
 
     trMain.innerHTML = `
+      <td class="batch-checkbox-cell"><input class="batch-checkbox project-select" type="checkbox" value="${escapeHtml(p.id)}" aria-label="選取專案 ${escapeHtml(p.name || "未命名專案")}" ${selectedProjectIds.has(p.id) ? "checked" : ""} ${canUpdateProject() ? "" : "disabled"} /></td>
       <td>
         <div class="project-title">
           <div class="name">${escapeHtml(p.name || "")}${p.note ? '<span class="note-dot" title="有備註">備註</span>' : ""}${calendarBadge}</div>
@@ -1339,7 +1417,7 @@ function renderProjectsTable() {
     trMain.classList.toggle("is-open", openProjectIds.has(p.id));
 
     trDetail.innerHTML = `
-      <td colspan="5">
+      <td colspan="6">
         <div class="details-panel">
           <div class="project-detail-heading">
           <div class="project-detail-title"><span>完整專案狀態</span><h3>${escapeHtml(p.name || "未命名專案")}</h3></div>
@@ -1420,6 +1498,25 @@ function renderProjectsTable() {
     body.appendChild(trMain);
     body.appendChild(trDetail);
   });
+  updateProjectBatchUi(pageList);
+}
+
+function updateProjectBatchUi(pageList = []) {
+  const allowed = canUpdateProject();
+  dom.projectBatchBar()?.classList.toggle("hidden", !allowed);
+  const selectedCount = selectedProjectIds.size;
+  if (dom.projectBatchCount()) dom.projectBatchCount().textContent = `已選 ${selectedCount} 筆`;
+  if (dom.projectBatchStatus()) dom.projectBatchStatus().disabled = !allowed || !selectedCount;
+  if (dom.projectBatchApply()) dom.projectBatchApply().disabled = !allowed || !selectedCount || !dom.projectBatchStatus()?.value;
+  if (dom.projectBatchClear()) dom.projectBatchClear().disabled = !allowed || !selectedCount;
+  const pageIds = pageList.map(project => project.id);
+  const selectedOnPage = pageIds.filter(id => selectedProjectIds.has(id)).length;
+  const selectAll = dom.projectSelectAll();
+  if (selectAll) {
+    selectAll.disabled = !allowed || !pageIds.length;
+    selectAll.checked = Boolean(pageIds.length) && selectedOnPage === pageIds.length;
+    selectAll.indeterminate = selectedOnPage > 0 && selectedOnPage < pageIds.length;
+  }
 }
 
 function renderEquipmentsTable() {
@@ -1943,6 +2040,7 @@ function detachListeners() {
   state.expenses = [];
   state.companyExpenses = [];
   openProjectIds.clear();
+  selectedProjectIds.clear();
   renderAll();
 }
 
@@ -2076,7 +2174,37 @@ function bindEvents() {
     document.querySelector("#tab-projects .project-toolbar")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
+  dom.projectSelectAll()?.addEventListener("change", (e) => {
+    $all(".project-select", dom.projectTableBody()).forEach(input => {
+      if (input.disabled) return;
+      input.checked = e.target.checked;
+      if (e.target.checked) selectedProjectIds.add(input.value);
+      else selectedProjectIds.delete(input.value);
+    });
+    const list = getFilteredSortedProjects();
+    updateProjectBatchUi(list.slice((projectCurrentPage - 1) * PROJECTS_PER_PAGE, projectCurrentPage * PROJECTS_PER_PAGE));
+  });
+  dom.projectBatchStatus()?.addEventListener("change", () => {
+    const list = getFilteredSortedProjects();
+    updateProjectBatchUi(list.slice((projectCurrentPage - 1) * PROJECTS_PER_PAGE, projectCurrentPage * PROJECTS_PER_PAGE));
+  });
+  dom.projectBatchApply()?.addEventListener("click", applyProjectBatchStatus);
+  dom.projectBatchClear()?.addEventListener("click", () => {
+    selectedProjectIds.clear();
+    if (dom.projectBatchStatus()) dom.projectBatchStatus().value = "";
+    renderProjectsTable();
+  });
+  dom.projectTableBody()?.addEventListener("change", (e) => {
+    const input = e.target.closest(".project-select");
+    if (!input) return;
+    if (input.checked) selectedProjectIds.add(input.value);
+    else selectedProjectIds.delete(input.value);
+    const list = getFilteredSortedProjects();
+    updateProjectBatchUi(list.slice((projectCurrentPage - 1) * PROJECTS_PER_PAGE, projectCurrentPage * PROJECTS_PER_PAGE));
+  });
+
   dom.projectTableBody()?.addEventListener("click", (e) => {
+    if (e.target.closest(".project-select")) return;
     const btn = e.target.closest("button[data-act]");
     if (!btn) {
       const row = e.target.closest("tr.project-row[data-id]");

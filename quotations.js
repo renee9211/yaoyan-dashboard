@@ -49,6 +49,7 @@ const state = {
   previewData: null,
   numberWasSuggested: false,
   quotationCurrentPage: 1,
+  quotationSelectedIds: new Set(),
   quotationProjectFilterId: "",
   quotationProjectPriceCustomized: false,
   quotationItemSort: { key: "category", direction: "asc" },
@@ -934,9 +935,17 @@ function renderQuotations() {
   state.quotationCurrentPage = Math.min(Math.max(1, state.quotationCurrentPage), totalPages);
   const startIndex = (state.quotationCurrentPage - 1) * QUOTATIONS_PER_PAGE;
   const list = filteredList.slice(startIndex, startIndex + QUOTATIONS_PER_PAGE);
+  const existingIds = new Set(state.quotations.map(quotation => quotation.id));
+  [...state.quotationSelectedIds].forEach(id => {
+    const quotation = state.quotations.find(item => item.id === id);
+    const isLatest = quotation && latest.get(quotation.seriesId || quotation.id)?.id === quotation.id;
+    if (!existingIds.has(id) || !isLatest || quotation?.status === "void") state.quotationSelectedIds.delete(id);
+  });
   body.innerHTML = list.length ? list.map(q => {
     const isLatest = latest.get(q.seriesId || q.id)?.id === q.id;
+    const selectable = canEdit() && isLatest && q.status !== "void";
     return `<tr>
+      <td class="batch-checkbox-cell"><input class="batch-checkbox quotation-select" type="checkbox" value="${esc(q.id)}" aria-label="選取報價 ${esc(q.number)} V${esc(q.version || 1)}" ${state.quotationSelectedIds.has(q.id) ? "checked" : ""} ${selectable ? "" : "disabled"} /></td>
       <td><button class="quote-link" type="button" data-quotation-preview="${esc(q.id)}">${esc(q.number)}</button></td>
       <td><b>${esc(quotationDisplayProjectName(q))}</b><div class="table-sub">${esc(q.customerName || "—")}</div></td>
       <td><span class="badge ${isLatest ? "orange" : "neutral"}">V${esc(q.version || 1)}${isLatest ? " 最新" : ""}</span></td>
@@ -952,13 +961,92 @@ function renderQuotations() {
         <button class="btn ghost small" type="button" data-quotation-delete="${esc(q.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
       </div></td>
     </tr>`;
-  }).join("") : `<tr><td colspan="7"><div class="empty-state">尚無符合條件的報價</div></td></tr>`;
+  }).join("") : `<tr><td colspan="8"><div class="empty-state">尚無符合條件的報價</div></td></tr>`;
+  updateQuotationBatchUi(list, latest);
   renderQuotationPagination(filteredList.length);
   renderQuotationProjectScope();
 
   $("#quotationSeriesCount").textContent = String(latest.size);
   $("#quotationOpenCount").textContent = String([...latest.values()].filter(q => q.status === "draft" || q.status === "sent").length);
   $("#quotationConfirmedTotal").textContent = money([...confirmedBySeries.values()].reduce((sum, q) => sum + numberValue(q.projectPriceTaxed), 0));
+}
+
+function updateQuotationBatchUi(pageList = [], latest = latestBySeries()) {
+  const allowed = canEdit();
+  $("#quotationBatchBar")?.classList.toggle("hidden", !allowed);
+  const selectedCount = state.quotationSelectedIds.size;
+  if ($("#quotationBatchCount")) $("#quotationBatchCount").textContent = `已選 ${selectedCount} 筆`;
+  if ($("#quotationBatchStatus")) $("#quotationBatchStatus").disabled = !allowed || !selectedCount;
+  if ($("#quotationBatchApply")) $("#quotationBatchApply").disabled = !allowed || !selectedCount || !$("#quotationBatchStatus")?.value;
+  if ($("#quotationBatchClear")) $("#quotationBatchClear").disabled = !allowed || !selectedCount;
+  const pageIds = pageList
+    .filter(quotation => latest.get(quotation.seriesId || quotation.id)?.id === quotation.id && quotation.status !== "void")
+    .map(quotation => quotation.id);
+  const selectedOnPage = pageIds.filter(id => state.quotationSelectedIds.has(id)).length;
+  const selectAll = $("#quotationSelectAll");
+  if (selectAll) {
+    selectAll.disabled = !allowed || !pageIds.length;
+    selectAll.checked = Boolean(pageIds.length) && selectedOnPage === pageIds.length;
+    selectAll.indeterminate = selectedOnPage > 0 && selectedOnPage < pageIds.length;
+  }
+}
+
+function quotationBatchTransitionAllowed(currentStatus, nextStatus) {
+  if (currentStatus === nextStatus) return true;
+  if (currentStatus === "void") return false;
+  if (currentStatus === "confirmed") return nextStatus === "void";
+  return ["draft", "sent"].includes(currentStatus) && ["draft", "sent", "confirmed", "void"].includes(nextStatus);
+}
+
+async function applyQuotationBatchStatus() {
+  if (!canEdit()) return alert("你目前沒有管理報價的權限");
+  const nextStatus = $("#quotationBatchStatus")?.value || "";
+  if (!["draft", "sent", "confirmed", "void"].includes(nextStatus)) return alert("請先選擇要套用的報價狀態");
+  const latest = latestBySeries();
+  const selected = state.quotations.filter(quotation => state.quotationSelectedIds.has(quotation.id));
+  const blocked = selected.filter(quotation => latest.get(quotation.seriesId || quotation.id)?.id !== quotation.id || !quotationBatchTransitionAllowed(quotation.status, nextStatus));
+  if (blocked.length) {
+    const details = blocked.slice(0, 8)
+      .map(quotation => `• ${quotation.number || "未編號"} / V${quotation.version || 1}（${statusLabel(quotation.status)}）`)
+      .join("\n");
+    return alert(`以下報價為舊版本、已作廢，或不允許從目前狀態改為「${statusLabel(nextStatus)}」，因此本次沒有修改任何資料：\n\n${details}`);
+  }
+  const changed = selected.filter(quotation => quotation.status !== nextStatus);
+  if (!changed.length) return alert("選取的報價目前已經是這個狀態");
+  const syncNotice = nextStatus === "confirmed" ? "\n\n這次只會修改報價狀態，不會自動回寫或建立專案。" : "";
+  if (!confirm(`確定將 ${changed.length} 筆報價改為「${statusLabel(nextStatus)}」？${syncNotice}`)) return;
+
+  const applyButton = $("#quotationBatchApply");
+  if (applyButton) applyButton.disabled = true;
+  try {
+    for (let offset = 0; offset < changed.length; offset += 400) {
+      const batch = writeBatch(db);
+      changed.slice(offset, offset + 400).forEach(quotation => {
+        batch.update(doc(db, "quotations", quotation.id), {
+          status: nextStatus,
+          updatedAt: serverTimestamp(),
+          updatedBy: state.user.uid
+        });
+      });
+      await batch.commit();
+    }
+    await logAction({
+      action: "batch_update",
+      module: "quotations",
+      targetType: "quotationBatch",
+      targetId: "",
+      targetName: `${changed.length} 筆報價`,
+      summary: `批次修改狀態為「${statusLabel(nextStatus)}」｜${changed.map(quotation => `${quotation.number || "未編號"} V${quotation.version || 1}`).join("、")}`
+    });
+    state.quotationSelectedIds.clear();
+    if ($("#quotationBatchStatus")) $("#quotationBatchStatus").value = "";
+    renderQuotations();
+    alert(`已完成 ${changed.length} 筆報價狀態更新。`);
+  } catch (error) {
+    console.error(error);
+    alert("批次更新失敗：請確認報價管理權限與網路狀態");
+    renderQuotations();
+  }
 }
 
 /* ------------------------- Preview and print ------------------------- */
@@ -1051,6 +1139,7 @@ function detach() {
   state.customers = [];
   state.quotationItems = [];
   state.quotations = [];
+  state.quotationSelectedIds.clear();
   state.projects = [];
   state.equipment = [];
   renderAllQuoteModules();
@@ -1130,6 +1219,22 @@ function bindEvents() {
   $("#quotationMonthFilter")?.addEventListener("change", resetQuotationPageAndRender);
   $("#quotationStatusFilter")?.addEventListener("change", resetQuotationPageAndRender);
   $("#quotationSort")?.addEventListener("change", resetQuotationPageAndRender);
+  $("#quotationSelectAll")?.addEventListener("change", event => {
+    $$(".quotation-select", $("#quotationTableBody")).forEach(input => {
+      if (input.disabled) return;
+      input.checked = event.target.checked;
+      if (event.target.checked) state.quotationSelectedIds.add(input.value);
+      else state.quotationSelectedIds.delete(input.value);
+    });
+    renderQuotations();
+  });
+  $("#quotationBatchStatus")?.addEventListener("change", renderQuotations);
+  $("#quotationBatchApply")?.addEventListener("click", applyQuotationBatchStatus);
+  $("#quotationBatchClear")?.addEventListener("click", () => {
+    state.quotationSelectedIds.clear();
+    if ($("#quotationBatchStatus")) $("#quotationBatchStatus").value = "";
+    renderQuotations();
+  });
   $("#quotationPagination")?.addEventListener("click", event => {
     const button = event.target.closest("button[data-page]");
     if (!button || button.disabled) return;
@@ -1217,6 +1322,7 @@ function bindEvents() {
   });
   $("#quotationPreviewCurrent")?.addEventListener("click", () => previewQuotation(previewDataFromForm()));
   $("#quotationTableBody")?.addEventListener("click", async event => {
+    if (event.target.closest(".quotation-select")) return;
     const preview = event.target.closest("[data-quotation-preview]");
     const edit = event.target.closest("[data-quotation-edit]");
     const version = event.target.closest("[data-quotation-version]");
@@ -1242,6 +1348,13 @@ function bindEvents() {
       await deleteDoc(doc(db, "quotations", quotation.id));
       await logAction({ action: "delete", module: "quotations", targetType: "quotation", targetId: quotation.id, targetName: `${quotation.number} / V${quotation.version || 1}`, summary: `${quotation.customerName || ""}｜${quotation.projectName || ""}` });
     }
+  });
+  $("#quotationTableBody")?.addEventListener("change", event => {
+    const input = event.target.closest(".quotation-select");
+    if (!input) return;
+    if (input.checked) state.quotationSelectedIds.add(input.value);
+    else state.quotationSelectedIds.delete(input.value);
+    renderQuotations();
   });
 
   document.addEventListener("click", event => {

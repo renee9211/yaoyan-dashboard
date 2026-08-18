@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css?v=phase3-v11-3" />
+  <link rel="stylesheet" href="styles.css?v=phase3-v11-5" />
 </head>
 
 <body>
@@ -106,6 +106,13 @@
 
       <div id="projectFilterChips" class="filter-chips" aria-live="polite"></div>
 
+      <div id="projectBatchBar" class="card batch-toolbar hidden" aria-live="polite">
+        <span id="projectBatchCount" class="batch-count">已選 0 筆</span>
+        <label class="field-inline batch-status-field"><span>批次修改狀態</span><select id="projectBatchStatus" class="select"><option value="">選擇狀態...</option><option value="planning">規劃中</option><option value="confirmed">已成案</option><option value="executing">執行中</option><option value="closed">已結案</option><option value="lost">流標 / 未成案</option></select></label>
+        <button id="projectBatchApply" class="btn primary small" type="button" disabled>套用狀態</button>
+        <button id="projectBatchClear" class="btn ghost small" type="button" disabled>取消選取</button>
+      </div>
+
       <div class="list-meta">
         <span id="projectResultCount">共 0 個專案</span>
       </div>
@@ -115,6 +122,7 @@
           <table class="projects-table">
             <thead>
               <tr>
+                <th class="batch-checkbox-column"><input id="projectSelectAll" class="batch-checkbox" type="checkbox" aria-label="選取本頁所有專案" /></th>
                 <th>客戶／專案</th>
                 <th>檔期／地點</th>
                 <th>狀態</th>
@@ -278,10 +286,17 @@
       </div>
       <div id="quotationProjectScope" class="quotation-project-scope hidden" aria-live="polite"></div>
 
+      <div id="quotationBatchBar" class="card batch-toolbar hidden" aria-live="polite">
+        <span id="quotationBatchCount" class="batch-count">已選 0 筆</span>
+        <label class="field-inline batch-status-field"><span>批次修改狀態</span><select id="quotationBatchStatus" class="select"><option value="">選擇狀態...</option><option value="draft">草稿</option><option value="sent">已寄出</option><option value="confirmed">已確認</option><option value="void">作廢</option></select></label>
+        <button id="quotationBatchApply" class="btn primary small" type="button" disabled>套用狀態</button>
+        <button id="quotationBatchClear" class="btn ghost small" type="button" disabled>取消選取</button>
+      </div>
+
       <div class="card table-card quotation-table-card">
         <div class="table-scroll">
           <table class="table quotation-table">
-            <thead><tr><th>報價編號</th><th>連結專案名稱</th><th>版本</th><th class="num quotation-price-heading">專案價<span>（含稅）</span></th><th>狀態</th><th class="quotation-date-heading">活動日期／更新日期</th><th>操作</th></tr></thead>
+            <thead><tr><th class="batch-checkbox-column"><input id="quotationSelectAll" class="batch-checkbox" type="checkbox" aria-label="選取本頁所有可修改報價" /></th><th>報價編號</th><th>連結專案名稱</th><th>版本</th><th class="num quotation-price-heading">專案價<span>（含稅）</span></th><th>狀態</th><th class="quotation-date-heading">活動日期／更新日期</th><th>操作</th></tr></thead>
             <tbody id="quotationTableBody"></tbody>
           </table>
         </div>
@@ -820,8 +835,8 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js"></script>
-  <script type="module" src="./quotations.js?v=phase3-v11-4"></script>
+  <script type="module" src="./app.js?v=phase3-v11-5"></script>
+  <script type="module" src="./quotations.js?v=phase3-v11-5"></script>
   <script type="module" src="./payments.js"></script>
   <script type="module" src="./finance.js"></script>
 </body>

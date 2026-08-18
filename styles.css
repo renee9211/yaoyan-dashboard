@@ -1061,6 +1061,22 @@ main, .topbar{ max-width:1440px; margin-left:auto; margin-right:auto; }
 }
 .filter-chips button span{ margin-left:4px; }
 .list-meta{ min-height:34px; display:flex; align-items:center; padding:10px 4px 5px; color:var(--muted); font-size:12px; font-weight:900; }
+.batch-toolbar{
+  display:flex;
+  align-items:flex-end;
+  gap:10px;
+  margin:10px 0;
+  padding:10px 12px;
+  border-color:rgba(255,126,0,.28);
+  background:rgba(255,126,0,.055);
+}
+.batch-toolbar.hidden{ display:none; }
+.batch-count{ min-width:78px; align-self:center; color:#9a4b00; font-size:13px; font-weight:1000; }
+.batch-status-field{ width:min(230px,100%); }
+.batch-toolbar .btn{ min-height:40px; }
+.batch-checkbox-column,.batch-checkbox-cell{ width:42px; min-width:42px; text-align:center !important; }
+.batch-checkbox{ width:18px; height:18px; accent-color:var(--orange); cursor:pointer; }
+.batch-checkbox:disabled{ cursor:not-allowed; opacity:.45; }
 .project-list-card{ margin-top:0; }
 .table-scroll{ overflow-x:auto; }
 .project-list-card .projects-table{ min-width:760px; }
@@ -1475,7 +1491,7 @@ body.drawer-open{ overflow:hidden; }
 .quotation-project-scope button{ border:0; padding:4px 7px; background:transparent; color:#9a4b00; cursor:pointer; font-weight:900; }
 .customer-table,.item-table,.quotation-table{ min-width:900px; }
 .item-table th{ white-space:nowrap; }
-.quotation-table{ min-width:1040px; }
+.quotation-table{ min-width:1090px; }
 .quotation-price-heading span{ display:block; }
 .quotation-date-heading{ white-space:nowrap; }
 .quote-kpi-grid{
@@ -1771,4 +1787,10 @@ body.drawer-open{ overflow:hidden; }
   #quotationPreviewModal .modal-head{ display:none; }
   #quotationPreviewModal .preview-body{ padding:0; background:#fff; overflow:visible; }
   .quote-a4{ box-shadow:none; margin:0; }
+}
+
+@media (max-width:640px){
+  .batch-toolbar{ align-items:stretch; flex-direction:column; }
+  .batch-count{ min-width:0; }
+  .batch-status-field{ width:100%; }
 }
