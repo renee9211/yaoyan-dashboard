@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css?v=phase3-v11-8" />
+  <link rel="stylesheet" href="styles.css?v=phase3-v12" />
 </head>
 
 <body>
@@ -806,10 +806,10 @@
 
           <section class="form-section"><div class="section-head"><h3>活動場次</h3><button id="quotationAddEvent" class="btn ghost small" type="button">＋ 新增場次</button></div><div id="quotationEvents" class="quote-events"></div></section>
 
-          <section class="form-section quote-lines-section"><div class="section-head"><div><h3>報價明細</h3><p class="field-help">「內部成交小計」僅供內部計算，報價單不會顯示。</p></div><div class="inline-actions"><select id="quotationCatalogPicker" class="select compact-select"><option value="">從常用項目新增…</option></select><button id="quotationAddRow" class="btn ghost small" type="button">＋ 空白列</button></div></div><div class="quote-lines-scroll"><table class="quote-lines-table"><thead><tr><th>場次</th><th>類別／項目</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>計價</th><th>續日%</th><th>原價小計</th><th>內部成交小計</th><th>備註</th><th>順序／操作</th></tr></thead><tbody id="quotationRows"></tbody></table></div></section>
+          <section class="form-section quote-lines-section"><div class="section-head"><div><h3>報價明細</h3><p class="field-help">勾選「套用至 PDF」時，報價小計會使用目前的計價方式；內部分項金額請由「分配專案價」調整。</p></div><div class="inline-actions"><select id="quotationCatalogPicker" class="select compact-select"><option value="">從常用項目新增…</option></select><button id="quotationAddRow" class="btn ghost small" type="button">＋ 空白列</button></div></div><div class="quote-lines-scroll"><table class="quote-lines-table"><thead><tr><th>場次</th><th>類別／項目</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>計價</th><th>續日%</th><th>報價小計</th><th>備註</th><th>順序／操作</th></tr></thead><tbody id="quotationRows"></tbody></table></div></section>
 
           <section class="form-section quote-summary-section"><div class="quote-summary-layout"><div><h3>付款條件與備註</h3><textarea id="quotationTerms" class="textarea" rows="8"></textarea><label class="field quote-note-field"><span>其他備註</span><textarea id="quotationNote" class="textarea" rows="3"></textarea></label></div><div class="quote-totals">
-            <div><span>原價未稅合計</span><b id="quotationSubtotal">0</b></div><div><span>內部成交未稅合計</span><b id="quotationDealSubtotal">0</b></div><div><span>系統計算含稅價</span><b id="quotationCalculatedPrice">0</b></div>
+            <div><span>報價未稅合計</span><b id="quotationSubtotal">0</b></div><div class="quote-allocation-row"><span>專案價分配</span><div class="quote-allocation-action"><button id="quotationOpenAllocation" class="btn ghost small" type="button">分配專案價</button><small id="quotationAllocationStatus" class="allocation-status">分配完成</small></div></div><div><span>系統計算含稅價</span><b id="quotationCalculatedPrice">0</b></div>
             <label><span>專案價（含稅）</span><input id="quotationProjectPrice" class="input money-input" inputmode="numeric" placeholder="預設帶入系統計算含稅價" /><button id="quotationUseCalculatedPrice" class="btn ghost small quote-use-calculated" type="button">帶入系統計算</button></label>
           </div></div></section>
         </div>
@@ -817,6 +817,9 @@
       </form>
     </aside>
   </div>
+
+  <!-- 專案價分配 Modal -->
+  <div id="quotationAllocationModal" class="modal hidden"><div class="modal-card allocation-modal-card"><div class="modal-head"><div><div class="modal-title">分配專案價</div><div class="field-help">內部分項金額不會顯示在 PDF，可用來分配全案額外折扣。</div></div><button id="quotationAllocationClose" class="icon-btn" type="button">✕</button></div><div class="modal-body allocation-modal-body"><div class="allocation-table-scroll"><table class="allocation-table"><thead><tr><th>項目</th><th>報價小計</th><th>內部分項金額</th></tr></thead><tbody id="quotationAllocationRows"></tbody></table></div><div class="allocation-summary"><div><span>專案價未稅目標</span><b id="quotationAllocationTarget">0</b></div><div><span>目前分項合計</span><b id="quotationAllocationTotal">0</b></div><div><span>分配狀態</span><b id="quotationAllocationModalStatus" class="allocation-status">分配完成</b></div></div></div><div class="modal-actions allocation-modal-actions"><button id="quotationAllocationReset" class="btn ghost" type="button">依報價小計重新帶入</button><button id="quotationAllocationDone" class="btn primary" type="button">完成</button></div></div></div>
 
   <!-- A4 報價預覽 Modal -->
   <div id="quotationPreviewModal" class="modal hidden"><div class="modal-card preview-modal-card"><div class="modal-head"><div class="modal-title">報價單預覽</div><div class="inline-actions"><button id="quotationPrint" class="btn primary small" type="button">列印／另存 PDF</button><button id="quotationPreviewClose" class="icon-btn" type="button">✕</button></div></div><div id="quotationPreviewBody" class="modal-body preview-body"></div></div></div>
@@ -842,7 +845,7 @@
   </div>
 
   <script type="module" src="./app.js?v=phase3-v11-5"></script>
-  <script type="module" src="./quotations.js?v=phase3-v11-9"></script>
+  <script type="module" src="./quotations.js?v=phase3-v12"></script>
   <script type="module" src="./payments.js?v=phase3-v11-8"></script>
   <script type="module" src="./finance.js?v=phase3-v11-6"></script>
 </body>
