@@ -1310,7 +1310,9 @@ function bindEvents() {
   $("#quotationRows")?.addEventListener("input", event => {
     const row = event.target.closest(".quotation-line");
     if (!row) return;
-    if (event.target.matches(".row-deal-subtotal")) row.dataset.dealSubtotalMode = "manual";
+    if (event.target.matches(".row-deal-subtotal")) {
+      row.dataset.dealSubtotalMode = event.target.value.trim() ? "manual" : "auto";
+    }
     if (event.target.matches(".row-mode")) syncLineMode(row);
     recalcQuotation();
   });
