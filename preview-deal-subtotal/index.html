@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="styles.css?v=phase3-v11-8" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div>
+      <h1>曜炎創意娛樂 Dashboard</h1>
+      <p class="subtitle">專案、報價、請款收款、財務、設備檔期與月報表一站管理</p>
+    </div>
+
+    <div class="topbar-right">
+      <span id="todayLabel"></span>
+      <!-- 右上角登入 UI 由 app.js 動態塞入 -->
+    </div>
+  </header>
+
+  <main>
+    <nav class="tabs" aria-label="主要功能">
+      <div class="tab-group has-active">
+        <span class="tab-group-label">專案類</span>
+        <div class="tab-group-buttons">
+          <button class="tab-button active" data-tab="projects">專案管理</button>
+          <button class="tab-button" data-tab="calendar">行事曆</button>
+        </div>
+      </div>
+
+      <div class="tab-group">
+        <span class="tab-group-label">報價與客戶</span>
+        <div class="tab-group-buttons">
+          <button class="tab-button" data-tab="quotations">報價管理</button>
+          <button class="tab-button" data-tab="customers">客戶管理</button>
+          <button class="tab-button" data-tab="quotation-items">常用報價項目</button>
+        </div>
+      </div>
+
+      <div class="tab-group">
+        <span class="tab-group-label">財務類</span>
+        <div class="tab-group-buttons">
+          <button class="tab-button" data-tab="payments">請款／收款</button>
+          <button class="tab-button" data-tab="finance">財務總覽</button>
+          <button class="tab-button" data-tab="report">月報表</button>
+        </div>
+      </div>
+
+      <div class="tab-group">
+        <span class="tab-group-label">設備與系統</span>
+        <div class="tab-group-buttons">
+          <button class="tab-button" data-tab="equipments">設備清單</button>
+          <button class="tab-button system-tab-button hidden" data-tab="system">系統管理</button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ===================== 專案管理 ===================== -->
+    <section id="tab-projects" class="tab-panel active">
+      <div class="panel-head">
+        <div>
+          <h2>專案管理</h2>
+          <p class="hint">搜尋、篩選或排序專案，點選整列可展開完整資料。</p>
+        </div>
+        <button id="projectOpenCreate" class="btn primary" type="button">＋ 新增專案</button>
+      </div>
+
+      <div class="card project-toolbar">
+        <label class="toolbar-search">
+          <span class="sr-only">搜尋專案</span>
+          <input id="projectSearch" class="input" type="search" placeholder="搜尋專案、客戶或地點" />
+        </label>
+
+        <label class="field-inline">
+          <span>月份</span>
+          <input id="projectMonthFilter" class="input" type="month" />
+        </label>
+
+        <div class="filter-field">
+          <span class="filter-field-label">狀態</span>
+          <details id="projectStatusFilter" class="filter-menu">
+            <summary><b id="projectStatusSummary">全部狀態</b></summary>
+            <div class="filter-menu-pop" id="projectStatusOptions">
+              <label><input type="checkbox" value="planning" /> <span>規劃中</span><small data-count="planning">0</small></label>
+              <label><input type="checkbox" value="confirmed" /> <span>已成案</span><small data-count="confirmed">0</small></label>
+              <label><input type="checkbox" value="executing" /> <span>執行中</span><small data-count="executing">0</small></label>
+              <label><input type="checkbox" value="closed" /> <span>已結案</span><small data-count="closed">0</small></label>
+              <label><input type="checkbox" value="lost" /> <span>流標 / 未成案</span><small data-count="lost">0</small></label>
+            </div>
+          </details>
+        </div>
+
+        <label class="field-inline">
+          <span>排序</span>
+          <select id="projectSortBy" class="select">
+            <option value="updatedDesc">最近更新</option>
+            <option value="startAsc">開始日（近→遠）</option>
+            <option value="startDesc">開始日（遠→近）</option>
+          </select>
+        </label>
+
+        <button id="projectClearFilters" class="btn ghost small filter-clear hidden" type="button">清除篩選</button>
+      </div>
+
+      <div id="projectFilterChips" class="filter-chips" aria-live="polite"></div>
+
+      <div id="projectBatchBar" class="card batch-toolbar hidden" aria-live="polite">
+        <span id="projectBatchCount" class="batch-count">已選 0 筆</span>
+        <label class="field-inline batch-status-field"><span>批次修改狀態</span><select id="projectBatchStatus" class="select"><option value="">選擇狀態...</option><option value="planning">規劃中</option><option value="confirmed">已成案</option><option value="executing">執行中</option><option value="closed">已結案</option><option value="lost">流標 / 未成案</option></select></label>
+        <button id="projectBatchApply" class="btn primary small" type="button" disabled>套用狀態</button>
+        <button id="projectBatchClear" class="btn ghost small" type="button" disabled>取消選取</button>
+      </div>
+
+      <div class="list-meta">
+        <span id="projectResultCount">共 0 個專案</span>
+      </div>
+
+      <div class="card table-card project-list-card">
+        <div class="table-scroll">
+          <table class="projects-table">
+            <thead>
+              <tr>
+                <th class="batch-checkbox-column"><input id="projectSelectAll" class="batch-checkbox" type="checkbox" aria-label="選取本頁所有專案" /></th>
+                <th>客戶／專案</th>
+                <th>檔期／地點</th>
+                <th>狀態</th>
+                <th style="text-align:right;">案件毛利</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="projectTableBody"></tbody>
+          </table>
+        </div>
+        <div id="projectPagination" class="pagination"></div>
+      </div>
+    </section>
+
+    <!-- ===================== 財務總覽 ===================== -->
+    <section id="tab-finance" class="tab-panel">
+      <div class="panel-head">
+        <div>
+          <h2>財務總覽</h2>
+          <p class="hint">應收只計算「已請款但尚未收到」的金額；未請款的專案尾款不會混入應收帳款。</p>
+        </div>
+        <div class="panel-actions">
+          <button id="expenseOpenCreate" class="btn primary" type="button">＋ 新增外部支出</button>
+          <button id="companyExpenseOpenCreate" class="btn primary soft" type="button">＋ 新增公司支出</button>
+          <button id="financeExportCsv" class="btn ghost" type="button">匯出應收 CSV</button>
+        </div>
+      </div>
+
+      <div class="card finance-toolbar">
+        <label class="toolbar-search"><span class="sr-only">搜尋財務資料</span><input id="financeSearch" class="input" type="search" placeholder="搜尋客戶、專案、發票、廠商或備註" /></label>
+        <label class="field-inline"><span>客戶</span><select id="financeCustomerFilter" class="select"><option value="all">全部客戶</option></select></label>
+        <label class="field-inline"><span>支出明細月份</span><input id="financeMonth" class="input" type="month" /></label>
+        <label class="field-inline"><span>帳齡基準日</span><input id="financeAsOfDate" class="input" type="date" /></label>
+        <button id="financeClearFilters" class="btn ghost small filter-clear hidden" type="button">清除篩選</button>
+      </div>
+
+      <div class="finance-kpi-grid">
+        <div class="finance-kpi primary"><span>已請款未收</span><b id="financeReceivableTotal">0</b><small>所有未作廢且已請款款項</small></div>
+        <div class="finance-kpi danger"><span>逾期未收</span><b id="financeOverdueTotal">0</b><small id="financeOverdueCount">0 筆逾期</small></div>
+        <div class="finance-kpi warning"><span>未來 30 天預計收款</span><b id="financeNext30Total">0</b><small id="financeNext30Count">0 筆即將到期</small></div>
+      </div>
+
+      <section class="finance-section">
+        <div class="finance-section-head"><div><h3>廠商應付帳款</h3><p>只列新版有啟用付款追蹤、尚未付款的專案與公司支出；舊支出預設視為已付款。</p></div><div class="finance-section-actions"><span id="financePayableResultCount">共 0 筆</span><label class="field-inline finance-sort-field"><span>排序</span><select id="financePayableSort" class="select"><option value="dateAsc">到期日｜近到遠</option><option value="dateDesc">到期日｜遠到近</option><option value="amountDesc">金額｜高到低</option><option value="amountAsc">金額｜低到高</option><option value="nameAsc">廠商｜A–Z</option><option value="nameDesc">廠商｜Z–A</option></select></label></div></div>
+        <div class="payable-kpi-grid">
+          <div class="aging-card"><span>應付未付</span><b id="financePayableTotal">0</b><small id="financePayableCount">0 筆</small></div>
+          <div class="aging-card critical"><span>逾期未付</span><b id="financePayableOverdue">0</b><small id="financePayableOverdueCount">0 筆</small></div>
+          <div class="aging-card current"><span>未來 30 天到期</span><b id="financePayableNext30">0</b><small id="financePayableNext30Count">0 筆</small></div>
+        </div>
+        <div class="card table-card"><div class="table-scroll"><table class="table payable-table"><thead><tr><th>預計付款日</th><th>廠商／項目</th><th>來源</th><th class="num">應付金額</th><th>狀態</th></tr></thead><tbody id="financePayableBody"></tbody></table></div><div id="financePayablePagination" class="pagination"></div></div>
+      </section>
+
+      <section class="finance-section">
+        <div class="finance-section-head"><div><h3>應收帳齡</h3><p>依「預計收款日」相對於基準日計算；沒有預計收款日的款項獨立列出。</p></div></div>
+        <div class="aging-grid">
+          <div class="aging-card current"><span>未到期</span><b id="agingCurrent">0</b><small id="agingCurrentCount">0 筆</small></div>
+          <div class="aging-card"><span>逾期 1–30 天</span><b id="aging30">0</b><small id="aging30Count">0 筆</small></div>
+          <div class="aging-card"><span>逾期 31–60 天</span><b id="aging60">0</b><small id="aging60Count">0 筆</small></div>
+          <div class="aging-card"><span>逾期 61–90 天</span><b id="aging90">0</b><small id="aging90Count">0 筆</small></div>
+          <div class="aging-card critical"><span>逾期 91 天以上</span><b id="aging91">0</b><small id="aging91Count">0 筆</small></div>
+          <div class="aging-card unknown"><span>未設定收款日</span><b id="agingUnknown">0</b><small id="agingUnknownCount">0 筆</small></div>
+        </div>
+      </section>
+
+      <section class="finance-section">
+        <div class="finance-section-head"><div><h3>外部支出明細</h3><p>記錄已確認的專案成本；付款日另行追蹤，含稅金額會自動換算為未稅成本供毛利計算。</p></div><div class="finance-section-actions"><span id="expenseResultCount">共 0 筆</span><label class="field-inline finance-sort-field"><span>排序</span><select id="expenseSort" class="select"><option value="dateDesc">成本日｜近到遠</option><option value="dateAsc">成本日｜遠到近</option><option value="amountDesc">金額｜高到低</option><option value="amountAsc">金額｜低到高</option><option value="nameAsc">專案｜A–Z</option><option value="nameDesc">專案｜Z–A</option></select></label></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table expense-table"><thead><tr><th>成本日期</th><th>專案／客戶</th><th>類別／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅成本</th><th>付款狀態</th><th>備註</th><th>操作</th></tr></thead><tbody id="expenseTableBody"></tbody></table></div><div id="expensePagination" class="pagination"></div></div>
+      </section>
+
+      <section class="finance-section">
+        <div class="finance-section-head"><div><h3>公司支出明細</h3><p>不連結單一專案；房租等列為營運支出，設備購買則列為資本支出。</p></div><span id="companyExpenseResultCount">共 0 筆</span></div>
+        <div class="card company-expense-toolbar">
+          <label class="toolbar-search"><span class="sr-only">搜尋公司支出</span><input id="companyExpenseSearch" class="input" type="search" placeholder="搜尋項目、廠商、發票或備註" /></label>
+          <label class="field-inline"><span>類別</span><select id="companyExpenseCategoryFilter" class="select"><option value="all">全部類別</option><option value="rent">房租／倉租</option><option value="utilities">水電／網路／電話</option><option value="payroll">薪資／勞務／獎金</option><option value="insurance">保險／勞健保</option><option value="software">軟體／訂閱</option><option value="equipment_purchase">設備購買</option><option value="equipment_maintenance">設備維修／保養</option><option value="office">辦公／行政</option><option value="marketing">行銷／業務</option><option value="professional">專業服務／稅務</option><option value="other">其他</option></select></label>
+          <label class="field-inline"><span>排序</span><select id="companyExpenseSort" class="select"><option value="dateDesc">成本日｜近到遠</option><option value="dateAsc">成本日｜遠到近</option><option value="amountDesc">金額｜高到低</option><option value="amountAsc">金額｜低到高</option><option value="nameAsc">項目｜A–Z</option><option value="nameDesc">項目｜Z–A</option></select></label>
+          <button id="companyExpenseExportCsv" class="btn ghost" type="button">匯出公司支出 CSV</button>
+          <button id="companyExpenseClearFilters" class="btn ghost small filter-clear hidden" type="button">清除篩選</button>
+        </div>
+        <div class="card table-card"><div class="table-scroll"><table class="table company-expense-table"><thead><tr><th>成本日期</th><th>性質／類別</th><th>項目／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅金額</th><th>付款狀態</th><th>發票／憑證</th><th>連結設備</th><th>備註</th><th>操作</th></tr></thead><tbody id="companyExpenseTableBody"></tbody></table></div><div id="companyExpensePagination" class="pagination"></div></div>
+      </section>
+
+      <section class="finance-section">
+        <div class="finance-section-head"><div><h3>未來 30 天預計收款</h3><p>僅列出已請款、仍有未收金額，且預計收款日在基準日起 30 天內的款項。</p></div><div class="finance-section-actions"><span id="financeNext30ResultCount">共 0 筆</span><label class="field-inline finance-sort-field"><span>排序</span><select id="financeNext30Sort" class="select"><option value="dateAsc">收款日｜近到遠</option><option value="dateDesc">收款日｜遠到近</option><option value="amountDesc">金額｜高到低</option><option value="amountAsc">金額｜低到高</option><option value="nameAsc">客戶｜A–Z</option><option value="nameDesc">客戶｜Z–A</option></select></label></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table finance-due-table"><thead><tr><th>預計收款日</th><th>客戶／專案</th><th>款項／發票</th><th class="num">應收</th><th class="num">已收</th><th class="num">本次預計收款</th></tr></thead><tbody id="financeNext30Body"></tbody></table></div><div id="financeNext30Pagination" class="pagination"></div></div>
+      </section>
+
+      <section class="finance-section">
+        <div class="finance-section-head"><div><h3>應收帳款明細</h3><p>列出所有已請款、尚未收清的款項。</p></div><div class="finance-section-actions"><span id="financeReceivableCount">共 0 筆</span><label class="field-inline finance-sort-field"><span>排序</span><select id="financeReceivableSort" class="select"><option value="dateAsc">收款日｜近到遠</option><option value="dateDesc">收款日｜遠到近</option><option value="amountDesc">未收｜高到低</option><option value="amountAsc">未收｜低到高</option><option value="nameAsc">客戶｜A–Z</option><option value="nameDesc">客戶｜Z–A</option></select></label></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table finance-ar-table"><thead><tr><th>客戶／專案</th><th>款項</th><th>請款／發票</th><th>預計收款</th><th class="num">應收</th><th class="num">已收</th><th class="num">未收</th><th>帳齡</th></tr></thead><tbody id="financeReceivableBody"></tbody></table></div><div id="financeReceivablePagination" class="pagination"></div></div>
+      </section>
+
+    </section>
+
+    <!-- ===================== 請款／收款管理 ===================== -->
+    <section id="tab-payments" class="tab-panel">
+      <div class="panel-head">
+        <div>
+          <h2>請款／收款管理</h2>
+          <p class="hint">直接串接既有專案；同一專案可建立訂金、尾款、全額款或其他多筆款項。</p>
+        </div>
+        <button id="paymentOpenCreate" class="btn primary" type="button">＋ 新增款項</button>
+      </div>
+
+      <div class="payment-kpi-grid standard-finance-kpis">
+        <div class="mini-kpi"><span>專案價（含稅）</span><b id="paymentProjectTotal">0</b></div>
+        <div class="mini-kpi"><span>已請款</span><b id="paymentInvoicedTotal">0</b></div>
+        <div class="mini-kpi"><span>尚未請款</span><b id="paymentUnbilledTotal">0</b><small>專案價－已請款</small></div>
+        <div class="mini-kpi payment-outstanding-kpi"><span>應收帳款</span><b id="paymentReceivableTotal">0</b><small>已請款－已收款</small></div>
+        <div class="mini-kpi"><span>已收款</span><b id="paymentReceivedTotal">0</b></div>
+        <div class="mini-kpi"><span>全案待收</span><b id="paymentOutstandingTotal">0</b><small>專案價－已收款</small></div>
+      </div>
+
+      <div class="card project-toolbar payment-toolbar">
+        <label class="field-inline toolbar-search"><span>關鍵字</span><input id="paymentSearch" class="input" type="search" placeholder="搜尋專案、客戶、款項或發票" /></label>
+        <label class="field-inline"><span>月份</span><input id="paymentMonthFilter" class="input" type="month" /></label>
+        <label class="field-inline"><span>收款狀態</span><select id="paymentStatusFilter" class="select"><option value="all">全部狀態</option><option value="pending">待請款</option><option value="requested">已請款待收</option><option value="partial">部分收款</option><option value="paid">已收款</option><option value="overdue">逾期未收</option><option value="pricePending">總價待確認</option></select></label>
+        <label class="field-inline"><span>案況</span><select id="paymentProjectStatusFilter" class="select"><option value="all">全部案況</option><option value="planning">規劃中</option><option value="confirmed">已成案</option><option value="executing">執行中</option><option value="closed">已結案</option></select></label>
+        <label class="field-inline"><span>排序</span><select id="paymentSort" class="select"><option value="statusAsc">收款狀態｜需處理優先</option><option value="statusDesc">收款狀態｜已完成優先</option><option value="dateAsc">活動日期｜近到遠</option><option value="dateDesc">活動日期｜遠到近</option><option value="nameAsc">專案名稱｜A–Z</option><option value="nameDesc">專案名稱｜Z–A</option><option value="outstandingDesc">全案待收｜高到低</option><option value="outstandingAsc">全案待收｜低到高</option></select></label>
+        <button id="paymentClearFilters" class="btn ghost small filter-clear hidden" type="button">清除篩選</button>
+      </div>
+
+      <div class="list-meta"><span id="paymentResultCount">共 0 個專案</span></div>
+      <div class="card table-card payment-table-card">
+        <div class="table-scroll">
+          <table class="table payment-project-table">
+            <colgroup>
+              <col class="payment-col-project" />
+              <col class="payment-col-date" />
+              <col class="payment-col-total" />
+              <col class="payment-col-invoiced" />
+              <col class="payment-col-invoiced" />
+              <col class="payment-col-invoiced" />
+              <col class="payment-col-received" />
+              <col class="payment-col-outstanding" />
+              <col class="payment-col-status" />
+              <col class="payment-col-actions" />
+            </colgroup>
+            <thead><tr><th>專案／客戶</th><th>活動日期／案況</th><th class="num">專案價（含稅）</th><th class="num">已請款</th><th class="num">尚未請款</th><th class="num">應收帳款</th><th class="num">已收款</th><th class="num">全案待收</th><th>收款狀態</th><th>操作</th></tr></thead>
+            <tbody id="paymentProjectTableBody"></tbody>
+          </table>
+        </div>
+        <div id="paymentPagination" class="pagination"></div>
+      </div>
+    </section>
+
+    <!-- ===================== 報價管理 ===================== -->
+    <section id="tab-quotations" class="tab-panel">
+      <div class="panel-head">
+        <div>
+          <h2>報價管理</h2>
+          <p class="hint">保留每一版報價；只有「已確認」的版本才能選擇回寫專案金額。</p>
+        </div>
+        <button id="quotationOpenCreate" class="btn primary" type="button">＋ 新增報價</button>
+      </div>
+
+      <div class="quote-kpi-grid">
+        <div class="mini-kpi"><span>報價系列</span><b id="quotationSeriesCount">0</b></div>
+        <div class="mini-kpi"><span>草稿／已寄出</span><b id="quotationOpenCount">0</b></div>
+        <div class="mini-kpi"><span>已確認金額</span><b id="quotationConfirmedTotal">0</b></div>
+      </div>
+
+      <div class="card project-toolbar quote-toolbar">
+        <label class="field-inline toolbar-search"><span>關鍵字</span><input id="quotationSearch" class="input" type="search" placeholder="報價編號、專案或客戶" /></label>
+        <label class="field-inline"><span>月份</span><input id="quotationMonthFilter" class="input" type="month" /></label>
+        <label class="field-inline"><span>狀態</span><select id="quotationStatusFilter" class="select"><option value="all">全部狀態</option><option value="draft">草稿</option><option value="sent">已寄出</option><option value="confirmed">已確認</option><option value="void">作廢</option></select></label>
+        <label class="field-inline"><span>排序</span><select id="quotationSort" class="select"><option value="dateAsc">活動日期｜近到遠</option><option value="dateDesc">活動日期｜遠到近</option><option value="nameAsc">名稱｜A–Z</option><option value="nameDesc">名稱｜Z–A</option><option value="statusAsc">狀態｜草稿到作廢</option><option value="statusDesc">狀態｜作廢到草稿</option></select></label>
+      </div>
+      <div id="quotationProjectScope" class="quotation-project-scope hidden" aria-live="polite"></div>
+
+      <div id="quotationBatchBar" class="card batch-toolbar hidden" aria-live="polite">
+        <span id="quotationBatchCount" class="batch-count">已選 0 筆</span>
+        <label class="field-inline batch-status-field"><span>批次修改狀態</span><select id="quotationBatchStatus" class="select"><option value="">選擇狀態...</option><option value="draft">草稿</option><option value="sent">已寄出</option><option value="confirmed">已確認</option><option value="void">作廢</option></select></label>
+        <button id="quotationBatchApply" class="btn primary small" type="button" disabled>套用狀態</button>
+        <button id="quotationBatchClear" class="btn ghost small" type="button" disabled>取消選取</button>
+      </div>
+
+      <div class="card table-card quotation-table-card">
+        <div class="table-scroll">
+          <table class="table quotation-table">
+            <thead><tr><th class="batch-checkbox-column"><input id="quotationSelectAll" class="batch-checkbox" type="checkbox" aria-label="選取本頁所有可修改報價" /></th><th>報價編號</th><th>連結專案名稱</th><th>版本</th><th class="num quotation-price-heading">專案價<span>（含稅）</span></th><th>狀態</th><th class="quotation-date-heading">活動日期／更新日期</th><th>操作</th></tr></thead>
+            <tbody id="quotationTableBody"></tbody>
+          </table>
+        </div>
+        <div id="quotationPagination" class="pagination"></div>
+      </div>
+    </section>
+
+    <!-- ===================== 客戶管理 ===================== -->
+    <section id="tab-customers" class="tab-panel">
+      <div class="panel-head">
+        <div><h2>客戶管理</h2><p class="hint">新專案與新報價可選擇客戶；舊專案不必補填或轉換。</p></div>
+        <button id="customerOpenCreate" class="btn primary" type="button">＋ 新增客戶</button>
+      </div>
+      <div class="card project-toolbar simple-toolbar"><label class="toolbar-search"><span class="sr-only">搜尋客戶</span><input id="customerSearch" class="input" type="search" placeholder="搜尋公司、窗口、電話或 Email" /></label></div>
+      <div class="card table-card"><div class="table-scroll"><table class="table customer-table"><thead><tr><th>客戶／公司</th><th>統一編號</th><th>主要窗口</th><th>付款條件</th><th>聯絡方式</th><th>操作</th></tr></thead><tbody id="customerTableBody"></tbody></table></div></div>
+    </section>
+
+    <!-- ===================== 常用報價項目 ===================== -->
+    <section id="tab-quotation-items" class="tab-panel">
+      <div class="panel-head">
+        <div><h2>常用報價項目</h2><p class="hint">作為建立報價時的預設值；點選表格欄位可排序，歷史報價仍保存建立當下的快照。</p></div>
+        <button id="quoteItemOpenCreate" class="btn primary" type="button">＋ 新增項目</button>
+      </div>
+      <div class="card project-toolbar simple-toolbar"><label class="toolbar-search"><span class="sr-only">搜尋品項</span><input id="quoteItemSearch" class="input" type="search" placeholder="搜尋類別、項目或單位" /></label></div>
+      <div class="card table-card"><div class="table-scroll"><table class="table item-table"><thead><tr>
+        <th><button class="sort-head active" type="button" data-quote-item-sort="category">類別 <span>↑</span></button></th>
+        <th><button class="sort-head" type="button" data-quote-item-sort="name">項目 <span></span></button></th>
+        <th class="num"><button class="sort-head" type="button" data-quote-item-sort="unitPrice">預設單價 <span></span></button></th>
+        <th><button class="sort-head" type="button" data-quote-item-sort="unit">單位 <span></span></button></th>
+        <th><button class="sort-head" type="button" data-quote-item-sort="calcMode">計價方式 <span></span></button></th>
+        <th><button class="sort-head" type="button" data-quote-item-sort="equipmentName">連結設備 <span></span></button></th>
+        <th>操作</th>
+      </tr></thead><tbody id="quoteItemTableBody"></tbody></table></div></div>
+    </section>
+
+    <!-- ===================== 系統管理 ===================== -->
+    <section id="tab-system" class="tab-panel">
+      <div class="panel-head"><div><h2>系統管理</h2><p class="hint">權限變更由 admin 管理；操作紀錄建立後不可修改或刪除。</p></div></div>
+      <section id="userPermissionSection" class="finance-section hidden">
+        <div class="finance-section-head"><div><h3>使用者與細分權限</h3><p>角色提供預設值，也可逐項調整；永久刪除資料仍只限 admin。</p></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table permission-table"><thead><tr><th>使用者</th><th>核准狀態</th><th>角色</th><th>新增專案</th><th>編輯專案</th><th>報價</th><th>請款收款</th><th>專案外部支出</th><th>公司支出</th><th>新增設備</th><th>編輯設備</th><th>客戶</th><th>常用品項</th><th>操作紀錄</th><th>操作</th></tr></thead><tbody id="userPermissionBody"></tbody></table></div></div>
+      </section>
+      <section id="auditLogSection" class="finance-section hidden">
+        <div class="finance-section-head"><div><h3>操作紀錄</h3><p>記錄第三階段上線後，網站內的新增、修改、作廢、同步與刪除操作。</p></div></div>
+        <div class="card audit-toolbar"><label class="toolbar-search"><span class="sr-only">搜尋操作紀錄</span><input id="auditSearch" class="input" type="search" placeholder="搜尋使用者、專案、客戶或摘要" /></label><label class="field-inline"><span>模組</span><select id="auditModuleFilter" class="select"><option value="all">全部模組</option><option value="projects">專案</option><option value="quotations">報價</option><option value="payments">請款／收款</option><option value="expenses">專案外部支出</option><option value="companyExpenses">公司支出</option><option value="customers">客戶</option><option value="catalog">常用品項</option><option value="equipment">設備</option><option value="permissions">權限</option></select></label></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table audit-table"><thead><tr><th>時間</th><th>使用者</th><th>模組</th><th>動作</th><th>對象</th><th>內容</th></tr></thead><tbody id="auditLogBody"></tbody></table></div></div>
+      </section>
+      <div id="systemNoAccess" class="card empty-state hidden">你目前沒有查看系統管理的權限。</div>
+    </section>
+
+    <!-- ===================== 設備清單 ===================== -->
+    <section id="tab-equipments" class="tab-panel">
+      <div class="panel-head">
+        <div>
+          <h2>設備清單</h2>
+          <p class="hint">設備可依類別管理；新增或編輯後，專案設備與常用報價項目的選單會自動刷新。</p>
+        </div>
+        <div class="panel-actions equipment-panel-actions">
+          <input id="equipmentSearch" class="input compact-search" type="search" placeholder="搜尋類別、設備或備註" />
+          <button id="equipmentOpenCreate" class="btn primary" type="button">＋ 新增設備</button>
+        </div>
+      </div>
+
+      <div class="card table-card">
+        <div class="table-scroll"><table class="table equipment-table">
+          <thead>
+            <tr>
+              <th><button class="sort-head" type="button" data-equipment-sort="category">類別 <span></span></button></th>
+              <th><button class="sort-head active" type="button" data-equipment-sort="name">設備 <span>↑</span></button></th>
+              <th class="num"><button class="sort-head" type="button" data-equipment-sort="qty">數量 <span></span></button></th>
+              <th>資產資料</th>
+              <th class="num">每台每日折舊估算</th>
+              <th>備註</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="equipmentTableBody"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ===================== 行事曆 ===================== -->
+    <section id="tab-calendar" class="tab-panel">
+      <div class="panel-head">
+        <div>
+          <h2>行事曆</h2>
+          <p id="calendarHint" class="hint">查看每日設備需求、庫存與超用狀況。</p>
+        </div>
+
+        <div class="panel-actions calendar-controls">
+          <div class="calendar-view-field">
+            <span>顯示方式</span>
+            <div class="segmented calendar-view-toggle" role="group" aria-label="行事曆顯示方式">
+              <button class="seg-btn active" type="button" data-calendar-view="equipment" aria-pressed="true">設備檔期</button>
+              <button class="seg-btn" type="button" data-calendar-view="projects" aria-pressed="false">專案檔期</button>
+            </div>
+          </div>
+          <label class="field-inline">
+            <span>月份</span>
+            <input id="calendarMonth" class="input" type="month" />
+          </label>
+        </div>
+      </div>
+
+      <div id="calendarLegend" class="calendar-legend" aria-live="polite"></div>
+      <div class="calendar-scroll">
+        <div class="calendar-weekdays" aria-hidden="true">
+          <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+        </div>
+        <div id="calendarGrid" class="calendar-grid" data-view="equipment"></div>
+      </div>
+    </section>
+
+    <!-- ===================== 月報表 ===================== -->
+    <section id="tab-report" class="tab-panel">
+      <div class="panel-head">
+        <div>
+          <h2>月報表</h2>
+          <p class="hint">「檔期專案金額」統計該月有執行檔期的案件，並非會計營收；本月請款與實收則依各自日期歸月。</p>
+        </div>
+
+        <div class="panel-actions">
+          <input id="reportMonth" class="input" type="month" />
+          <button id="exportCsv" class="btn ghost" type="button">匯出 CSV</button>
+        </div>
+      </div>
+
+      <!-- ✅ KPI 左大右小 -->
+      <div class="report-kpi">
+        <div class="kpi-card big">
+          <div class="kpi-label">檔期專案金額（未稅）</div>
+          <div class="kpi-value" id="kpiMonthRevenue">0</div>
+          <div class="kpi-sub">
+            <span class="kpi-dot">檔期案件毛利：<span id="kpiMonthProfit">0</span></span>
+            <span class="kpi-dot">已結案營收：<span id="kpiClosedRevenue">0</span></span>
+          </div>
+        </div>
+
+        <div class="kpi-card c1">
+          <div class="kpi-label">本月已請款（含稅）</div>
+          <div class="kpi-value" id="kpiConfirmedQuote">0</div>
+        </div>
+
+        <div class="kpi-card c2">
+          <div class="kpi-label">本月已收款（含稅）</div>
+          <div class="kpi-value" id="kpiReceivedAmount">0</div>
+        </div>
+
+        <div class="kpi-card c3">
+          <div class="kpi-label">本月專案數（跨檔期）</div>
+          <div class="kpi-value" id="kpiMonthProjects">0</div>
+        </div>
+      </div>
+
+      <div class="report-company-grid">
+        <div class="kpi-card"><div class="kpi-label">公司營運支出（未稅）</div><div class="kpi-value" id="reportCompanyOperatingExpense">0</div></div>
+        <div class="kpi-card"><div class="kpi-label">設備採購（未稅）</div><div class="kpi-value" id="reportCompanyCapitalExpense">0</div></div>
+        <div class="kpi-card report-operating-result"><div class="kpi-label">公司營運餘額（未稅）</div><div class="kpi-value" id="reportOperatingBalance">0</div><div class="table-sub">案件毛利－公司營運支出；不扣設備採購</div></div>
+      </div>
+
+      <div class="card table-card">
+        <div class="table-scroll">
+        <table class="table report-table">
+          <thead>
+            <tr>
+              <th>專案</th>
+              <th>客戶</th>
+              <th>地點</th>
+              <th>期間</th>
+              <th>狀態</th>
+              <th class="num">報價</th>
+              <th>模式</th>
+              <th class="num">累計已請款</th>
+              <th class="num">尚未請款</th>
+              <th class="num">累計已收款</th>
+              <th class="num">應收帳款</th>
+              <th class="num">全案待收</th>
+              <th class="num">專案金額(未稅)</th>
+              <th class="num">外部支出</th>
+              <th class="num">案件毛利</th>
+            </tr>
+          </thead>
+          <tbody id="reportTableBody"></tbody>
+          <tfoot>
+            <tr>
+              <td colspan="7" style="text-align:right; font-weight:950;">合計</td>
+              <td class="num" id="reportTotalInvoiced"></td>
+              <td class="num" id="reportTotalUnbilled"></td>
+              <td class="num" id="reportTotalReceived"></td>
+              <td class="num" id="reportTotalReceivable"></td>
+              <td class="num" id="reportTotalOutstanding"></td>
+              <td class="num" id="reportTotalRevenue"></td>
+              <td class="num" id="reportTotalCost"></td>
+              <td class="num" id="reportTotalProfit"></td>
+            </tr>
+          </tfoot>
+        </table>
+        </div>
+      </div>
+
+      <section class="finance-section report-analysis-section">
+        <div class="finance-section-head"><div><h3>月報分析</h3><p>請款依請款日、收款依實際入帳日歸月；月底未收則回看該月底前已請款但尚未收到的金額。</p></div></div>
+        <div class="finance-analysis-grid">
+          <div class="card analysis-card"><h4>客戶別累計</h4><div class="table-scroll"><table class="table compact-table"><thead><tr><th>客戶</th><th class="num">已請款</th><th class="num">已收</th><th class="num">未收</th><th class="num">逾期</th></tr></thead><tbody id="financeCustomerStatsBody"></tbody></table></div></div>
+          <div class="card analysis-card"><h4>專案別累計</h4><div class="table-scroll"><table class="table compact-table"><thead><tr><th>專案</th><th class="num">已請款</th><th class="num">已收</th><th class="num">未收</th></tr></thead><tbody id="financeProjectStatsBody"></tbody></table></div></div>
+          <div class="card analysis-card"><h4>近 12 個月份</h4><div class="table-scroll"><table class="table compact-table"><thead><tr><th>月份</th><th class="num">請款</th><th class="num">收款</th><th class="num">月底未收</th></tr></thead><tbody id="financeMonthStatsBody"></tbody></table></div></div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <!-- 新增／編輯設備 Drawer -->
+  <div id="equipmentDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-equipment-close aria-label="關閉設備表單"></button>
+    <aside class="drawer-panel narrow" role="dialog" aria-modal="true" aria-labelledby="equipmentDrawerTitle">
+      <div class="drawer-head">
+        <div>
+          <div class="drawer-eyebrow">設備清單</div>
+          <h2 id="equipmentDrawerTitle">新增設備</h2>
+        </div>
+        <button id="equipmentDrawerClose" class="icon-btn" type="button" aria-label="關閉">✕</button>
+      </div>
+
+      <form id="equipment-form" class="drawer-form">
+        <input id="equipmentId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section">
+            <h3>基本資料</h3>
+            <div class="form-grid">
+              <label class="field field-full"><span>設備名稱 *</span><input id="equipmentName" class="input" placeholder="例如：煙霧機" required /></label>
+              <label class="field"><span>類別</span><input id="equipmentCategory" class="input" placeholder="例如：特殊效果設備" /></label>
+              <label class="field"><span>數量</span><input id="equipmentQty" class="input" type="number" min="0" step="1" /></label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="equipment-cost-note"><span>設備折舊估算（選填）</span><small>只有資料填完整才會顯示每台每日估算；此數字不會自動列入案件毛利。</small></div>
+            <div class="form-grid">
+              <label class="field"><span>單台／單組購入價</span><input id="equipmentPurchasePrice" class="input" inputmode="numeric" placeholder="例如：600,000" /></label>
+              <label class="field"><span>購入日期</span><input id="equipmentAcquisitionDate" class="input" type="date" /></label>
+              <label class="field"><span>折舊年限</span><input id="equipmentDepreciationYears" class="input" type="number" min="1" step="1" value="6" /></label>
+              <label class="field"><span>預估殘值</span><input id="equipmentResidualValue" class="input" inputmode="numeric" placeholder="沒有可填 0" /></label>
+              <label class="field field-full"><span>預估每年使用天數</span><input id="equipmentAnnualUsageDays" class="input" type="number" min="1" step="1" placeholder="例如：50" /><small class="field-help">每台每日折舊＝（購入價－殘值）÷ 折舊年限 ÷ 每年使用天數。</small></label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <h3>備註</h3>
+            <label class="field"><span class="sr-only">備註</span><textarea id="equipmentNote" class="textarea" rows="4" placeholder="例如：需保養／有耗材"></textarea></label>
+          </section>
+        </div>
+
+        <div class="drawer-actions">
+          <button id="equipmentReset" class="btn ghost" type="button">清空</button>
+          <button class="btn primary" type="submit">儲存設備</button>
+        </div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- 新增／編輯專案 Drawer -->
+  <div id="projectDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-drawer-close aria-label="關閉專案表單"></button>
+    <aside class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="projectDrawerTitle">
+      <div class="drawer-head">
+        <div>
+          <div class="drawer-eyebrow">專案管理</div>
+          <h2 id="projectDrawerTitle">新增專案</h2>
+        </div>
+        <button id="projectDrawerClose" class="icon-btn" type="button" aria-label="關閉">✕</button>
+      </div>
+
+      <form id="project-form" class="drawer-form">
+        <input id="projectId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section">
+            <h3>基本資料</h3>
+            <div class="form-grid">
+              <label class="field field-full"><span>專案名稱 *</span><input id="projectName" class="input" placeholder="例如：XX 演唱會｜特效支援" /></label>
+              <label class="field"><span>客戶</span><input id="projectClient" class="input" placeholder="例如：主辦 / 品牌" /></label>
+              <label class="field"><span>地點</span><input id="projectLocation" class="input" placeholder="例如：台北小巨蛋" /></label>
+              <label class="field"><span>開始日期 *</span><input id="projectStart" class="input" type="date" /></label>
+              <label class="field"><span>結束日期 *</span><input id="projectEnd" class="input" type="date" /></label>
+              <div id="projectCalendarNotice" class="calendar-managed-notice field-full hidden"></div>
+              <label class="field field-full"><span>狀態</span><select id="projectStatus" class="select"><option value="planning">規劃中</option><option value="confirmed">已成案</option><option value="executing">執行中</option><option value="closed">已結案</option><option value="lost">流標 / 未成案</option></select><small class="field-help">改為「已結案」時會自動檢查專案價、請款、應收、廠商待付及外部支出。</small></label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <h3>金額</h3>
+            <div class="form-grid">
+              <label class="field"><span>報價金額</span><input id="projectQuote" class="input" inputmode="numeric" placeholder="價格未定可先留白" /><small class="field-help">可先建立專案，報價確認後再自動回寫金額。</small></label>
+              <label class="field"><span>報價模式</span><select id="projectQuoteTaxMode" class="select visually-hidden-select" tabindex="-1"><option value="taxed">含稅</option><option value="untaxed">未稅</option></select><div class="segmented" data-seg="quoteTaxMode"><button type="button" data-value="taxed" class="seg-btn">含稅</button><button type="button" data-value="untaxed" class="seg-btn">未稅</button></div></label>
+              <label class="field"><span>營收（未稅，自動換算）</span><input id="projectRevenue" class="input" placeholder="自動計算" /></label>
+              <label class="field"><span>外部支出（手動合計）</span><input id="projectCost" class="input" inputmode="numeric" placeholder="尚未逐筆登記時可填" /><small class="field-help">若財務總覽已有逐筆外部支出，報表會優先採用逐筆加總；不包含設備折舊及固定費用。</small></label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="section-head"><h3>使用設備</h3><span id="equipUsageCount">1 / 10</span></div>
+            <div id="equipUsageBody" class="equip-usage"></div>
+            <button id="addEquipUsage" class="btn ghost small add-equip-btn" type="button">＋ 新增設備</button>
+          </section>
+
+          <section class="form-section">
+            <h3>備註</h3>
+            <label class="field"><span class="sr-only">備註</span><textarea id="projectNote" class="textarea" rows="5" placeholder="可輸入請款、執行或其他補充資訊"></textarea></label>
+          </section>
+        </div>
+
+        <div class="drawer-actions">
+          <button id="projectReset" class="btn ghost" type="button">清空</button>
+          <button class="btn primary" type="submit">儲存專案</button>
+        </div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- 客戶 Drawer -->
+  <div id="customerDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-customer-close aria-label="關閉客戶表單"></button>
+    <aside class="drawer-panel narrow" role="dialog" aria-modal="true" aria-labelledby="customerDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">客戶管理</div><h2 id="customerDrawerTitle">新增客戶</h2></div><button id="customerDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="customerForm" class="drawer-form">
+        <input id="customerId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section"><h3>公司資料</h3><div class="form-grid">
+            <label class="field field-full"><span>客戶／公司名稱 *</span><input id="customerName" class="input" required /></label>
+            <label class="field"><span>統一編號</span><input id="customerTaxId" class="input" /></label>
+            <label class="field"><span>付款條件</span><input id="customerPaymentTerms" class="input" placeholder="例如：月結 60 天" /></label>
+            <label class="field field-full"><span>公司地址</span><input id="customerAddress" class="input" /></label>
+            <label class="field field-full"><span>發票寄送資訊</span><input id="customerInvoiceInfo" class="input" /></label>
+          </div></section>
+          <section class="form-section"><h3>主要聯絡窗口</h3><div class="form-grid">
+            <label class="field"><span>姓名</span><input id="customerContactName" class="input" /></label>
+            <label class="field"><span>部門／職稱</span><input id="customerContactTitle" class="input" /></label>
+            <label class="field"><span>電話</span><input id="customerPhone" class="input" /></label>
+            <label class="field"><span>Email</span><input id="customerEmail" class="input" type="email" /></label>
+          </div></section>
+          <section class="form-section"><h3>備註</h3><textarea id="customerNote" class="textarea" rows="4"></textarea></section>
+        </div>
+        <div class="drawer-actions"><button class="btn ghost" type="button" data-customer-close>取消</button><button class="btn primary" type="submit">儲存客戶</button></div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- 常用報價項目 Drawer -->
+  <div id="quoteItemDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-quote-item-close aria-label="關閉品項表單"></button>
+    <aside class="drawer-panel narrow" role="dialog" aria-modal="true" aria-labelledby="quoteItemDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">常用報價項目</div><h2 id="quoteItemDrawerTitle">新增項目</h2></div><button id="quoteItemDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="quoteItemForm" class="drawer-form">
+        <input id="quoteItemId" type="hidden" />
+        <div class="drawer-content"><section class="form-section"><div class="form-grid">
+          <label class="field"><span>類別</span><input id="quoteItemCategory" class="input" placeholder="例如：特殊效果設備" /></label>
+          <label class="field"><span>項目名稱 *</span><input id="quoteItemName" class="input" required /></label>
+          <label class="field"><span>預設單價</span><input id="quoteItemPrice" class="input" inputmode="numeric" /></label>
+          <label class="field"><span>單位</span><input id="quoteItemUnit" class="input" placeholder="台／式／班／公斤" /></label>
+          <label class="field field-full"><span>預設計價方式</span><select id="quoteItemCalcMode" class="select"><option value="auto50">次日起加收 50%</option><option value="daily">每日原價</option><option value="custom">自訂續日比例</option><option value="manual">人工輸入小計</option><option value="included">免費／已包含</option></select></label>
+          <label class="field"><span>自訂續日比例（%）</span><input id="quoteItemContinuationRate" class="input" type="number" min="0" step="1" value="50" /></label>
+          <label class="field"><span>連結庫存設備</span><select id="quoteItemEquipmentId" class="select"><option value="">不連結</option></select><small class="field-help">設備依類別分組，選擇後會自動帶入設備類別與名稱。</small></label>
+          <label class="field field-full"><span>預設備註</span><input id="quoteItemNote" class="input" /></label>
+        </div></section></div>
+        <div class="drawer-actions"><button class="btn ghost" type="button" data-quote-item-close>取消</button><button class="btn primary" type="submit">儲存項目</button></div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- 請款／收款 Drawer -->
+  <div id="paymentDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-payment-close aria-label="關閉款項表單"></button>
+    <aside class="drawer-panel narrow payment-drawer" role="dialog" aria-modal="true" aria-labelledby="paymentDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">請款／收款</div><h2 id="paymentDrawerTitle">新增款項</h2></div><button id="paymentDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="paymentForm" class="drawer-form">
+        <input id="paymentId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section"><h3>專案與款項</h3><div class="form-grid">
+            <label class="field field-full"><span>連結專案 *</span><select id="paymentProjectId" class="select" required><option value="">請選擇專案</option></select><small id="paymentProjectHint" class="field-help">可選擇既有專案，包括活動前需先收訂金的案子。</small></label>
+            <label class="field"><span>款項類型</span><select id="paymentType" class="select"><option value="deposit">訂金</option><option value="balance">尾款</option><option value="full">全額款</option><option value="other">其他</option></select></label>
+            <label class="field"><span>本筆請款金額（含稅）*</span><input id="paymentAmount" class="input" inputmode="numeric" required /><small id="paymentRemainingHint" class="field-help"></small></label>
+            <label class="field field-full"><span>款項名稱</span><input id="paymentLabel" class="input" placeholder="例如：第一期訂金 30%" /></label>
+          </div></section>
+
+          <section class="form-section"><h3>請款與發票</h3><div class="form-grid">
+            <label class="field"><span>請款日</span><input id="paymentRequestDate" class="input" type="date" /><small class="field-help">填寫後即計入「已請款」。</small></label>
+            <label class="field"><span>發票日期</span><input id="paymentInvoiceDate" class="input" type="date" /></label>
+            <label class="field"><span>發票號碼</span><input id="paymentInvoiceNumber" class="input" /></label>
+            <label class="field"><span>預計收款日</span><input id="paymentExpectedDate" class="input" type="date" /></label>
+            <label class="field field-full"><span>付款條件</span><input id="paymentTerms" class="input" placeholder="例如：月結 60 天" /><small class="field-help">若客戶資料有付款條件，選擇專案後會自動帶入並試算預計收款日，仍可手動修改。</small></label>
+          </div></section>
+
+          <section class="form-section"><h3>請款備註</h3><div class="form-grid">
+            <label class="field field-full"><span>備註</span><textarea id="paymentNote" class="textarea" rows="4" placeholder="可記錄發票寄送、請款窗口或催款補充"></textarea></label>
+            <p class="field-help field-full">實際入帳請在款項明細按「登記收款」；同一筆請款可保留多次收款日期與金額。</p>
+          </div></section>
+        </div>
+        <div class="drawer-actions"><button class="btn ghost" type="button" data-payment-close>取消</button><button class="btn primary" type="submit">儲存款項</button></div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- 實際收款 Drawer -->
+  <div id="receiptDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-receipt-close aria-label="關閉收款表單"></button>
+    <aside class="drawer-panel narrow payment-drawer" role="dialog" aria-modal="true" aria-labelledby="receiptDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">請款／收款</div><h2 id="receiptDrawerTitle">登記收款</h2></div><button id="receiptDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="receiptForm" class="drawer-form">
+        <input id="receiptId" type="hidden" />
+        <input id="receiptPaymentId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section"><h3>對應請款</h3><p id="receiptBillingLabel" class="receipt-billing-label"></p></section>
+          <section class="form-section"><h3>本次入帳</h3><div class="form-grid">
+            <label class="field"><span>實際收款日 *</span><input id="receiptDate" class="input" type="date" required /></label>
+            <label class="field"><span>本次收款金額（含稅）*</span><input id="receiptAmount" class="input" inputmode="numeric" required /><small id="receiptRemainingHint" class="field-help"></small></label>
+            <label class="field"><span>收款方式</span><select id="receiptMethod" class="select"><option value="bank_transfer">銀行轉帳</option><option value="cash">現金</option><option value="check">支票</option><option value="card">刷卡</option><option value="other">其他</option></select></label>
+            <label class="field"><span>交易／匯款末碼</span><input id="receiptReference" class="input" /></label>
+            <label class="field field-full"><span>備註</span><textarea id="receiptNote" class="textarea" rows="3"></textarea></label>
+          </div></section>
+        </div>
+        <div class="drawer-actions"><button class="btn ghost" type="button" data-receipt-close>取消</button><button class="btn primary" type="submit">儲存收款</button></div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- 外部支出 Drawer -->
+  <div id="expenseDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-expense-close aria-label="關閉外部支出表單"></button>
+    <aside class="drawer-panel narrow" role="dialog" aria-modal="true" aria-labelledby="expenseDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">財務總覽</div><h2 id="expenseDrawerTitle">新增外部支出</h2></div><button id="expenseDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="expenseForm" class="drawer-form">
+        <input id="expenseId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section"><h3>支出資料</h3><div class="form-grid">
+            <label class="field field-full"><span>連結專案 *</span><select id="expenseProjectId" class="select" required><option value="">請選擇專案</option></select></label>
+            <label class="field"><span>成本／憑證日期 *</span><input id="expenseDate" class="input" type="date" required /><small class="field-help">作為專案成本歸屬月份。</small></label>
+            <label class="field"><span>類別</span><select id="expenseCategory" class="select"><option value="outsourcing_equipment">外包設備</option><option value="temporary_staff">臨時人力</option><option value="transport">運輸</option><option value="consumables">耗材</option><option value="venue">場租／其他場地費</option><option value="other">其他</option></select></label>
+            <label class="field"><span>廠商／收款方</span><input id="expenseVendor" class="input" /></label>
+            <label class="field"><span>支出金額 *</span><input id="expenseAmount" class="input" inputmode="numeric" required /></label>
+            <label class="field field-full"><span>金額稅別</span><select id="expenseTaxMode" class="select"><option value="taxed">含稅</option><option value="untaxed">未稅</option></select><small id="expenseUntaxedHint" class="field-help">未稅成本：0</small></label>
+            <label class="field"><span>廠商請款日</span><input id="expenseVendorBillDate" class="input" type="date" /></label>
+            <label class="field"><span>預計付款日</span><input id="expenseExpectedPaymentDate" class="input" type="date" /></label>
+            <label class="field"><span>實際付款日</span><input id="expensePaidDate" class="input" type="date" /><small class="field-help">留白表示尚未付款。</small></label>
+            <label class="field"><span>付款方式</span><select id="expensePaymentMethod" class="select"><option value="bank_transfer">銀行轉帳</option><option value="cash">現金</option><option value="check">支票</option><option value="card">刷卡</option><option value="other">其他</option></select></label>
+            <label class="field field-full"><span>備註</span><textarea id="expenseNote" class="textarea" rows="4"></textarea></label>
+          </div></section>
+        </div>
+        <div class="drawer-actions"><button class="btn ghost" type="button" data-expense-close>取消</button><button class="btn primary" type="submit">儲存外部支出</button></div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- 公司支出 Drawer -->
+  <div id="companyExpenseDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-company-expense-close aria-label="關閉公司支出表單"></button>
+    <aside class="drawer-panel narrow" role="dialog" aria-modal="true" aria-labelledby="companyExpenseDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">財務總覽</div><h2 id="companyExpenseDrawerTitle">新增公司支出</h2></div><button id="companyExpenseDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="companyExpenseForm" class="drawer-form">
+        <input id="companyExpenseId" type="hidden" />
+        <div class="drawer-content">
+          <section class="form-section"><h3>公司支出資料</h3><div class="form-grid">
+            <label class="field"><span>成本／憑證日期 *</span><input id="companyExpenseDate" class="input" type="date" required /><small class="field-help">作為公司支出歸屬月份。</small></label>
+            <label class="field"><span>類別 *</span><select id="companyExpenseCategory" class="select" required><option value="rent">房租／倉租</option><option value="utilities">水電／網路／電話</option><option value="payroll">薪資／勞務／獎金</option><option value="insurance">保險／勞健保</option><option value="software">軟體／訂閱</option><option value="equipment_purchase">設備購買</option><option value="equipment_maintenance">設備維修／保養</option><option value="office">辦公／行政</option><option value="marketing">行銷／業務</option><option value="professional">專業服務／稅務</option><option value="other">其他</option></select></label>
+            <label class="field field-full"><span>支出項目 *</span><input id="companyExpenseName" class="input" required placeholder="例如：8 月辦公室租金、CO2 Jet 採購" /></label>
+            <label class="field"><span>廠商／收款方</span><input id="companyExpenseVendor" class="input" /></label>
+            <label class="field"><span>發票／憑證號碼</span><input id="companyExpenseReceipt" class="input" /></label>
+            <label class="field"><span>支出金額 *</span><input id="companyExpenseAmount" class="input" inputmode="numeric" required /></label>
+            <label class="field"><span>金額稅別</span><select id="companyExpenseTaxMode" class="select"><option value="taxed">含稅</option><option value="untaxed">未稅</option></select><small id="companyExpenseUntaxedHint" class="field-help">未稅金額：0</small></label>
+            <label class="field"><span>廠商請款日</span><input id="companyExpenseVendorBillDate" class="input" type="date" /></label>
+            <label class="field"><span>預計付款日</span><input id="companyExpenseExpectedPaymentDate" class="input" type="date" /></label>
+            <label class="field"><span>實際付款日</span><input id="companyExpensePaidDate" class="input" type="date" /><small class="field-help">留白表示尚未付款。</small></label>
+            <label class="field"><span>付款方式</span><select id="companyExpensePaymentMethod" class="select"><option value="bank_transfer">銀行轉帳</option><option value="cash">現金</option><option value="check">支票</option><option value="card">刷卡</option><option value="other">其他</option></select></label>
+            <label id="companyExpenseEquipmentField" class="field field-full hidden"><span>連結設備（選填）</span><select id="companyExpenseEquipmentId" class="select"><option value="">不連結設備</option></select><small class="field-help">只建立採購支出紀錄，不會自動新增或更改設備庫存；可先在設備清單建檔後再連結。</small></label>
+            <label class="field field-full"><span>備註</span><textarea id="companyExpenseNote" class="textarea" rows="4" placeholder="可記錄付款方式、使用期間或其他補充"></textarea></label>
+          </div></section>
+        </div>
+        <div class="drawer-actions"><button class="btn ghost" type="button" data-company-expense-close>取消</button><button class="btn primary" type="submit">儲存公司支出</button></div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- 報價 Drawer -->
+  <div id="quotationDrawer" class="drawer hidden" aria-hidden="true">
+    <button class="drawer-backdrop" type="button" data-quotation-close aria-label="關閉報價表單"></button>
+    <aside class="drawer-panel quotation-drawer" role="dialog" aria-modal="true" aria-labelledby="quotationDrawerTitle">
+      <div class="drawer-head"><div><div class="drawer-eyebrow">報價管理</div><h2 id="quotationDrawerTitle">新增報價</h2></div><button id="quotationDrawerClose" class="icon-btn" type="button">✕</button></div>
+      <form id="quotationForm" class="drawer-form">
+        <input id="quotationId" type="hidden" /><input id="quotationSeriesId" type="hidden" /><input id="quotationVersion" type="hidden" value="1" />
+        <div class="drawer-content">
+          <section class="form-section"><div class="section-head"><h3>基本資料</h3><span id="quotationVersionLabel">V1</span></div><div class="form-grid quote-basic-grid">
+            <label class="field"><span>連結專案</span><select id="quotationProjectId" class="select"><option value="">不連結專案</option></select></label>
+            <label class="field"><span>客戶（可輸入關鍵字）</span><input id="quotationCustomerSearch" class="input" list="quotationCustomerOptions" placeholder="輸入公司、窗口、電話或 Email" autocomplete="off" /><datalist id="quotationCustomerOptions"></datalist><input id="quotationCustomerId" type="hidden" /></label>
+            <label class="field"><span>報價編號 *</span><input id="quotationNumber" class="input" required placeholder="Y26072502" /></label>
+            <label class="field"><span>狀態</span><select id="quotationStatus" class="select"><option value="draft">草稿</option><option value="sent">已寄出</option><option value="confirmed">已確認</option><option value="void">作廢</option></select></label>
+            <label class="field"><span>客戶／公司名稱 *</span><input id="quotationCustomerName" class="input" required /></label>
+            <label class="field"><span>專案名稱 *</span><input id="quotationProjectName" class="input" required /></label>
+            <label class="field"><span>聯絡人</span><input id="quotationContactName" class="input" /></label>
+            <label class="field"><span>電話</span><input id="quotationPhone" class="input" /></label>
+            <label class="field"><span>Email</span><input id="quotationEmail" class="input" type="email" /></label>
+            <label class="field"><span>統一編號</span><input id="quotationTaxId" class="input" /></label>
+          </div></section>
+
+          <section class="form-section"><div class="section-head"><h3>活動場次</h3><button id="quotationAddEvent" class="btn ghost small" type="button">＋ 新增場次</button></div><div id="quotationEvents" class="quote-events"></div></section>
+
+          <section class="form-section quote-lines-section"><div class="section-head"><div><h3>報價明細</h3><p class="field-help">「內部成交小計」僅供內部計算，報價單不會顯示。</p></div><div class="inline-actions"><select id="quotationCatalogPicker" class="select compact-select"><option value="">從常用項目新增…</option></select><button id="quotationAddRow" class="btn ghost small" type="button">＋ 空白列</button></div></div><div class="quote-lines-scroll"><table class="quote-lines-table"><thead><tr><th>場次</th><th>類別／項目</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>計價</th><th>續日%</th><th>原價小計</th><th>內部成交小計</th><th>備註</th><th>順序／操作</th></tr></thead><tbody id="quotationRows"></tbody></table></div></section>
+
+          <section class="form-section quote-summary-section"><div class="quote-summary-layout"><div><h3>付款條件與備註</h3><textarea id="quotationTerms" class="textarea" rows="8"></textarea><label class="field quote-note-field"><span>其他備註</span><textarea id="quotationNote" class="textarea" rows="3"></textarea></label></div><div class="quote-totals">
+            <div><span>原價未稅合計</span><b id="quotationSubtotal">0</b></div><div><span>內部成交未稅合計</span><b id="quotationDealSubtotal">0</b></div><div><span>系統計算含稅價</span><b id="quotationCalculatedPrice">0</b></div>
+            <label><span>專案價（含稅）</span><input id="quotationProjectPrice" class="input money-input" inputmode="numeric" placeholder="預設帶入系統計算含稅價" /><button id="quotationUseCalculatedPrice" class="btn ghost small quote-use-calculated" type="button">帶入系統計算</button></label>
+          </div></div></section>
+        </div>
+        <div class="drawer-actions quote-drawer-actions"><div class="drawer-actions-left"><button id="quotationPreviewCurrent" class="btn ghost" type="button">預覽報價單</button></div><button class="btn ghost" type="button" data-quotation-close>取消</button><button class="btn primary" type="submit">儲存報價</button></div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- A4 報價預覽 Modal -->
+  <div id="quotationPreviewModal" class="modal hidden"><div class="modal-card preview-modal-card"><div class="modal-head"><div class="modal-title">報價單預覽</div><div class="inline-actions"><button id="quotationPrint" class="btn primary small" type="button">列印／另存 PDF</button><button id="quotationPreviewClose" class="icon-btn" type="button">✕</button></div></div><div id="quotationPreviewBody" class="modal-body preview-body"></div></div></div>
+
+  <!-- 設備超用 Modal -->
+  <div id="overuseModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div id="overuseModalTitle" class="modal-title">設備超用明細</div>
+        <button id="overuseModalClose" class="icon-btn" type="button">✕</button>
+      </div>
+      <div id="overuseModalBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="approvalGate" class="approval-gate hidden" role="status" aria-live="polite">
+    <div class="approval-gate-card">
+      <div class="approval-gate-icon">🔒</div>
+      <h2>帳號等待核准</h2>
+      <p>登入已完成，但 admin 尚未核准此帳號。核准前無法讀取任何專案、客戶或財務資料。</p>
+      <p class="hint">請聯絡系統管理員至「系統管理 → 使用者與細分權限」核准，完成後重新整理頁面。</p>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js?v=phase3-v11-5"></script>
+  <script type="module" src="./quotations.js?v=phase3-v11-9"></script>
+  <script type="module" src="./payments.js?v=phase3-v11-8"></script>
+  <script type="module" src="./finance.js?v=phase3-v11-6"></script>
+</body>
+</html>
