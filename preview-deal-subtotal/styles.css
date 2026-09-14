@@ -1542,7 +1542,7 @@ body.drawer-open{ overflow:hidden; }
 .quote-lines-scroll{ overflow-x:auto; padding:0 15px 5px; }
 .quote-lines-table{ width:100%; min-width:1450px; border-collapse:separate; border-spacing:0 7px; }
 .quote-lines-table th{ padding:0 5px 5px; font-size:11px; color:var(--muted); text-align:left; }
-.quote-lines-table td{ padding:4px; background:#f9fafb; vertical-align:middle; }
+.quote-lines-table td{ padding:4px; background:#f9fafb; vertical-align:top; }
 .quote-lines-table td:first-child{ border-radius:10px 0 0 10px; }
 .quote-lines-table td:last-child{ border-radius:0 10px 10px 0; }
 .quote-lines-table .input,.quote-lines-table .select{ min-width:78px; padding:8px; border-radius:8px; }
