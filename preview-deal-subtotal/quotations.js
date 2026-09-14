@@ -151,14 +151,20 @@ function calcOriginalRowSubtotal(row) {
   return Math.round(price * qty * days);
 }
 
+function calcPdfRowSubtotal(row) {
+  if (row?.calcMode === "included") return 0;
+  return row?.applyPricingToPdf === true ? calcRowSubtotal(row) : calcOriginalRowSubtotal(row);
+}
+
 function calcDealSubtotal(row) {
   if (row?.calcMode === "included") return 0;
-  if (row?.dealSubtotal === undefined || row?.dealSubtotal === null || String(row.dealSubtotal).trim() === "") return calcRowSubtotal(row);
+  if (row?.dealSubtotal === undefined || row?.dealSubtotal === null || String(row.dealSubtotal).trim() === "") return calcPdfRowSubtotal(row);
   return integerValue(row.dealSubtotal);
 }
 
 function calcTotals(rows, projectPriceInput = "", useCustomProjectPrice = false) {
-  const subtotal = Math.round((rows || []).reduce((sum, row) => sum + calcOriginalRowSubtotal(row), 0));
+  const originalSubtotal = Math.round((rows || []).reduce((sum, row) => sum + calcOriginalRowSubtotal(row), 0));
+  const subtotal = Math.round((rows || []).reduce((sum, row) => sum + calcPdfRowSubtotal(row), 0));
   const tax = Math.round(subtotal * TAX_RATE);
   const originalTotal = subtotal + tax;
   const dealSubtotal = Math.round((rows || []).reduce((sum, row) => sum + calcDealSubtotal(row), 0));
@@ -170,6 +176,7 @@ function calcTotals(rows, projectPriceInput = "", useCustomProjectPrice = false)
   const projectTax = Math.max(0, projectPriceTaxed - projectPriceUntaxed);
   return {
     subtotal,
+    originalSubtotal,
     tax,
     originalTotal,
     dealSubtotal,
@@ -179,7 +186,8 @@ function calcTotals(rows, projectPriceInput = "", useCustomProjectPrice = false)
     projectPriceUntaxed,
     projectTax,
     projectPriceMode: hasCustomPrice ? "manual" : "auto",
-    discount: Math.max(0, originalTotal - projectPriceTaxed)
+    discount: Math.max(0, originalTotal - projectPriceTaxed),
+    allocationDifference: projectPriceUntaxed - dealSubtotal
   };
 }
 
@@ -527,6 +535,7 @@ function rowDataFromCatalog(item = {}) {
     unitPrice: item.unitPrice || 0, qty: 1, unit: item.unit || "", days: 1,
     calcMode: item.calcMode || "auto50", continuationRate: item.continuationRate ?? 50,
     manualSubtotal: item.calcMode === "manual" ? 0 : "", note: item.note || "",
+    applyPricingToPdf: typeof item.applyPricingToPdf === "boolean" ? item.applyPricingToPdf : Boolean(item.equipmentId || item.equipmentName),
     catalogItemId: item.id || "", equipmentId: item.equipmentId || "", equipmentName: equipment?.name || item.equipmentName || ""
   };
 }
@@ -539,10 +548,13 @@ function addQuotationRow(data = {}) {
   row.dataset.equipmentId = data.equipmentId || "";
   row.dataset.equipmentName = data.equipmentName || "";
   const mode = data.calcMode || "auto50";
-  const originalSubtotal = calcOriginalRowSubtotal({ ...data, calcMode: mode });
+  const applyPricingToPdf = typeof data.applyPricingToPdf === "boolean" ? data.applyPricingToPdf : Boolean(data.equipmentId || data.equipmentName);
+  const rowSnapshot = { ...data, calcMode: mode, applyPricingToPdf };
+  const originalSubtotal = calcOriginalRowSubtotal(rowSnapshot);
+  const pdfSubtotal = calcPdfRowSubtotal(rowSnapshot);
   const hasStoredDealSubtotal = data.dealSubtotal !== undefined && data.dealSubtotal !== null && String(data.dealSubtotal).trim() !== "";
   row.dataset.dealSubtotalMode = data.dealSubtotalMode || (hasStoredDealSubtotal ? "manual" : "auto");
-  const dealSubtotal = hasStoredDealSubtotal ? integerValue(data.dealSubtotal) : originalSubtotal;
+  const dealSubtotal = hasStoredDealSubtotal ? integerValue(data.dealSubtotal) : pdfSubtotal;
   row.innerHTML = `
     <td><select class="select row-event">${eventOptionHtml(data.eventId || "shared")}</select></td>
     <td><div class="quote-row-title"><input class="input row-category" value="${esc(data.category || "")}" placeholder="類別" /><input class="input row-name" value="${esc(data.name || "")}" placeholder="項目名稱" /></div></td>
@@ -550,10 +562,9 @@ function addQuotationRow(data = {}) {
     <td><input class="input row-qty" type="number" min="0" step="0.01" value="${esc(data.qty ?? 1)}" /></td>
     <td><input class="input row-unit" value="${esc(data.unit || "")}" /></td>
     <td><input class="input row-days" type="number" min="1" step="0.5" value="${esc(data.days ?? 1)}" /></td>
-    <td><select class="select row-mode"><option value="auto50" ${mode === "auto50" ? "selected" : ""}>次日起 50%</option><option value="daily" ${mode === "daily" ? "selected" : ""}>每日原價</option><option value="custom" ${mode === "custom" ? "selected" : ""}>自訂比例</option><option value="manual" ${mode === "manual" ? "selected" : ""}>人工小計</option><option value="included" ${mode === "included" ? "selected" : ""}>免費／已含</option></select></td>
+    <td><div class="quote-pricing-control"><select class="select row-mode"><option value="auto50" ${mode === "auto50" ? "selected" : ""}>次日起 50%</option><option value="daily" ${mode === "daily" ? "selected" : ""}>每日原價</option><option value="custom" ${mode === "custom" ? "selected" : ""}>自訂比例</option><option value="manual" ${mode === "manual" ? "selected" : ""}>人工小計</option><option value="included" ${mode === "included" ? "selected" : ""}>免費／已含</option></select><label class="quote-pdf-toggle"><input class="row-pdf-pricing" type="checkbox" ${applyPricingToPdf ? "checked" : ""} /><span>套用至 PDF</span></label></div></td>
     <td><input class="input row-rate" type="number" min="0" step="1" value="${esc(data.continuationRate ?? 50)}" /></td>
-    <td><input class="input row-subtotal" inputmode="numeric" value="${mode === "included" ? "—" : esc(money(mode === "manual" ? data.manualSubtotal : originalSubtotal))}" /></td>
-    <td><input class="input row-deal-subtotal" inputmode="numeric" value="${mode === "included" ? "—" : esc(money(dealSubtotal))}" /></td>
+    <td><div class="quote-subtotal-cell"><input class="input row-subtotal" inputmode="numeric" value="${mode === "included" ? "—" : esc(money(mode === "manual" ? data.manualSubtotal : pdfSubtotal))}" /><small class="row-original-subtotal">${applyPricingToPdf && pdfSubtotal !== originalSubtotal ? `原價 ${esc(money(originalSubtotal))}` : ""}</small></div><input class="row-deal-subtotal" type="hidden" value="${mode === "included" ? "0" : esc(money(dealSubtotal))}" /></td>
     <td><input class="input row-note" value="${esc(data.note || "")}" /></td>
     <td><div class="quote-row-actions"><button class="quote-order-btn move-quote-row-up" type="button" title="上移" aria-label="上移報價項目">↑</button><button class="quote-order-btn move-quote-row-down" type="button" title="下移" aria-label="下移報價項目">↓</button><button class="remove-equip-row remove-quote-row" type="button" title="移除明細">✕</button></div></td>`;
   $("#quotationRows").appendChild(row);
@@ -568,21 +579,30 @@ function syncLineMode(row) {
   const days = $(".row-days", row);
   const rate = $(".row-rate", row);
   const subtotal = $(".row-subtotal", row);
+  const originalHint = $(".row-original-subtotal", row);
   const dealSubtotal = $(".row-deal-subtotal", row);
+  const pdfToggle = $(".row-pdf-pricing", row);
   const manual = mode === "manual";
   const included = mode === "included";
+  if (manual) pdfToggle.checked = true;
+  if (included) pdfToggle.checked = false;
   price.disabled = included;
   qty.disabled = false;
   days.disabled = manual || included;
   rate.disabled = !["custom"].includes(mode);
-  subtotal.readOnly = true;
-  subtotal.value = included ? "—" : money(calcOriginalRowSubtotal(readRow(row)));
-  dealSubtotal.disabled = included;
+  pdfToggle.disabled = manual || included;
+  subtotal.readOnly = !manual;
+  const current = readRow(row);
+  const originalSubtotal = calcOriginalRowSubtotal(current);
+  const pdfSubtotal = calcPdfRowSubtotal(current);
+  if (included) subtotal.value = "—";
+  else if (!manual) subtotal.value = money(pdfSubtotal);
+  originalHint.textContent = !included && current.applyPricingToPdf && pdfSubtotal !== originalSubtotal ? `原價 ${money(originalSubtotal)}` : "";
   if (included) {
-    dealSubtotal.value = "—";
+    dealSubtotal.value = "0";
     row.dataset.dealSubtotalMode = "auto";
   } else if (row.dataset.dealSubtotalMode !== "manual") {
-    dealSubtotal.value = money(calcRowSubtotal(readRow(row)));
+    dealSubtotal.value = money(calcPdfRowSubtotal(readRow(row)));
   }
 }
 
@@ -600,6 +620,7 @@ function readRow(row) {
     calcMode: mode,
     continuationRate: numberValue($(".row-rate", row).value),
     manualSubtotal: mode === "manual" ? integerValue($(".row-subtotal", row).value) : 0,
+    applyPricingToPdf: $(".row-pdf-pricing", row).checked,
     dealSubtotal: mode === "included" ? 0 : integerValue($(".row-deal-subtotal", row).value),
     dealSubtotalMode: row.dataset.dealSubtotalMode === "manual" ? "manual" : "auto",
     note: $(".row-note", row).value.trim(),
@@ -614,16 +635,70 @@ function readRows() { return $$(".quotation-line", $("#quotationRows")).map(read
 function recalcQuotation() {
   $$(".quotation-line", $("#quotationRows")).forEach(row => {
     const mode = $(".row-mode", row).value;
-    if (mode !== "included") $(".row-subtotal", row).value = money(calcOriginalRowSubtotal(readRow(row)));
-    if (mode === "included") $(".row-deal-subtotal", row).value = "—";
-    else if (row.dataset.dealSubtotalMode !== "manual") $(".row-deal-subtotal", row).value = money(calcRowSubtotal(readRow(row)));
+    const rowData = readRow(row);
+    const originalSubtotal = calcOriginalRowSubtotal(rowData);
+    const pdfSubtotal = calcPdfRowSubtotal(rowData);
+    if (mode === "included") $(".row-subtotal", row).value = "—";
+    else if (mode !== "manual") $(".row-subtotal", row).value = money(pdfSubtotal);
+    $(".row-original-subtotal", row).textContent = mode !== "included" && rowData.applyPricingToPdf && pdfSubtotal !== originalSubtotal ? `原價 ${money(originalSubtotal)}` : "";
+    if (mode === "included") $(".row-deal-subtotal", row).value = "0";
+    else if (row.dataset.dealSubtotalMode !== "manual") $(".row-deal-subtotal", row).value = money(calcPdfRowSubtotal(readRow(row)));
   });
   const totals = calcTotals(readRows(), $("#quotationProjectPrice").value, state.quotationProjectPriceCustomized);
   if (!state.quotationProjectPriceCustomized) $("#quotationProjectPrice").value = money(totals.calculatedProjectPriceTaxed);
   $("#quotationSubtotal").textContent = money(totals.subtotal);
-  $("#quotationDealSubtotal").textContent = money(totals.dealSubtotal);
   $("#quotationCalculatedPrice").textContent = money(totals.calculatedProjectPriceTaxed);
+  updateAllocationStatus(totals);
   return totals;
+}
+
+function allocationStatus(totals) {
+  const difference = integerValue(Math.abs(totals.allocationDifference));
+  if (difference <= 1) return { text: "分配完成", tone: "complete" };
+  return totals.allocationDifference > 0
+    ? { text: `尚有 ${money(difference)} 未分配`, tone: "pending" }
+    : { text: `已超出 ${money(difference)}`, tone: "over" };
+}
+
+function setAllocationStatus(element, status) {
+  if (!element) return;
+  element.textContent = status.text;
+  element.classList.remove("complete", "pending", "over");
+  element.classList.add(status.tone);
+}
+
+function updateAllocationStatus(totals) {
+  const status = allocationStatus(totals);
+  setAllocationStatus($("#quotationAllocationStatus"), status);
+  setAllocationStatus($("#quotationAllocationModalStatus"), status);
+  if ($("#quotationAllocationTarget")) $("#quotationAllocationTarget").textContent = money(totals.projectPriceUntaxed);
+  if ($("#quotationAllocationTotal")) $("#quotationAllocationTotal").textContent = money(totals.dealSubtotal);
+}
+
+function renderAllocationRows() {
+  const body = $("#quotationAllocationRows");
+  if (!body) return;
+  const rows = $$(".quotation-line", $("#quotationRows"));
+  body.innerHTML = rows.length ? rows.map(row => {
+    const data = readRow(row);
+    const included = data.calcMode === "included";
+    return `<tr><td><b>${esc(data.name || "未命名項目")}</b><div class="table-sub">${esc(data.category || "未分類")}</div></td><td class="num">${included ? "—" : money(calcPdfRowSubtotal(data))}</td><td><input class="input allocation-input" inputmode="numeric" data-allocation-row="${esc(data.id)}" value="${included ? "—" : esc(money(calcDealSubtotal(data)))}" ${included ? "disabled" : ""} /></td></tr>`;
+  }).join("") : `<tr><td colspan="3"><div class="empty-state">尚無報價項目</div></td></tr>`;
+  updateAllocationStatus(calcTotals(readRows(), $("#quotationProjectPrice").value, state.quotationProjectPriceCustomized));
+}
+
+function openAllocationModal() {
+  recalcQuotation();
+  renderAllocationRows();
+  $("#quotationAllocationModal")?.classList.remove("hidden");
+}
+
+function closeAllocationModal() {
+  $("#quotationAllocationModal")?.classList.add("hidden");
+}
+
+function quotationRowById(id) {
+  return $$(".quotation-line", $("#quotationRows")).find(row => row.dataset.rowId === id) || null;
 }
 
 function resetQuotationForm(quotation = null, options = {}) {
@@ -684,7 +759,7 @@ function readQuotationForm() {
   const rows = readRows();
   const totals = calcTotals(rows, $("#quotationProjectPrice").value, state.quotationProjectPriceCustomized);
   return {
-    pricingModel: "layered_v2",
+    pricingModel: "layered_v3",
     seriesId: $("#quotationSeriesId").value,
     number: $("#quotationNumber").value.trim(),
     version: Number($("#quotationVersion").value) || 1,
@@ -1072,22 +1147,23 @@ function buildA4(q) {
   const events = Array.isArray(q.events) ? q.events : [];
   const eventMap = new Map(events.map(event => [event.id, event.name]));
   const rows = Array.isArray(q.rows) ? q.rows : [];
+  const usesPdfPricing = q.pricingModel === "layered_v3";
   const usesLayeredPricing = q.pricingModel === "layered_v2" || q.dealSubtotal !== undefined || rows.some(row => row?.dealSubtotal !== undefined);
   const showEventColumn = events.length > 1;
   const lineHtml = rows.map((row, index) => {
     const included = row.calcMode === "included";
     const eventCell = showEventColumn ? `<td>${esc(row.eventId === "shared" ? "共用" : eventMap.get(row.eventId) || "—")}</td>` : "";
-    const visibleSubtotal = usesLayeredPricing ? calcOriginalRowSubtotal(row) : calcRowSubtotal(row);
+    const visibleSubtotal = usesPdfPricing ? calcPdfRowSubtotal(row) : usesLayeredPricing ? calcOriginalRowSubtotal(row) : calcRowSubtotal(row);
     return `<tr><td>${index + 1}</td>${eventCell}<td>${esc(row.name)}</td><td class="num">${included ? "—" : money(row.unitPrice)}</td><td class="num">${esc(row.qty)}</td><td>${esc(row.unit || "—")}</td><td class="num">${included ? "—" : esc(row.days || 1)}</td><td class="num">${included ? "—" : money(visibleSubtotal)}</td><td>${esc(row.note || "")}</td></tr>`;
   }).join("");
   const showDates = events.map(event => event.eventDate).filter(Boolean).join("、") || "—";
   const setupDates = events.map(event => event.setupDate).filter(Boolean).join("、") || "—";
   const locations = [...new Set(events.map(event => event.location).filter(Boolean))].join("、") || "—";
-  const originalSubtotal = q.subtotal !== undefined
+  const pdfSubtotal = q.subtotal !== undefined
     ? integerValue(q.subtotal)
-    : Math.round(rows.reduce((sum, row) => sum + (usesLayeredPricing ? calcOriginalRowSubtotal(row) : calcRowSubtotal(row)), 0));
-  const originalTax = q.tax !== undefined ? integerValue(q.tax) : Math.round(originalSubtotal * TAX_RATE);
-  const originalGrandTotal = q.originalTotal !== undefined ? integerValue(q.originalTotal) : originalSubtotal + originalTax;
+    : Math.round(rows.reduce((sum, row) => sum + (usesPdfPricing ? calcPdfRowSubtotal(row) : usesLayeredPricing ? calcOriginalRowSubtotal(row) : calcRowSubtotal(row)), 0));
+  const pdfTax = q.tax !== undefined ? integerValue(q.tax) : Math.round(pdfSubtotal * TAX_RATE);
+  const pdfGrandTotal = q.originalTotal !== undefined ? integerValue(q.originalTotal) : pdfSubtotal + pdfTax;
   const projectPriceTaxed = integerValue(q.projectPriceTaxed);
   return `<article class="quote-a4">
     <header class="a4-brand-header">
@@ -1105,7 +1181,7 @@ function buildA4(q) {
     <table class="a4-lines ${showEventColumn ? "" : "single-event"}"><thead><tr><th>編號<span>No.</span></th>${showEventColumn ? "<th>場次<span>Event</span></th>" : ""}<th>項目<span>Item</span></th><th>單價<span>Price</span></th><th>數量<span>Unit</span></th><th>單位</th><th>天數<span>Day</span></th><th>小計<span>Subtotal</span></th><th>備註<span>Note</span></th></tr></thead><tbody>${lineHtml || `<tr><td colspan="${showEventColumn ? 9 : 8}">尚無報價項目</td></tr>`}</tbody></table>
     <div class="a4-payment-grid">
       <div class="a4-terms-block"><div class="a4-section-title">合作與付款條件 Payment Terms</div><div class="a4-terms">${esc(q.terms || DEFAULT_TERMS)}</div>${q.note ? `<p class="a4-note"><b>備註：</b>${esc(q.note)}</p>` : ""}</div>
-      <table class="a4-total"><tbody><tr><th>合計<span>Total</span></th><td class="num">$ ${money(originalSubtotal)}</td></tr><tr><th>營業稅 5%<span>Tax</span></th><td class="num">$ ${money(originalTax)}</td></tr><tr><th>總計<span>Grand Total</span></th><td class="num">$ ${money(originalGrandTotal)}</td></tr><tr class="project-price"><th>專案價（含稅）</th><td class="num">$ ${money(projectPriceTaxed)}</td></tr></tbody></table>
+      <table class="a4-total"><tbody><tr><th>合計<span>Total</span></th><td class="num">$ ${money(pdfSubtotal)}</td></tr><tr><th>營業稅 5%<span>Tax</span></th><td class="num">$ ${money(pdfTax)}</td></tr><tr><th>總計<span>Grand Total</span></th><td class="num">$ ${money(pdfGrandTotal)}</td></tr><tr class="project-price"><th>專案價（含稅）</th><td class="num">$ ${money(projectPriceTaxed)}</td></tr></tbody></table>
     </div>
     <footer class="a4-company"><div class="a4-company-info"><b>${esc(COMPANY.name)}</b><div>公司統編 Tax ID：${esc(COMPANY.taxId)}</div><div>業務聯絡人 Contact：${esc(COMPANY.contact)}</div><div>聯絡信箱 Email：${esc(COMPANY.email)}</div><div>匯款資訊 Remittance Info：${esc(COMPANY.bank)}<br>${esc(COMPANY.accountName)}／${esc(COMPANY.account)}</div></div><div class="a4-sign"><span>確認無誤煩請簽名回傳：</span><i></i></div></footer>
   </article>`;
@@ -1210,7 +1286,10 @@ function bindEvents() {
 
   $("#quotationOpenCreate")?.addEventListener("click", () => openQuotation());
   $("#quotationForm")?.addEventListener("submit", event => { event.preventDefault(); saveQuotation(); });
-  $$('[data-quotation-close],#quotationDrawerClose').forEach(button => button.addEventListener("click", () => closeDrawer("#quotationDrawer")));
+  $$('[data-quotation-close],#quotationDrawerClose').forEach(button => button.addEventListener("click", () => {
+    closeAllocationModal();
+    closeDrawer("#quotationDrawer");
+  }));
   const resetQuotationPageAndRender = () => {
     state.quotationCurrentPage = 1;
     renderQuotations();
@@ -1310,17 +1389,42 @@ function bindEvents() {
   $("#quotationRows")?.addEventListener("input", event => {
     const row = event.target.closest(".quotation-line");
     if (!row) return;
-    if (event.target.matches(".row-deal-subtotal")) {
-      row.dataset.dealSubtotalMode = event.target.value.trim() ? "manual" : "auto";
-    }
     if (event.target.matches(".row-mode")) syncLineMode(row);
     recalcQuotation();
   });
   $("#quotationRows")?.addEventListener("change", event => {
     const row = event.target.closest(".quotation-line");
     if (!row) return;
-    if (event.target.matches(".row-mode")) syncLineMode(row);
+    if (event.target.matches(".row-mode,.row-pdf-pricing")) syncLineMode(row);
     recalcQuotation();
+  });
+  $("#quotationOpenAllocation")?.addEventListener("click", openAllocationModal);
+  $("#quotationAllocationClose")?.addEventListener("click", closeAllocationModal);
+  $("#quotationAllocationDone")?.addEventListener("click", closeAllocationModal);
+  $("#quotationAllocationModal")?.addEventListener("click", event => {
+    if (event.target === $("#quotationAllocationModal")) closeAllocationModal();
+  });
+  $("#quotationAllocationRows")?.addEventListener("input", event => {
+    const input = event.target.closest(".allocation-input");
+    if (!input) return;
+    const row = quotationRowById(input.dataset.allocationRow);
+    if (!row) return;
+    const internalInput = $(".row-deal-subtotal", row);
+    row.dataset.dealSubtotalMode = input.value.trim() ? "manual" : "auto";
+    internalInput.value = input.value;
+    const totals = recalcQuotation();
+    if (!input.value.trim()) input.value = money(calcDealSubtotal(readRow(row)));
+    updateAllocationStatus(totals);
+  });
+  $("#quotationAllocationRows")?.addEventListener("blur", event => {
+    const input = event.target.closest(".allocation-input");
+    if (!input) return;
+    input.value = money(input.value);
+  }, true);
+  $("#quotationAllocationReset")?.addEventListener("click", () => {
+    $$(".quotation-line", $("#quotationRows")).forEach(row => { row.dataset.dealSubtotalMode = "auto"; });
+    recalcQuotation();
+    renderAllocationRows();
   });
   $("#quotationPreviewCurrent")?.addEventListener("click", () => previewQuotation(previewDataFromForm()));
   $("#quotationTableBody")?.addEventListener("click", async event => {
@@ -1405,6 +1509,7 @@ function bindEvents() {
   $("#quotationPrint")?.addEventListener("click", printPreview);
   document.addEventListener("keydown", event => {
     if (event.key !== "Escape") return;
+    closeAllocationModal();
     $("#quotationPreviewModal")?.classList.add("hidden");
   });
 }
