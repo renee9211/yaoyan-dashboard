@@ -1569,7 +1569,11 @@ body.drawer-open{ overflow:hidden; }
 .quote-note-field{ margin-top:12px; }
 .quote-totals{ display:grid; align-content:start; gap:0; border:1px solid var(--line); border-radius:14px; overflow:hidden; }
 .quote-totals > div,.quote-totals > label{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px; border-bottom:1px solid var(--line2); }
-.quote-totals > label{ flex-direction:column; align-items:stretch; background:rgba(255,126,0,.06); }
+.quote-totals > .quote-project-price-block{ flex-direction:column; align-items:stretch; background:rgba(255,126,0,.06); }
+.quote-project-price-head{ display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.quote-project-price-toggle{ display:flex; align-items:center; gap:6px; color:#5f6773; cursor:pointer; white-space:nowrap; }
+.quote-project-price-toggle input{ width:15px; height:15px; margin:0; accent-color:var(--orange); }
+.quote-project-price-toggle span{ font-size:11px; }
 .quote-use-calculated{ align-self:flex-end; }
 .quote-allocation-action{ display:flex; flex-direction:column; align-items:flex-end; gap:5px; }
 .allocation-status{ color:var(--muted); font-size:11px; font-weight:950; white-space:nowrap; }

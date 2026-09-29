@@ -52,6 +52,7 @@ const state = {
   quotationSelectedIds: new Set(),
   quotationProjectFilterId: "",
   quotationProjectPriceCustomized: false,
+  quotationProjectPricePdfVisibilityCustomized: false,
   quotationItemSort: { key: "category", direction: "asc" },
   quoteItemCreatedFromEquipment: false
 };
@@ -648,8 +649,15 @@ function recalcQuotation() {
   if (!state.quotationProjectPriceCustomized) $("#quotationProjectPrice").value = money(totals.calculatedProjectPriceTaxed);
   $("#quotationSubtotal").textContent = money(totals.subtotal);
   $("#quotationCalculatedPrice").textContent = money(totals.calculatedProjectPriceTaxed);
+  syncProjectPricePdfVisibility(totals);
   updateAllocationStatus(totals);
   return totals;
+}
+
+function syncProjectPricePdfVisibility(totals) {
+  const toggle = $("#quotationShowProjectPriceOnPdf");
+  if (!toggle || state.quotationProjectPricePdfVisibilityCustomized) return;
+  toggle.checked = Math.abs(integerValue(totals.projectPriceTaxed) - integerValue(totals.originalTotal)) > 1;
 }
 
 function allocationStatus(totals) {
@@ -730,6 +738,10 @@ function resetQuotationForm(quotation = null, options = {}) {
   $("#quotationTerms").value = quotation?.terms || DEFAULT_TERMS;
   $("#quotationNote").value = quotation?.note || "";
   state.quotationProjectPriceCustomized = Boolean(quotation) && quotation?.projectPriceMode !== "auto";
+  state.quotationProjectPricePdfVisibilityCustomized = Boolean(quotation);
+  $("#quotationShowProjectPriceOnPdf").checked = quotation
+    ? (typeof quotation.showProjectPriceOnPdf === "boolean" ? quotation.showProjectPriceOnPdf : true)
+    : false;
   $("#quotationProjectPrice").value = quotation?.projectPriceTaxed ? money(quotation.projectPriceTaxed) : "";
   $("#quotationEvents").innerHTML = "";
   const events = quotation?.events?.length ? quotation.events : [blankEvent({ name: "場次 1", location: project?.location || "", eventDate: project?.startDate || "", setupDate: project?.startDate && project?.endDate ? `${project.startDate}–${project.endDate}` : "" })];
@@ -772,6 +784,7 @@ function readQuotationForm() {
     phone: $("#quotationPhone").value.trim(),
     email: $("#quotationEmail").value.trim(),
     taxId: $("#quotationTaxId").value.trim(),
+    showProjectPriceOnPdf: $("#quotationShowProjectPriceOnPdf").checked,
     events: readEvents(), rows, terms: $("#quotationTerms").value.trim(), note: $("#quotationNote").value.trim(),
     ...totals
   };
@@ -1165,6 +1178,10 @@ function buildA4(q) {
   const pdfTax = q.tax !== undefined ? integerValue(q.tax) : Math.round(pdfSubtotal * TAX_RATE);
   const pdfGrandTotal = q.originalTotal !== undefined ? integerValue(q.originalTotal) : pdfSubtotal + pdfTax;
   const projectPriceTaxed = integerValue(q.projectPriceTaxed);
+  const showProjectPriceOnPdf = q.showProjectPriceOnPdf !== false;
+  const projectPriceRow = showProjectPriceOnPdf
+    ? `<tr class="project-price"><th>專案價（含稅）</th><td class="num">$ ${money(projectPriceTaxed)}</td></tr>`
+    : "";
   return `<article class="quote-a4">
     <header class="a4-brand-header">
       <img class="a4-logo" src="${esc(COMPANY_LOGO_URL)}" alt="曜炎創意 YAoyan" />
@@ -1181,7 +1198,7 @@ function buildA4(q) {
     <table class="a4-lines ${showEventColumn ? "" : "single-event"}"><thead><tr><th>編號<span>No.</span></th>${showEventColumn ? "<th>場次<span>Event</span></th>" : ""}<th>項目<span>Item</span></th><th>單價<span>Price</span></th><th>數量<span>Unit</span></th><th>單位</th><th>天數<span>Day</span></th><th>小計<span>Subtotal</span></th><th>備註<span>Note</span></th></tr></thead><tbody>${lineHtml || `<tr><td colspan="${showEventColumn ? 9 : 8}">尚無報價項目</td></tr>`}</tbody></table>
     <div class="a4-payment-grid">
       <div class="a4-terms-block"><div class="a4-section-title">合作與付款條件 Payment Terms</div><div class="a4-terms">${esc(q.terms || DEFAULT_TERMS)}</div>${q.note ? `<p class="a4-note"><b>備註：</b>${esc(q.note)}</p>` : ""}</div>
-      <table class="a4-total"><tbody><tr><th>合計<span>Total</span></th><td class="num">$ ${money(pdfSubtotal)}</td></tr><tr><th>營業稅 5%<span>Tax</span></th><td class="num">$ ${money(pdfTax)}</td></tr><tr><th>總計<span>Grand Total</span></th><td class="num">$ ${money(pdfGrandTotal)}</td></tr><tr class="project-price"><th>專案價（含稅）</th><td class="num">$ ${money(projectPriceTaxed)}</td></tr></tbody></table>
+      <table class="a4-total"><tbody><tr><th>合計<span>Total</span></th><td class="num">$ ${money(pdfSubtotal)}</td></tr><tr><th>營業稅 5%<span>Tax</span></th><td class="num">$ ${money(pdfTax)}</td></tr><tr><th>總計<span>Grand Total</span></th><td class="num">$ ${money(pdfGrandTotal)}</td></tr>${projectPriceRow}</tbody></table>
     </div>
     <footer class="a4-company"><div class="a4-company-info"><b>${esc(COMPANY.name)}</b><div>公司統編 Tax ID：${esc(COMPANY.taxId)}</div><div>業務聯絡人 Contact：${esc(COMPANY.contact)}</div><div>聯絡信箱 Email：${esc(COMPANY.email)}</div><div>匯款資訊 Remittance Info：${esc(COMPANY.bank)}<br>${esc(COMPANY.accountName)}／${esc(COMPANY.account)}</div></div><div class="a4-sign"><span>確認無誤煩請簽名回傳：</span><i></i></div></footer>
   </article>`;
@@ -1334,6 +1351,9 @@ function bindEvents() {
     recalcQuotation();
   });
   $("#quotationProjectPrice")?.addEventListener("blur", event => { event.target.value = event.target.value ? money(event.target.value) : ""; recalcQuotation(); });
+  $("#quotationShowProjectPriceOnPdf")?.addEventListener("change", () => {
+    state.quotationProjectPricePdfVisibilityCustomized = true;
+  });
   $("#quotationUseCalculatedPrice")?.addEventListener("click", () => {
     state.quotationProjectPriceCustomized = false;
     recalcQuotation();
