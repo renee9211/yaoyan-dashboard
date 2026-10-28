@@ -77,6 +77,11 @@ function numberValue(value) {
 
 function integerValue(value) { return Math.round(numberValue(value)); }
 function money(value) { return Math.round(numberValue(value)).toLocaleString("zh-TW"); }
+function percentage(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0";
+  return String(Math.round(number * 100) / 100);
+}
 function dateText(value) { return value || "—"; }
 function safeFilenamePart(value, fallback) {
   return String(value || fallback || "")
@@ -107,6 +112,26 @@ function timestampValue(value) {
   const date = typeof value.toDate === "function" ? value.toDate() : new Date(value);
   const result = date.getTime();
   return Number.isNaN(result) ? 0 : result;
+}
+
+function normalizedDateTokens(value) {
+  const text = String(value || "").trim();
+  if (!text) return [];
+  const tokens = [];
+  const fullDatePattern = /(20\d{2})[\/.\-年]\s*(\d{1,2})[\/.\-月]\s*(\d{1,2})日?/g;
+  let match;
+  let inheritedYear = "";
+  while ((match = fullDatePattern.exec(text))) {
+    inheritedYear = match[1];
+    tokens.push(`${match[1]}-${String(Number(match[2])).padStart(2, "0")}-${String(Number(match[3])).padStart(2, "0")}`);
+  }
+  const tokenYear = inheritedYear || String(new Date().getFullYear());
+  const shortDatePattern = /(?:^|[^\d])(\d{1,2})[\/.\-月]\s*(\d{1,2})日?/g;
+  while ((match = shortDatePattern.exec(text))) {
+    const token = `${tokenYear}-${String(Number(match[1])).padStart(2, "0")}-${String(Number(match[2])).padStart(2, "0")}`;
+    if (!tokens.includes(token)) tokens.push(token);
+  }
+  return tokens;
 }
 
 function canEdit() { return hasPermission(state.access, "manageQuotations"); }
@@ -482,7 +507,8 @@ function refreshCatalogPicker() {
 }
 
 function suggestedNumber(dateISO) {
-  const raw = (dateISO || new Date().toISOString().slice(0, 10)).replaceAll("-", "").slice(2);
+  const normalized = normalizedDateTokens(dateISO)[0] || new Date().toISOString().slice(0, 10);
+  const raw = normalized.replaceAll("-", "").slice(2);
   const prefix = `Y${raw}`;
   const used = state.quotations.map(q => q.number || "").filter(number => number.startsWith(prefix));
   const max = used.reduce((value, number) => Math.max(value, Number(number.slice(prefix.length, prefix.length + 2)) || 0), 0);
@@ -500,8 +526,8 @@ function addEventRow(event = {}) {
   row.innerHTML = `
     <label><span>場次名稱</span><input class="input event-name" value="${esc(event.name || `場次 ${$("#quotationEvents").children.length + 1}`)}" /></label>
     <label><span>地點</span><input class="input event-location" value="${esc(event.location || "")}" /></label>
-    <label><span>活動日期</span><input class="input event-date" type="date" value="${esc(event.eventDate || "")}" /></label>
-    <label><span>進／撤場日期</span><input class="input event-setup" value="${esc(event.setupDate || "")}" placeholder="例如：8/9–8/10" /></label>
+    <label><span>活動日期</span><input class="input event-date" value="${esc(event.eventDate || "")}" placeholder="例如：2026/11/03 或 11/3–11/5" /></label>
+    <label><span>進／撤場日期</span><input class="input event-setup" value="${esc(event.setupDate || "")}" placeholder="例如：2026/11/02–11/05" /></label>
     <button class="remove-equip-row remove-event" type="button" title="移除場次">✕</button>`;
   $("#quotationEvents").appendChild(row);
   refreshRowEventOptions();
@@ -512,7 +538,7 @@ function readEvents() {
     id: row.dataset.eventId,
     name: $(".event-name", row).value.trim(),
     location: $(".event-location", row).value.trim(),
-    eventDate: $(".event-date", row).value,
+    eventDate: $(".event-date", row).value.trim(),
     setupDate: $(".event-setup", row).value.trim()
   }));
 }
@@ -690,8 +716,11 @@ function renderAllocationRows() {
   body.innerHTML = rows.length ? rows.map(row => {
     const data = readRow(row);
     const included = data.calcMode === "included";
-    return `<tr><td><b>${esc(data.name || "未命名項目")}</b><div class="table-sub">${esc(data.category || "未分類")}</div></td><td class="num">${included ? "—" : money(calcPdfRowSubtotal(data))}</td><td><input class="input allocation-input" inputmode="numeric" data-allocation-row="${esc(data.id)}" value="${included ? "—" : esc(money(calcDealSubtotal(data)))}" ${included ? "disabled" : ""} /></td></tr>`;
-  }).join("") : `<tr><td colspan="3"><div class="empty-state">尚無報價項目</div></td></tr>`;
+    const quoteSubtotal = calcPdfRowSubtotal(data);
+    const internalSubtotal = calcDealSubtotal(data);
+    const rate = quoteSubtotal ? (internalSubtotal / quoteSubtotal) * 100 : 0;
+    return `<tr><td><b>${esc(data.name || "未命名項目")}</b><div class="table-sub">${esc(data.category || "未分類")}</div></td><td class="num">${included ? "—" : money(quoteSubtotal)}</td><td><input class="input allocation-rate-input" type="number" min="0" step="0.01" data-allocation-rate-row="${esc(data.id)}" value="${included ? "—" : esc(percentage(rate))}" ${included || !quoteSubtotal ? "disabled" : ""} /></td><td><input class="input allocation-input" inputmode="numeric" data-allocation-row="${esc(data.id)}" value="${included ? "—" : esc(money(internalSubtotal))}" ${included ? "disabled" : ""} /></td></tr>`;
+  }).join("") : `<tr><td colspan="4"><div class="empty-state">尚無報價項目</div></td></tr>`;
   updateAllocationStatus(calcTotals(readRows(), $("#quotationProjectPrice").value, state.quotationProjectPriceCustomized));
 }
 
@@ -742,6 +771,7 @@ function resetQuotationForm(quotation = null, options = {}) {
   $("#quotationShowProjectPriceOnPdf").checked = quotation
     ? (typeof quotation.showProjectPriceOnPdf === "boolean" ? quotation.showProjectPriceOnPdf : true)
     : false;
+  $("#quotationHideEventColumnOnPdf").checked = quotation?.hideEventColumnOnPdf === true;
   $("#quotationProjectPrice").value = quotation?.projectPriceTaxed ? money(quotation.projectPriceTaxed) : "";
   $("#quotationEvents").innerHTML = "";
   const events = quotation?.events?.length ? quotation.events : [blankEvent({ name: "場次 1", location: project?.location || "", eventDate: project?.startDate || "", setupDate: project?.startDate && project?.endDate ? `${project.startDate}–${project.endDate}` : "" })];
@@ -785,6 +815,7 @@ function readQuotationForm() {
     email: $("#quotationEmail").value.trim(),
     taxId: $("#quotationTaxId").value.trim(),
     showProjectPriceOnPdf: $("#quotationShowProjectPriceOnPdf").checked,
+    hideEventColumnOnPdf: $("#quotationHideEventColumnOnPdf").checked,
     events: readEvents(), rows, terms: $("#quotationTerms").value.trim(), note: $("#quotationNote").value.trim(),
     ...totals
   };
@@ -857,7 +888,7 @@ async function writeBackProject(quotation, quotationId) {
 async function createProjectFromQuotation(quotation, quotationId) {
   if (!canCreateProject()) return alert("你目前沒有新增專案的權限；報價本身不受影響。");
   const events = Array.isArray(quotation.events) ? quotation.events : [];
-  const eventDates = events.map(event => event.eventDate).filter(Boolean).sort();
+  const eventDates = events.flatMap(event => normalizedDateTokens(event.eventDate)).sort();
   const locations = [...new Set(events.map(event => event.location?.trim()).filter(Boolean))];
   const projectRef = doc(collections.projects);
   const quotationRef = doc(db, "quotations", quotationId);
@@ -909,7 +940,7 @@ function latestBySeries() {
 }
 
 function quotationEventDate(q) {
-  const dates = (Array.isArray(q?.events) ? q.events : []).map(event => event?.eventDate).filter(Boolean).sort();
+  const dates = (Array.isArray(q?.events) ? q.events : []).flatMap(event => normalizedDateTokens(event?.eventDate)).sort();
   if (dates[0]) return dates[0];
   const source = q?.quotationDate || q?.createdAt || q?.updatedAt;
   if (!source) return "";
@@ -1014,7 +1045,7 @@ function renderQuotations() {
   const filteredList = [...state.quotations].filter(q => {
     if (state.quotationProjectFilterId && q.projectId !== state.quotationProjectFilterId) return false;
     if (status !== "all" && q.status !== status) return false;
-    if (month && !(Array.isArray(q.events) && q.events.some(event => String(event?.eventDate || "").startsWith(month))) && !quotationEventDate(q).startsWith(month)) return false;
+    if (month && !(Array.isArray(q.events) && q.events.some(event => normalizedDateTokens(event?.eventDate).some(date => date.startsWith(month)))) && !quotationEventDate(q).startsWith(month)) return false;
     const linkedName = quotationDisplayProjectName(q);
     return !keyword || [q.number, q.projectName, linkedName, q.customerName, q.contactName, q.phone, q.email]
       .join(" ").toLocaleLowerCase("zh-Hant").includes(keyword);
@@ -1066,6 +1097,7 @@ function updateQuotationBatchUi(pageList = [], latest = latestBySeries()) {
   if ($("#quotationBatchCount")) $("#quotationBatchCount").textContent = `已選 ${selectedCount} 筆`;
   if ($("#quotationBatchStatus")) $("#quotationBatchStatus").disabled = !allowed || !selectedCount;
   if ($("#quotationBatchApply")) $("#quotationBatchApply").disabled = !allowed || !selectedCount || !$("#quotationBatchStatus")?.value;
+  if ($("#quotationBatchSyncProjects")) $("#quotationBatchSyncProjects").disabled = !allowed || !canEditProject() || !selectedCount;
   if ($("#quotationBatchClear")) $("#quotationBatchClear").disabled = !allowed || !selectedCount;
   const pageIds = pageList
     .filter(quotation => latest.get(quotation.seriesId || quotation.id)?.id === quotation.id && quotation.status !== "void")
@@ -1137,6 +1169,60 @@ async function applyQuotationBatchStatus() {
   }
 }
 
+async function syncQuotationBatchToProjects() {
+  if (!canEdit() || !canEditProject()) return alert("你目前沒有同時管理報價與編輯專案的權限");
+  const latest = latestBySeries();
+  const selected = state.quotations.filter(quotation => state.quotationSelectedIds.has(quotation.id));
+  if (!selected.length) return alert("請先選擇要同步的報價");
+  if (selected.length > 400) return alert("單次最多同步 400 筆報價，請分批操作");
+  const blocked = selected.filter(quotation =>
+    latest.get(quotation.seriesId || quotation.id)?.id !== quotation.id ||
+    quotation.status !== "confirmed" ||
+    !quotation.projectId ||
+    !state.projects.some(project => project.id === quotation.projectId)
+  );
+  const duplicateProjects = [...new Set(selected.map(quotation => quotation.projectId).filter((projectId, index, ids) => projectId && ids.indexOf(projectId) !== index))];
+  if (blocked.length || duplicateProjects.length) {
+    const blockedText = blocked.slice(0, 8).map(quotation => `• ${quotation.number || "未編號"} / V${quotation.version || 1}`).join("\n");
+    const duplicateText = duplicateProjects.slice(0, 8).map(projectId => `• ${state.projects.find(project => project.id === projectId)?.name || projectId}（選到多張報價）`).join("\n");
+    return alert(`批次同步必須全部為最新版、已確認、且已連結現有專案的報價；同一專案也只能選一張。本次沒有修改任何資料。${blockedText ? `\n\n不符合：\n${blockedText}` : ""}${duplicateText ? `\n\n重複專案：\n${duplicateText}` : ""}`);
+  }
+  if (!confirm(`確定將 ${selected.length} 筆已確認報價的專案價同步到各自連結的專案？\n\n只會更新專案價、未稅營收與確認報價資訊，不會修改設備、外部支出或專案狀態。`)) return;
+  const button = $("#quotationBatchSyncProjects");
+  if (button) button.disabled = true;
+  try {
+    const batch = writeBatch(db);
+    selected.forEach(quotation => {
+      batch.update(doc(db, "projects", quotation.projectId), {
+        quote: integerValue(quotation.projectPriceTaxed),
+        quoteTaxMode: "taxed",
+        revenue: integerValue(quotation.projectPriceUntaxed),
+        confirmedQuotationId: quotation.id,
+        confirmedQuotationNumber: quotation.number || "",
+        confirmedQuotationVersion: Number(quotation.version || 1),
+        updatedAt: serverTimestamp(),
+        updatedBy: state.user.uid
+      });
+    });
+    await batch.commit();
+    await logAction({
+      action: "batch_sync",
+      module: "quotations",
+      targetType: "projectBatch",
+      targetId: "",
+      targetName: `${selected.length} 個專案`,
+      summary: `批次同步專案金額｜${selected.map(quotation => `${quotation.number || "未編號"} V${quotation.version || 1}`).join("、")}`
+    });
+    state.quotationSelectedIds.clear();
+    renderQuotations();
+    alert(`已完成 ${selected.length} 筆報價的專案金額同步。`);
+  } catch (error) {
+    console.error(error);
+    alert("批次同步失敗：本次沒有完成同步，請確認專案編輯權限與網路狀態");
+    renderQuotations();
+  }
+}
+
 /* ------------------------- Preview and print ------------------------- */
 function previewDataFromForm() {
   const data = readQuotationForm();
@@ -1162,7 +1248,7 @@ function buildA4(q) {
   const rows = Array.isArray(q.rows) ? q.rows : [];
   const usesPdfPricing = q.pricingModel === "layered_v3";
   const usesLayeredPricing = q.pricingModel === "layered_v2" || q.dealSubtotal !== undefined || rows.some(row => row?.dealSubtotal !== undefined);
-  const showEventColumn = events.length > 1;
+  const showEventColumn = events.length > 1 && q.hideEventColumnOnPdf !== true;
   const lineHtml = rows.map((row, index) => {
     const included = row.calcMode === "included";
     const eventCell = showEventColumn ? `<td>${esc(row.eventId === "shared" ? "共用" : eventMap.get(row.eventId) || "—")}</td>` : "";
@@ -1326,6 +1412,7 @@ function bindEvents() {
   });
   $("#quotationBatchStatus")?.addEventListener("change", renderQuotations);
   $("#quotationBatchApply")?.addEventListener("click", applyQuotationBatchStatus);
+  $("#quotationBatchSyncProjects")?.addEventListener("click", syncQuotationBatchToProjects);
   $("#quotationBatchClear")?.addEventListener("click", () => {
     state.quotationSelectedIds.clear();
     if ($("#quotationBatchStatus")) $("#quotationBatchStatus").value = "";
@@ -1425,21 +1512,35 @@ function bindEvents() {
     if (event.target === $("#quotationAllocationModal")) closeAllocationModal();
   });
   $("#quotationAllocationRows")?.addEventListener("input", event => {
-    const input = event.target.closest(".allocation-input");
+    const input = event.target.closest(".allocation-input,.allocation-rate-input");
     if (!input) return;
-    const row = quotationRowById(input.dataset.allocationRow);
+    const rowId = input.dataset.allocationRow || input.dataset.allocationRateRow;
+    const row = quotationRowById(rowId);
     if (!row) return;
     const internalInput = $(".row-deal-subtotal", row);
-    row.dataset.dealSubtotalMode = input.value.trim() ? "manual" : "auto";
-    internalInput.value = input.value;
+    const modalRow = input.closest("tr");
+    const amountInput = $(".allocation-input", modalRow);
+    const rateInput = $(".allocation-rate-input", modalRow);
+    const quoteSubtotal = calcPdfRowSubtotal(readRow(row));
+    if (input.matches(".allocation-rate-input")) {
+      row.dataset.dealSubtotalMode = input.value.trim() ? "manual" : "auto";
+      const calculated = input.value.trim() ? Math.round(quoteSubtotal * numberValue(input.value) / 100) : quoteSubtotal;
+      internalInput.value = money(calculated);
+      amountInput.value = money(calculated);
+    } else {
+      row.dataset.dealSubtotalMode = input.value.trim() ? "manual" : "auto";
+      internalInput.value = input.value;
+      const amount = input.value.trim() ? integerValue(input.value) : quoteSubtotal;
+      if (!input.value.trim()) input.value = money(amount);
+      if (rateInput && quoteSubtotal) rateInput.value = percentage(amount / quoteSubtotal * 100);
+    }
     const totals = recalcQuotation();
-    if (!input.value.trim()) input.value = money(calcDealSubtotal(readRow(row)));
     updateAllocationStatus(totals);
   });
   $("#quotationAllocationRows")?.addEventListener("blur", event => {
-    const input = event.target.closest(".allocation-input");
+    const input = event.target.closest(".allocation-input,.allocation-rate-input");
     if (!input) return;
-    input.value = money(input.value);
+    input.value = input.matches(".allocation-input") ? money(input.value) : (input.value.trim() ? percentage(input.value) : "100");
   }, true);
   $("#quotationAllocationReset")?.addEventListener("click", () => {
     $$(".quotation-line", $("#quotationRows")).forEach(row => { row.dataset.dealSubtotalMode = "auto"; });

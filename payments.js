@@ -33,7 +33,8 @@ const state = {
   payments: [],
   receipts: [],
   unsubs: [],
-  currentPage: 1
+  currentPage: 1,
+  selectedPaymentIds: new Set()
 };
 
 function esc(value) {
@@ -497,6 +498,7 @@ function renderPaymentDetails(project, summary) {
     const received = receivedForPayment(payment);
     const remaining = Math.max(0, integerValue(payment.amount) - received);
     return `<tr class="${payment.voided ? "payment-void-row" : ""}">
+      <td class="batch-checkbox-cell"><input class="batch-checkbox payment-select" type="checkbox" value="${esc(payment.id)}" aria-label="選取款項 ${esc(payment.label || paymentTypeLabel(payment.paymentType))}" ${state.selectedPaymentIds.has(payment.id) ? "checked" : ""} ${canEdit() && !payment.voided ? "" : "disabled"} /></td>
       <td><b>${esc(payment.label || paymentTypeLabel(payment.paymentType))}</b><div class="table-sub">${esc(paymentTypeLabel(payment.paymentType))}</div></td>
       <td class="num">${money(payment.amount)}</td>
       <td>${dateText(payment.requestDate)}<div class="table-sub">發票：${esc(payment.invoiceNumber || "—")} ${payment.invoiceDate ? `｜${esc(payment.invoiceDate)}` : ""}</div></td>
@@ -514,7 +516,31 @@ function renderPaymentDetails(project, summary) {
   }).join("");
 
   return `<div class="payment-detail-head"><div><b>款項明細</b><span>已排定 ${money(summary.scheduled)}｜尚未排定 ${summary.total ? money(summary.unscheduled) : "總價待確認"}</span></div><button class="btn primary small" type="button" data-payment-add-project="${esc(project.id)}" ${canEdit() ? "" : "disabled"}>＋ 新增本專案款項</button></div>
-    <div class="table-scroll"><table class="table payment-detail-table"><thead><tr><th>款項</th><th class="num">請款金額</th><th>請款／發票</th><th>預計收款</th><th>實際收款紀錄</th><th class="num">應收餘額</th><th>狀態</th><th>操作</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    <div class="table-scroll"><table class="table payment-detail-table"><thead><tr><th class="batch-checkbox-column"><input class="batch-checkbox payment-select-project-all" type="checkbox" data-payment-select-project="${esc(project.id)}" aria-label="選取本專案所有可修改款項" ${canEdit() ? "" : "disabled"} /></th><th>款項</th><th class="num">請款金額</th><th>請款／發票</th><th>預計收款</th><th>實際收款紀錄</th><th class="num">應收餘額</th><th>狀態</th><th>操作</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function updatePaymentBatchUi() {
+  const allowed = canEdit();
+  const selectedCount = state.selectedPaymentIds.size;
+  $("#paymentBatchBar")?.classList.toggle("hidden", !allowed);
+  if ($("#paymentBatchCount")) $("#paymentBatchCount").textContent = `已選 ${selectedCount} 筆款項`;
+  const action = $("#paymentBatchAction")?.value || "";
+  if ($("#paymentBatchAction")) $("#paymentBatchAction").disabled = !allowed || !selectedCount;
+  $("#paymentBatchExpectedField")?.classList.toggle("hidden", action !== "requested");
+  $("#paymentBatchMethodField")?.classList.toggle("hidden", action !== "paid");
+  $("#paymentBatchDate")?.closest("label")?.classList.toggle("hidden", !["requested", "paid"].includes(action));
+  if ($("#paymentBatchDateLabel")) $("#paymentBatchDateLabel").textContent = action === "paid" ? "實際收款日" : "請款日";
+  if ($("#paymentBatchDate") && !$("#paymentBatchDate").value) $("#paymentBatchDate").value = TODAY();
+  if ($("#paymentBatchApply")) $("#paymentBatchApply").disabled = !allowed || !selectedCount || !action;
+  if ($("#paymentBatchClear")) $("#paymentBatchClear").disabled = !allowed || !selectedCount;
+
+  $$(".payment-select-project-all", $("#paymentProjectTableBody")).forEach(input => {
+    const projectPayments = state.payments.filter(payment => payment.projectId === input.dataset.paymentSelectProject && !payment.voided);
+    const selected = projectPayments.filter(payment => state.selectedPaymentIds.has(payment.id)).length;
+    input.checked = Boolean(projectPayments.length) && selected === projectPayments.length;
+    input.indeterminate = selected > 0 && selected < projectPayments.length;
+    input.disabled = !allowed || !projectPayments.length;
+  });
 }
 
 function filteredProjects() {
@@ -603,6 +629,8 @@ function renderPagination(totalItems) {
 function renderPayments() {
   const body = $("#paymentProjectTableBody");
   if (!body) return;
+  const selectableIds = new Set(state.payments.filter(payment => !payment.voided).map(payment => payment.id));
+  [...state.selectedPaymentIds].forEach(id => { if (!selectableIds.has(id)) state.selectedPaymentIds.delete(id); });
   updatePaymentFilterUi();
   const list = filteredProjects();
   const totalPages = Math.max(1, Math.ceil(list.length / PAYMENTS_PER_PAGE));
@@ -638,6 +666,7 @@ function renderPayments() {
   $("#paymentReceivableTotal").textContent = money(tracked.reduce((sum, item) => sum + item.receivable, 0));
   $("#paymentOutstandingTotal").textContent = money(tracked.reduce((sum, item) => sum + item.totalOutstanding, 0));
   $("#paymentOpenCreate").disabled = !canEdit();
+  updatePaymentBatchUi();
 }
 
 function toggleProjectDetails(projectId) {
@@ -651,6 +680,107 @@ async function voidPayment(payment) {
   if (!confirm(`確定作廢「${payment.label || paymentTypeLabel(payment.paymentType)}」？款項會保留供日後查核，但不再計入統計。`)) return;
   await updateDoc(doc(db, "payments", payment.id), { voided: true, voidedAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: state.user.uid });
   await logAction({ action: "void", module: "payments", targetType: "payment", targetId: payment.id, targetName: `${payment.customerName || ""}｜${payment.projectName || ""}`, summary: `${payment.label || paymentTypeLabel(payment.paymentType)}｜${money(payment.amount)} 元` });
+}
+
+async function applyPaymentBatchAction() {
+  if (!canEdit() || !state.user) return alert("你目前沒有管理請款與收款的權限");
+  const action = $("#paymentBatchAction")?.value || "";
+  if (!["pending", "requested", "paid"].includes(action)) return alert("請先選擇批次動作");
+  const selected = state.payments.filter(payment => state.selectedPaymentIds.has(payment.id));
+  if (!selected.length) return alert("請先勾選要修改的款項");
+  if (selected.length > 100) return alert("單次最多處理 100 筆款項，請分批操作");
+  if (selected.some(payment => payment.voided)) return alert("選取內容包含已作廢款項，本次沒有修改任何資料");
+
+  const actionDate = $("#paymentBatchDate")?.value || "";
+  const expectedDate = $("#paymentBatchExpectedDate")?.value || "";
+  if (["requested", "paid"].includes(action) && !actionDate) return alert(action === "paid" ? "請填寫實際收款日" : "請填寫請款日");
+  if (action === "requested" && expectedDate && (expectedDate < TODAY() || expectedDate < actionDate)) return alert("預計收款日不能早於今天或請款日，否則系統會立即判定為逾期未收");
+
+  const withReceipts = selected.filter(payment => receivedForPayment(payment) > 0);
+  if (["pending", "requested"].includes(action) && withReceipts.length) {
+    const names = withReceipts.slice(0, 8).map(payment => `• ${payment.projectName || "未命名專案"}｜${payment.label || paymentTypeLabel(payment.paymentType)}`).join("\n");
+    return alert(`已有收款紀錄的款項不能改為「${action === "pending" ? "待請款" : "已請款待收"}」，本次沒有修改任何資料：\n\n${names}`);
+  }
+  const fullyPaid = selected.filter(payment => paymentRemaining(payment) <= 0);
+  if (action === "paid" && fullyPaid.length) {
+    const names = fullyPaid.slice(0, 8).map(payment => `• ${payment.projectName || "未命名專案"}｜${payment.label || paymentTypeLabel(payment.paymentType)}`).join("\n");
+    return alert(`以下款項已無應收餘額，本次沒有修改任何資料：\n\n${names}`);
+  }
+
+  const actionLabel = action === "pending" ? "改回待請款" : action === "requested" ? "標記為已請款待收" : "登記為全額收款";
+  const warning = action === "pending"
+    ? "\n\n請款日、發票日期、發票號碼與預計收款日會清除；金額與款項備註會保留。"
+    : action === "paid"
+      ? `\n\n系統會依每筆應收餘額建立 ${actionDate} 的實際收款紀錄。`
+      : `\n\n請款日將設為 ${actionDate}，預計收款日${expectedDate ? `設為 ${expectedDate}` : "會清空"}。`;
+  if (!confirm(`確定將 ${selected.length} 筆款項${actionLabel}？${warning}`)) return;
+
+  const button = $("#paymentBatchApply");
+  if (button) button.disabled = true;
+  try {
+    const batch = writeBatch(db);
+    selected.forEach(payment => {
+      const paymentRef = doc(db, "payments", payment.id);
+      if (action === "pending") {
+        batch.update(paymentRef, {
+          requestDate: "", invoiceDate: "", invoiceNumber: "", expectedPaymentDate: "",
+          updatedAt: serverTimestamp(), updatedBy: state.user.uid
+        });
+        return;
+      }
+      if (action === "requested") {
+        batch.update(paymentRef, {
+          requestDate: actionDate, expectedPaymentDate: expectedDate,
+          updatedAt: serverTimestamp(), updatedBy: state.user.uid
+        });
+        return;
+      }
+
+      const paymentUpdate = { updatedAt: serverTimestamp(), updatedBy: state.user.uid };
+      if (!payment.requestDate) paymentUpdate.requestDate = actionDate;
+      if (!actualReceipts(payment.id).length && integerValue(payment.receivedAmount) > 0) {
+        batch.set(doc(db, "receipts", `${payment.id}__legacy`), legacyReceiptPayload(payment));
+        paymentUpdate.receivedAmount = 0;
+        paymentUpdate.receivedDate = "";
+      }
+      batch.update(paymentRef, paymentUpdate);
+      const receiptRef = doc(collections.receipts);
+      batch.set(receiptRef, {
+        paymentId: payment.id,
+        projectId: payment.projectId || "",
+        projectName: payment.projectName || "",
+        customerName: payment.customerName || "",
+        billingLabel: payment.label || paymentTypeLabel(payment.paymentType),
+        amount: paymentRemaining(payment),
+        receivedDate: actionDate,
+        method: $("#paymentBatchMethod")?.value || "bank_transfer",
+        reference: "",
+        note: "批次登記全額收款",
+        voided: false,
+        createdAt: serverTimestamp(),
+        createdBy: state.user.uid,
+        updatedAt: serverTimestamp(),
+        updatedBy: state.user.uid
+      });
+    });
+    await batch.commit();
+    await logAction({
+      action: "batch_update",
+      module: "payments",
+      targetType: "paymentBatch",
+      targetId: "",
+      targetName: `${selected.length} 筆款項`,
+      summary: `${actionLabel}｜${selected.map(payment => `${payment.projectName || "未命名專案"}／${payment.label || paymentTypeLabel(payment.paymentType)}`).join("、")}`
+    });
+    state.selectedPaymentIds.clear();
+    if ($("#paymentBatchAction")) $("#paymentBatchAction").value = "";
+    renderPayments();
+    alert(`已完成 ${selected.length} 筆款項的批次更新。`);
+  } catch (error) {
+    console.error(error);
+    alert("批次更新失敗：請確認請款／收款權限與網路狀態");
+    renderPayments();
+  }
 }
 
 const schedulePaymentsRender = createRenderScheduler(() => {
@@ -673,6 +803,7 @@ function detach() {
   state.customers = [];
   state.payments = [];
   state.receipts = [];
+  state.selectedPaymentIds.clear();
   renderPayments();
 }
 
@@ -712,6 +843,13 @@ function bindEvents() {
     if ($("#paymentProjectStatusFilter")) $("#paymentProjectStatusFilter").value = "all";
     resetPage();
   });
+  $("#paymentBatchAction")?.addEventListener("change", updatePaymentBatchUi);
+  $("#paymentBatchApply")?.addEventListener("click", applyPaymentBatchAction);
+  $("#paymentBatchClear")?.addEventListener("click", () => {
+    state.selectedPaymentIds.clear();
+    if ($("#paymentBatchAction")) $("#paymentBatchAction").value = "";
+    renderPayments();
+  });
   $("#paymentPagination")?.addEventListener("click", event => {
     const button = event.target.closest("button[data-page]");
     if (!button || button.disabled) return;
@@ -727,6 +865,7 @@ function bindEvents() {
   });
 
   $("#paymentProjectTableBody")?.addEventListener("click", async event => {
+    if (event.target.closest(".payment-select,.payment-select-project-all")) return;
     const add = event.target.closest("[data-payment-add-project]");
     const expand = event.target.closest("[data-payment-expand]");
     const edit = event.target.closest("[data-payment-edit]");
@@ -765,6 +904,26 @@ function bindEvents() {
       await deleteDoc(doc(db, "payments", payment.id));
       await logAction({ action: "delete", module: "payments", targetType: "payment", targetId: payment.id, targetName: `${payment.customerName || ""}｜${payment.projectName || ""}`, summary: `${payment.label || paymentTypeLabel(payment.paymentType)}｜${money(payment.amount)} 元` });
       return;
+    }
+  });
+  $("#paymentProjectTableBody")?.addEventListener("change", event => {
+    const input = event.target.closest(".payment-select");
+    const projectAll = event.target.closest(".payment-select-project-all");
+    if (input) {
+      if (input.checked) state.selectedPaymentIds.add(input.value);
+      else state.selectedPaymentIds.delete(input.value);
+      updatePaymentBatchUi();
+      return;
+    }
+    if (projectAll) {
+      state.payments
+        .filter(payment => payment.projectId === projectAll.dataset.paymentSelectProject && !payment.voided)
+        .forEach(payment => {
+          if (projectAll.checked) state.selectedPaymentIds.add(payment.id);
+          else state.selectedPaymentIds.delete(payment.id);
+        });
+      $$(`.payment-select`, projectAll.closest("table")).forEach(checkbox => { if (!checkbox.disabled) checkbox.checked = projectAll.checked; });
+      updatePaymentBatchUi();
     }
   });
 

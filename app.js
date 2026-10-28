@@ -489,7 +489,7 @@ function getEquipmentNameList() {
 
 function buildEquipNameSelect(selectedValue = "") {
   const sel = document.createElement("select");
-  sel.className = "equip-name";
+  sel.className = "select equip-name";
 
   const opt0 = document.createElement("option");
   opt0.value = "";
@@ -506,11 +506,25 @@ function buildEquipNameSelect(selectedValue = "") {
     sel.appendChild(optMissing);
   }
 
-  names.forEach(name => {
-    const opt = document.createElement("option");
-    opt.value = name;
-    opt.textContent = name;
-    sel.appendChild(opt);
+  const groups = new Map();
+  (state.equipments || [])
+    .filter(equipment => String(equipment?.name || "").trim())
+    .sort((a, b) => String(a.category || "未分類").localeCompare(String(b.category || "未分類"), "zh-Hant") || String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant"))
+    .forEach(equipment => {
+      const category = String(equipment.category || "未分類").trim() || "未分類";
+      if (!groups.has(category)) groups.set(category, []);
+      groups.get(category).push(String(equipment.name).trim());
+    });
+  groups.forEach((equipmentNames, category) => {
+    const group = document.createElement("optgroup");
+    group.label = category;
+    equipmentNames.forEach(name => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      group.appendChild(opt);
+    });
+    sel.appendChild(group);
   });
 
   sel.value = selectedValue || "";

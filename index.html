@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css?v=phase3-v12-1" />
+  <link rel="stylesheet" href="styles.css?v=phase3-v13" />
 </head>
 
 <body>
@@ -244,6 +244,16 @@
         <button id="paymentClearFilters" class="btn ghost small filter-clear hidden" type="button">清除篩選</button>
       </div>
 
+      <div id="paymentBatchBar" class="card batch-toolbar hidden" aria-live="polite">
+        <span id="paymentBatchCount" class="batch-count">已選 0 筆款項</span>
+        <label class="field-inline batch-status-field"><span>批次修改收款狀態</span><select id="paymentBatchAction" class="select"><option value="">選擇動作...</option><option value="pending">改回待請款</option><option value="requested">標記為已請款待收</option><option value="paid">登記為全額收款</option></select></label>
+        <label class="field-inline payment-batch-date-field"><span id="paymentBatchDateLabel">狀態日期</span><input id="paymentBatchDate" class="input" type="date" /></label>
+        <label id="paymentBatchExpectedField" class="field-inline hidden"><span>預計收款日</span><input id="paymentBatchExpectedDate" class="input" type="date" /></label>
+        <label id="paymentBatchMethodField" class="field-inline hidden"><span>收款方式</span><select id="paymentBatchMethod" class="select"><option value="bank_transfer">銀行轉帳</option><option value="cash">現金</option><option value="check">支票</option><option value="card">刷卡</option><option value="other">其他</option></select></label>
+        <button id="paymentBatchApply" class="btn primary small" type="button" disabled>套用</button>
+        <button id="paymentBatchClear" class="btn ghost small" type="button" disabled>取消選取</button>
+      </div>
+
       <div class="list-meta"><span id="paymentResultCount">共 0 個專案</span></div>
       <div class="card table-card payment-table-card">
         <div class="table-scroll">
@@ -296,6 +306,7 @@
         <span id="quotationBatchCount" class="batch-count">已選 0 筆</span>
         <label class="field-inline batch-status-field"><span>批次修改狀態</span><select id="quotationBatchStatus" class="select"><option value="">選擇狀態...</option><option value="draft">草稿</option><option value="sent">已寄出</option><option value="confirmed">已確認</option><option value="void">作廢</option></select></label>
         <button id="quotationBatchApply" class="btn primary small" type="button" disabled>套用狀態</button>
+        <button id="quotationBatchSyncProjects" class="btn ghost small" type="button" disabled>同步專案金額</button>
         <button id="quotationBatchClear" class="btn ghost small" type="button" disabled>取消選取</button>
       </div>
 
@@ -804,7 +815,7 @@
             <label class="field"><span>統一編號</span><input id="quotationTaxId" class="input" /></label>
           </div></section>
 
-          <section class="form-section"><div class="section-head"><h3>活動場次</h3><button id="quotationAddEvent" class="btn ghost small" type="button">＋ 新增場次</button></div><div id="quotationEvents" class="quote-events"></div></section>
+          <section class="form-section"><div class="section-head"><h3>活動場次</h3><div class="inline-actions"><label class="quote-event-pdf-toggle"><input id="quotationHideEventColumnOnPdf" type="checkbox" /><span>PDF 隱藏場次欄</span></label><button id="quotationAddEvent" class="btn ghost small" type="button">＋ 新增場次</button></div></div><div id="quotationEvents" class="quote-events"></div></section>
 
           <section class="form-section quote-lines-section"><div class="section-head"><div><h3>報價明細</h3><p class="field-help">勾選「套用至 PDF」時，報價小計會使用目前的計價方式；內部分項金額請由「分配專案價」調整。</p></div><div class="inline-actions"><select id="quotationCatalogPicker" class="select compact-select"><option value="">從常用項目新增…</option></select><button id="quotationAddRow" class="btn ghost small" type="button">＋ 空白列</button></div></div><div class="quote-lines-scroll"><table class="quote-lines-table"><thead><tr><th>場次</th><th>類別／項目</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>計價</th><th>續日%</th><th>報價小計</th><th>備註</th><th>順序／操作</th></tr></thead><tbody id="quotationRows"></tbody></table></div></section>
 
@@ -819,7 +830,7 @@
   </div>
 
   <!-- 專案價分配 Modal -->
-  <div id="quotationAllocationModal" class="modal hidden"><div class="modal-card allocation-modal-card"><div class="modal-head"><div><div class="modal-title">分配專案價</div><div class="field-help">內部分項金額不會顯示在 PDF，可用來分配全案額外折扣。</div></div><button id="quotationAllocationClose" class="icon-btn" type="button">✕</button></div><div class="modal-body allocation-modal-body"><div class="allocation-table-scroll"><table class="allocation-table"><thead><tr><th>項目</th><th>報價小計</th><th>內部分項金額</th></tr></thead><tbody id="quotationAllocationRows"></tbody></table></div><div class="allocation-summary"><div><span>專案價未稅目標</span><b id="quotationAllocationTarget">0</b></div><div><span>目前分項合計</span><b id="quotationAllocationTotal">0</b></div><div><span>分配狀態</span><b id="quotationAllocationModalStatus" class="allocation-status">分配完成</b></div></div></div><div class="modal-actions allocation-modal-actions"><button id="quotationAllocationReset" class="btn ghost" type="button">依報價小計重新帶入</button><button id="quotationAllocationDone" class="btn primary" type="button">完成</button></div></div></div>
+  <div id="quotationAllocationModal" class="modal hidden"><div class="modal-card allocation-modal-card"><div class="modal-head"><div><div class="modal-title">分配專案價</div><div class="field-help">可輸入折數，以「報價小計 × 折數」計算內部分項金額；此處不會顯示在 PDF。</div></div><button id="quotationAllocationClose" class="icon-btn" type="button">✕</button></div><div class="modal-body allocation-modal-body"><div class="allocation-table-scroll"><table class="allocation-table"><thead><tr><th>項目</th><th>報價小計</th><th>折數（%）</th><th>內部分項金額</th></tr></thead><tbody id="quotationAllocationRows"></tbody></table></div><div class="allocation-summary"><div><span>專案價未稅目標</span><b id="quotationAllocationTarget">0</b></div><div><span>目前分項合計</span><b id="quotationAllocationTotal">0</b></div><div><span>分配狀態</span><b id="quotationAllocationModalStatus" class="allocation-status">分配完成</b></div></div></div><div class="modal-actions allocation-modal-actions"><button id="quotationAllocationReset" class="btn ghost" type="button">依報價小計重新帶入</button><button id="quotationAllocationDone" class="btn primary" type="button">完成</button></div></div></div>
 
   <!-- A4 報價預覽 Modal -->
   <div id="quotationPreviewModal" class="modal hidden"><div class="modal-card preview-modal-card"><div class="modal-head"><div class="modal-title">報價單預覽</div><div class="inline-actions"><button id="quotationPrint" class="btn primary small" type="button">列印／另存 PDF</button><button id="quotationPreviewClose" class="icon-btn" type="button">✕</button></div></div><div id="quotationPreviewBody" class="modal-body preview-body"></div></div></div>
@@ -844,9 +855,9 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=phase3-v11-5"></script>
-  <script type="module" src="./quotations.js?v=phase3-v12-1"></script>
-  <script type="module" src="./payments.js?v=phase3-v11-8"></script>
+  <script type="module" src="./app.js?v=phase3-v13"></script>
+  <script type="module" src="./quotations.js?v=phase3-v13"></script>
+  <script type="module" src="./payments.js?v=phase3-v13"></script>
   <script type="module" src="./finance.js?v=phase3-v11-6"></script>
 </body>
 </html>
