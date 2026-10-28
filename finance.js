@@ -50,14 +50,16 @@ const financePages = {
   expenses: 1,
   companyExpenses: 1,
   next30: 1,
-  receivables: 1
+  receivables: 1,
+  audit: 1
 };
 const financePaginationConfig = {
   payables: { host: "#financePayablePagination", label: "應付帳款" },
   expenses: { host: "#expensePagination", label: "外部支出" },
   companyExpenses: { host: "#companyExpensePagination", label: "公司支出" },
   next30: { host: "#financeNext30Pagination", label: "預計收款" },
-  receivables: { host: "#financeReceivablePagination", label: "應收帳款" }
+  receivables: { host: "#financeReceivablePagination", label: "應收帳款" },
+  audit: { host: "#auditPagination", label: "操作紀錄", pageSize: 30 }
 };
 
 function esc(value) {
@@ -179,16 +181,18 @@ function sortFinanceRows(rows, sortBy, { dateValue, amountValue, nameValue }) {
 function financeResultText(totalItems, key) {
   if (!totalItems) return "共 0 筆";
   const page = financePages[key] || 1;
-  const start = (page - 1) * FINANCE_PAGE_SIZE + 1;
-  const end = Math.min(page * FINANCE_PAGE_SIZE, totalItems);
-  return totalItems > FINANCE_PAGE_SIZE ? `共 ${totalItems} 筆（顯示 ${start}–${end}）` : `共 ${totalItems} 筆`;
+  const pageSize = financePaginationConfig[key]?.pageSize || FINANCE_PAGE_SIZE;
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, totalItems);
+  return totalItems > pageSize ? `共 ${totalItems} 筆（顯示 ${start}–${end}）` : `共 ${totalItems} 筆`;
 }
 
 function renderFinancePagination(key, totalItems) {
   const config = financePaginationConfig[key];
   const host = config ? $(config.host) : null;
   if (!host) return;
-  const totalPages = Math.max(1, Math.ceil(totalItems / FINANCE_PAGE_SIZE));
+  const pageSize = config.pageSize || FINANCE_PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   financePages[key] = Math.min(Math.max(1, financePages[key] || 1), totalPages);
   if (totalPages <= 1) {
     host.innerHTML = "";
@@ -214,8 +218,9 @@ function renderFinancePagination(key, totalItems) {
 
 function paginateFinanceRows(rows, key) {
   renderFinancePagination(key, rows.length);
-  const start = (financePages[key] - 1) * FINANCE_PAGE_SIZE;
-  return rows.slice(start, start + FINANCE_PAGE_SIZE);
+  const pageSize = financePaginationConfig[key]?.pageSize || FINANCE_PAGE_SIZE;
+  const start = (financePages[key] - 1) * pageSize;
+  return rows.slice(start, start + pageSize);
 }
 
 function updateFinanceFilterUi(context) {
@@ -784,11 +789,13 @@ function renderAudit() {
   const module = $("#auditModuleFilter")?.value || "all";
   const list = state.auditLogs.filter(log => module === "all" || log.module === module)
     .filter(log => !keyword || [log.actorName, log.actorEmail, log.targetName, log.summary, log.module, log.action].join(" ").toLocaleLowerCase("zh-Hant").includes(keyword));
-  $("#auditLogBody").innerHTML = list.length ? list.map(log => `<tr>
+  const pageList = paginateFinanceRows(list, "audit");
+  if ($("#auditResultCount")) $("#auditResultCount").textContent = financeResultText(list.length, "audit");
+  $("#auditLogBody").innerHTML = pageList.length ? pageList.map(log => `<tr>
     <td>${esc(timestampText(log.createdAt))}</td><td><b>${esc(log.actorName || "—")}</b><div class="table-sub">${esc(log.actorEmail || "")}</div></td>
     <td>${esc(moduleLabel(log.module))}</td><td><span class="badge neutral">${esc(actionLabel(log.action))}</span></td>
     <td>${esc(log.targetName || log.targetId || "—")}</td><td>${esc(log.summary || "—")}</td>
-  </tr>`).join("") : `<tr><td colspan="6"><div class="empty-state">第三階段上線後的操作才會開始出現在這裡。</div></td></tr>`;
+  </tr>`).join("") : `<tr><td colspan="6"><div class="empty-state">尚無操作紀錄</div></td></tr>`;
 }
 
 function renderSystemAccess() {
@@ -906,14 +913,16 @@ function bindEvents() {
       const button = event.target.closest("button[data-page]");
       if (!button || button.disabled) return;
       financePages[key] = Number(button.dataset.page) || 1;
-      renderFinance();
+      if (key === "audit") renderAudit();
+      else renderFinance();
       host.closest(".finance-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     host?.addEventListener("change", event => {
       const select = event.target.closest("select[data-page-select]");
       if (!select) return;
       financePages[key] = Number(select.value) || 1;
-      renderFinance();
+      if (key === "audit") renderAudit();
+      else renderFinance();
       host.closest(".finance-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   });
@@ -990,8 +999,8 @@ function bindEvents() {
     const button = event.target.closest("[data-save-user]");
     if (button) saveUserPermissions(button.dataset.saveUser);
   });
-  $("#auditSearch")?.addEventListener("input", renderAudit);
-  $("#auditModuleFilter")?.addEventListener("change", renderAudit);
+  $("#auditSearch")?.addEventListener("input", () => { resetFinancePages(["audit"]); renderAudit(); });
+  $("#auditModuleFilter")?.addEventListener("change", () => { resetFinancePages(["audit"]); renderAudit(); });
 }
 
 function init() {

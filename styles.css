@@ -987,7 +987,7 @@ main, .topbar{ max-width:1440px; margin-left:auto; margin-right:auto; }
 
 .project-toolbar{
   display:grid;
-  grid-template-columns:minmax(240px,1fr) 160px 180px 190px auto;
+  grid-template-columns:minmax(240px,1fr) 160px 185px 185px auto;
   align-items:end;
   gap:10px;
   padding:12px;

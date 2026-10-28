@@ -67,6 +67,7 @@ function calendarSyncLabel(project) {
 
 const PROJECT_STATUSES = ["planning", "confirmed", "executing", "closed", "lost"];
 const PROJECTS_PER_PAGE = 20;
+const EQUIPMENT_PER_PAGE = 20;
 
 function parseIntSafe(v) {
   if (v === "" || v === null || v === undefined) return 0;
@@ -229,9 +230,6 @@ const dom = {
   projectSearch: () => $("#projectSearch"),
   projectMonthFilter: () => $("#projectMonthFilter"),
   projectStatusFilter: () => $("#projectStatusFilter"),
-  projectStatusOptions: () => $("#projectStatusOptions"),
-  projectStatusSummary: () => $("#projectStatusSummary"),
-  projectFilterChips: () => $("#projectFilterChips"),
   projectClearFilters: () => $("#projectClearFilters"),
   projectSortBy: () => $("#projectSortBy"),
   projectTableBody: () => $("#projectTableBody"),
@@ -262,6 +260,8 @@ const dom = {
   equipmentAnnualUsageDays: () => $("#equipmentAnnualUsageDays"),
   equipmentSearch: () => $("#equipmentSearch"),
   equipmentTableBody: () => $("#equipmentTableBody"),
+  equipmentResultCount: () => $("#equipmentResultCount"),
+  equipmentPagination: () => $("#equipmentPagination"),
 
   calendarMonth: () => $("#calendarMonth"),
   calendarGrid: () => $("#calendarGrid"),
@@ -317,9 +317,10 @@ let currentRole = null;
 let currentAccess = null;
 let realtimeUnsubscribers = [];
 let state = { projects: [], equipments: [], payments: [], receipts: [], quotations: [], expenses: [], companyExpenses: [] };
-let selectedProjectStatuses = new Set();
+let selectedProjectStatus = "all";
 const selectedProjectIds = new Set();
 let projectCurrentPage = 1;
+let equipmentCurrentPage = 1;
 let equipmentSort = { key: "name", direction: "asc" };
 let projectFormDirty = false;
 let equipmentFormDirty = false;
@@ -1243,33 +1244,11 @@ function toggleProjectDetails(projectId, forceOpen) {
   if (nextOpen) row.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-function getSelectedStatusLabels() {
-  return PROJECT_STATUSES.filter(s => selectedProjectStatuses.has(s)).map(statusLabel);
-}
-
 function updateProjectFilterUi() {
-  const labels = getSelectedStatusLabels();
-  if (dom.projectStatusSummary()) {
-    dom.projectStatusSummary().textContent = labels.length ? `已選 ${labels.length} 項` : "全部狀態";
-  }
-
-  if (dom.projectFilterChips()) {
-    dom.projectFilterChips().innerHTML = PROJECT_STATUSES
-      .filter(s => selectedProjectStatuses.has(s))
-      .map(s => `<button type="button" data-remove-status="${escapeHtml(s)}">${escapeHtml(statusLabel(s))} <span>✕</span></button>`)
-      .join("");
-  }
-
-  const counts = Object.fromEntries(PROJECT_STATUSES.map(s => [s, 0]));
-  state.projects.forEach(p => { if (p.status in counts) counts[p.status] += 1; });
-  $all("[data-count]", dom.projectStatusOptions()).forEach(el => {
-    el.textContent = String(counts[el.dataset.count] || 0);
-  });
-
   const hasFilters = Boolean(
     dom.projectSearch()?.value.trim() ||
     dom.projectMonthFilter()?.value ||
-    selectedProjectStatuses.size
+    selectedProjectStatus !== "all"
   );
   dom.projectClearFilters()?.classList.toggle("hidden", !hasFilters);
 }
@@ -1292,7 +1271,7 @@ function getFilteredSortedProjects() {
       const haystack = [p.name, p.client, p.location].join(" ").toLocaleLowerCase("zh-Hant");
       if (!haystack.includes(keyword)) return false;
     }
-    if (selectedProjectStatuses.size && !selectedProjectStatuses.has(p.status)) return false;
+    if (selectedProjectStatus !== "all" && p.status !== selectedProjectStatus) return false;
     if (dateRange) {
       if (!p.startDate || !p.endDate) return false;
       if (p.endDate < dateRange.start || p.startDate > dateRange.end) return false;
@@ -1341,6 +1320,23 @@ function renderProjectPagination(totalItems) {
     <label class="pagination-jump"><span>跳至</span><select data-page-select aria-label="選擇專案頁數">${pageOptions}</select><span>頁</span></label>
     <button class="page-direction" type="button" data-page="${projectCurrentPage + 1}" ${projectCurrentPage === totalPages ? "disabled" : ""}>下一頁</button>
   `;
+}
+
+function renderEquipmentPagination(totalItems) {
+  const host = dom.equipmentPagination();
+  if (!host) return;
+  const totalPages = Math.max(1, Math.ceil(totalItems / EQUIPMENT_PER_PAGE));
+  equipmentCurrentPage = Math.min(Math.max(1, equipmentCurrentPage), totalPages);
+  if (totalPages <= 1) return void (host.innerHTML = "");
+  const visiblePages = new Set([1, totalPages]);
+  for (let page = equipmentCurrentPage - 2; page <= equipmentCurrentPage + 2; page += 1) if (page >= 1 && page <= totalPages) visiblePages.add(page);
+  const pageButtons = [...visiblePages].sort((a, b) => a - b).map((page, index, pages) => {
+    const gap = index && page - pages[index - 1] > 1 ? `<span class="pagination-ellipsis" aria-hidden="true">…</span>` : "";
+    return `${gap}<button class="page-number ${page === equipmentCurrentPage ? "active" : ""}" type="button" data-page="${page}" ${page === equipmentCurrentPage ? 'aria-current="page"' : ""}>${page}</button>`;
+  }).join("");
+  const pageOptions = Array.from({ length: totalPages }, (_, index) => index + 1)
+    .map(page => `<option value="${page}" ${page === equipmentCurrentPage ? "selected" : ""}>${page}</option>`).join("");
+  host.innerHTML = `<button class="page-direction" type="button" data-page="${equipmentCurrentPage - 1}" ${equipmentCurrentPage === 1 ? "disabled" : ""}>上一頁</button><div class="pagination-pages">${pageButtons}</div><span class="pagination-summary">第 ${equipmentCurrentPage} / ${totalPages} 頁</span><label class="pagination-jump"><span>跳至</span><select data-page-select aria-label="選擇設備頁數">${pageOptions}</select><span>頁</span></label><button class="page-direction" type="button" data-page="${equipmentCurrentPage + 1}" ${equipmentCurrentPage === totalPages ? "disabled" : ""}>下一頁</button>`;
 }
 
 function renderProjectsTable() {
@@ -1549,6 +1545,12 @@ function renderEquipmentsTable() {
       if (!result && equipmentSort.key !== "name") result = String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant", { numeric: true, sensitivity: "base" });
       return equipmentSort.direction === "asc" ? result : -result;
     });
+  const totalPages = Math.max(1, Math.ceil(list.length / EQUIPMENT_PER_PAGE));
+  equipmentCurrentPage = Math.min(Math.max(1, equipmentCurrentPage), totalPages);
+  const startIndex = (equipmentCurrentPage - 1) * EQUIPMENT_PER_PAGE;
+  const pageList = list.slice(startIndex, startIndex + EQUIPMENT_PER_PAGE);
+  if (dom.equipmentResultCount()) dom.equipmentResultCount().textContent = list.length ? `共 ${list.length} 筆（顯示 ${startIndex + 1}–${Math.min(startIndex + EQUIPMENT_PER_PAGE, list.length)}）` : "共 0 筆";
+  renderEquipmentPagination(list.length);
 
   $all("[data-equipment-sort]").forEach(btn => {
     const active = btn.dataset.equipmentSort === equipmentSort.key;
@@ -1562,7 +1564,7 @@ function renderEquipmentsTable() {
     return;
   }
 
-  list.forEach(e => {
+  pageList.forEach(e => {
     const dailyDepreciation = equipmentDailyDepreciation(e);
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -2151,26 +2153,15 @@ function bindEvents() {
   dom.projectSearch()?.addEventListener("input", resetProjectPageAndRender);
   dom.projectMonthFilter()?.addEventListener("change", resetProjectPageAndRender);
   dom.projectSortBy()?.addEventListener("change", resetProjectPageAndRender);
-  dom.projectStatusOptions()?.addEventListener("change", (e) => {
-    const input = e.target.closest('input[type="checkbox"]');
-    if (!input) return;
-    if (input.checked) selectedProjectStatuses.add(input.value);
-    else selectedProjectStatuses.delete(input.value);
-    resetProjectPageAndRender();
-  });
-  dom.projectFilterChips()?.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-remove-status]");
-    if (!btn) return;
-    selectedProjectStatuses.delete(btn.dataset.removeStatus);
-    const checkbox = dom.projectStatusOptions()?.querySelector(`input[value="${CSS.escape(btn.dataset.removeStatus)}"]`);
-    if (checkbox) checkbox.checked = false;
+  dom.projectStatusFilter()?.addEventListener("change", (e) => {
+    selectedProjectStatus = e.target.value || "all";
     resetProjectPageAndRender();
   });
   dom.projectClearFilters()?.addEventListener("click", () => {
     dom.projectSearch().value = "";
     dom.projectMonthFilter().value = "";
-    selectedProjectStatuses.clear();
-    $all('input[type="checkbox"]', dom.projectStatusOptions()).forEach(input => { input.checked = false; });
+    selectedProjectStatus = "all";
+    dom.projectStatusFilter().value = "all";
     resetProjectPageAndRender();
   });
   dom.projectPagination()?.addEventListener("click", (e) => {
@@ -2271,14 +2262,28 @@ function bindEvents() {
       deleteEquipment(id);
     }
   });
-  dom.equipmentSearch()?.addEventListener("input", renderEquipmentsTable);
+  dom.equipmentSearch()?.addEventListener("input", () => { equipmentCurrentPage = 1; renderEquipmentsTable(); });
   $all("[data-equipment-sort]").forEach(btn => {
     btn.addEventListener("click", () => {
       const key = btn.dataset.equipmentSort;
       if (equipmentSort.key === key) equipmentSort.direction = equipmentSort.direction === "asc" ? "desc" : "asc";
       else equipmentSort = { key, direction: key === "qty" ? "desc" : "asc" };
+      equipmentCurrentPage = 1;
       renderEquipmentsTable();
     });
+  });
+  dom.equipmentPagination()?.addEventListener("click", (e) => {
+    const button = e.target.closest("button[data-page]");
+    if (!button || button.disabled) return;
+    equipmentCurrentPage = Number(button.dataset.page) || 1;
+    renderEquipmentsTable();
+    document.querySelector("#tab-equipments .panel-head")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  dom.equipmentPagination()?.addEventListener("change", (e) => {
+    const select = e.target.closest("select[data-page-select]");
+    if (!select) return;
+    equipmentCurrentPage = Number(select.value) || 1;
+    renderEquipmentsTable();
   });
 
   const cm = dom.calendarMonth();

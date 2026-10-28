@@ -4,14 +4,13 @@
   <meta charset="UTF-8" />
   <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css?v=phase3-v13" />
+  <link rel="stylesheet" href="styles.css?v=phase3-v13-1" />
 </head>
 
 <body>
   <header class="topbar">
     <div>
       <h1>曜炎創意娛樂 Dashboard</h1>
-      <p class="subtitle">專案、報價、請款收款、財務、設備檔期與月報表一站管理</p>
     </div>
 
     <div class="topbar-right">
@@ -78,19 +77,17 @@
           <input id="projectMonthFilter" class="input" type="month" />
         </label>
 
-        <div class="filter-field">
-          <span class="filter-field-label">狀態</span>
-          <details id="projectStatusFilter" class="filter-menu">
-            <summary><b id="projectStatusSummary">全部狀態</b></summary>
-            <div class="filter-menu-pop" id="projectStatusOptions">
-              <label><input type="checkbox" value="planning" /> <span>規劃中</span><small data-count="planning">0</small></label>
-              <label><input type="checkbox" value="confirmed" /> <span>已成案</span><small data-count="confirmed">0</small></label>
-              <label><input type="checkbox" value="executing" /> <span>執行中</span><small data-count="executing">0</small></label>
-              <label><input type="checkbox" value="closed" /> <span>已結案</span><small data-count="closed">0</small></label>
-              <label><input type="checkbox" value="lost" /> <span>流標 / 未成案</span><small data-count="lost">0</small></label>
-            </div>
-          </details>
-        </div>
+        <label class="field-inline">
+          <span>狀態</span>
+          <select id="projectStatusFilter" class="select">
+            <option value="all">全部狀態</option>
+            <option value="planning">規劃中</option>
+            <option value="confirmed">已成案</option>
+            <option value="executing">執行中</option>
+            <option value="closed">已結案</option>
+            <option value="lost">流標 / 未成案</option>
+          </select>
+        </label>
 
         <label class="field-inline">
           <span>排序</span>
@@ -103,8 +100,6 @@
 
         <button id="projectClearFilters" class="btn ghost small filter-clear hidden" type="button">清除篩選</button>
       </div>
-
-      <div id="projectFilterChips" class="filter-chips" aria-live="polite"></div>
 
       <div id="projectBatchBar" class="card batch-toolbar hidden" aria-live="polite">
         <span id="projectBatchCount" class="batch-count">已選 0 筆</span>
@@ -324,11 +319,12 @@
     <!-- ===================== 客戶管理 ===================== -->
     <section id="tab-customers" class="tab-panel">
       <div class="panel-head">
-        <div><h2>客戶管理</h2><p class="hint">新專案與新報價可選擇客戶；舊專案不必補填或轉換。</p></div>
+        <div><h2>客戶管理</h2></div>
         <button id="customerOpenCreate" class="btn primary" type="button">＋ 新增客戶</button>
       </div>
       <div class="card project-toolbar simple-toolbar"><label class="toolbar-search"><span class="sr-only">搜尋客戶</span><input id="customerSearch" class="input" type="search" placeholder="搜尋公司、窗口、電話或 Email" /></label></div>
-      <div class="card table-card"><div class="table-scroll"><table class="table customer-table"><thead><tr><th>客戶／公司</th><th>統一編號</th><th>主要窗口</th><th>付款條件</th><th>聯絡方式</th><th>操作</th></tr></thead><tbody id="customerTableBody"></tbody></table></div></div>
+      <div class="list-meta"><span id="customerResultCount">共 0 筆</span></div>
+      <div class="card table-card"><div class="table-scroll"><table class="table customer-table"><thead><tr><th>客戶／公司</th><th>統一編號</th><th>主要窗口</th><th>付款條件</th><th>聯絡方式</th><th>操作</th></tr></thead><tbody id="customerTableBody"></tbody></table></div><div id="customerPagination" class="pagination"></div></div>
     </section>
 
     <!-- ===================== 常用報價項目 ===================== -->
@@ -338,6 +334,7 @@
         <button id="quoteItemOpenCreate" class="btn primary" type="button">＋ 新增項目</button>
       </div>
       <div class="card project-toolbar simple-toolbar"><label class="toolbar-search"><span class="sr-only">搜尋品項</span><input id="quoteItemSearch" class="input" type="search" placeholder="搜尋類別、項目或單位" /></label></div>
+      <div class="list-meta"><span id="quoteItemResultCount">共 0 筆</span></div>
       <div class="card table-card"><div class="table-scroll"><table class="table item-table"><thead><tr>
         <th><button class="sort-head active" type="button" data-quote-item-sort="category">類別 <span>↑</span></button></th>
         <th><button class="sort-head" type="button" data-quote-item-sort="name">項目 <span></span></button></th>
@@ -346,20 +343,21 @@
         <th><button class="sort-head" type="button" data-quote-item-sort="calcMode">計價方式 <span></span></button></th>
         <th><button class="sort-head" type="button" data-quote-item-sort="equipmentName">連結設備 <span></span></button></th>
         <th>操作</th>
-      </tr></thead><tbody id="quoteItemTableBody"></tbody></table></div></div>
+      </tr></thead><tbody id="quoteItemTableBody"></tbody></table></div><div id="quoteItemPagination" class="pagination"></div></div>
     </section>
 
     <!-- ===================== 系統管理 ===================== -->
     <section id="tab-system" class="tab-panel">
-      <div class="panel-head"><div><h2>系統管理</h2><p class="hint">權限變更由 admin 管理；操作紀錄建立後不可修改或刪除。</p></div></div>
+      <div class="panel-head"><div><h2>系統管理</h2></div></div>
       <section id="userPermissionSection" class="finance-section hidden">
-        <div class="finance-section-head"><div><h3>使用者與細分權限</h3><p>角色提供預設值，也可逐項調整；永久刪除資料仍只限 admin。</p></div></div>
+        <div class="finance-section-head"><div><h3>使用者與細分權限</h3></div></div>
         <div class="card table-card"><div class="table-scroll"><table class="table permission-table"><thead><tr><th>使用者</th><th>核准狀態</th><th>角色</th><th>新增專案</th><th>編輯專案</th><th>報價</th><th>請款收款</th><th>專案外部支出</th><th>公司支出</th><th>新增設備</th><th>編輯設備</th><th>客戶</th><th>常用品項</th><th>操作紀錄</th><th>操作</th></tr></thead><tbody id="userPermissionBody"></tbody></table></div></div>
       </section>
       <section id="auditLogSection" class="finance-section hidden">
-        <div class="finance-section-head"><div><h3>操作紀錄</h3><p>記錄第三階段上線後，網站內的新增、修改、作廢、同步與刪除操作。</p></div></div>
+        <div class="finance-section-head"><div><h3>操作紀錄</h3></div></div>
         <div class="card audit-toolbar"><label class="toolbar-search"><span class="sr-only">搜尋操作紀錄</span><input id="auditSearch" class="input" type="search" placeholder="搜尋使用者、專案、客戶或摘要" /></label><label class="field-inline"><span>模組</span><select id="auditModuleFilter" class="select"><option value="all">全部模組</option><option value="projects">專案</option><option value="quotations">報價</option><option value="payments">請款／收款</option><option value="expenses">專案外部支出</option><option value="companyExpenses">公司支出</option><option value="customers">客戶</option><option value="catalog">常用品項</option><option value="equipment">設備</option><option value="permissions">權限</option></select></label></div>
-        <div class="card table-card"><div class="table-scroll"><table class="table audit-table"><thead><tr><th>時間</th><th>使用者</th><th>模組</th><th>動作</th><th>對象</th><th>內容</th></tr></thead><tbody id="auditLogBody"></tbody></table></div></div>
+        <div class="list-meta"><span id="auditResultCount">共 0 筆</span></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table audit-table"><thead><tr><th>時間</th><th>使用者</th><th>模組</th><th>動作</th><th>對象</th><th>內容</th></tr></thead><tbody id="auditLogBody"></tbody></table></div><div id="auditPagination" class="pagination"></div></div>
       </section>
       <div id="systemNoAccess" class="card empty-state hidden">你目前沒有查看系統管理的權限。</div>
     </section>
@@ -377,6 +375,7 @@
         </div>
       </div>
 
+      <div class="list-meta"><span id="equipmentResultCount">共 0 筆</span></div>
       <div class="card table-card">
         <div class="table-scroll"><table class="table equipment-table">
           <thead>
@@ -391,7 +390,7 @@
             </tr>
           </thead>
           <tbody id="equipmentTableBody"></tbody>
-        </table></div>
+        </table></div><div id="equipmentPagination" class="pagination"></div>
       </div>
     </section>
 
@@ -855,9 +854,9 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=phase3-v13"></script>
-  <script type="module" src="./quotations.js?v=phase3-v13"></script>
+  <script type="module" src="./app.js?v=phase3-v13-1"></script>
+  <script type="module" src="./quotations.js?v=phase3-v13-1"></script>
   <script type="module" src="./payments.js?v=phase3-v13"></script>
-  <script type="module" src="./finance.js?v=phase3-v11-6"></script>
+  <script type="module" src="./finance.js?v=phase3-v13-1"></script>
 </body>
 </html>

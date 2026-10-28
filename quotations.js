@@ -11,6 +11,8 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 const TAX_RATE = 0.05;
 const QUOTATIONS_PER_PAGE = 20;
+const CUSTOMERS_PER_PAGE = 25;
+const QUOTE_ITEMS_PER_PAGE = 25;
 const COMPANY_LOGO_URL = new URL("./assets/yaoyan-logo.png", import.meta.url).href;
 const DEFAULT_TERMS = `1. 本報價單視同合約，經簽名或用印回傳即成立。
 2. 初次合作請於報價單成立後14日內或活動開始前3日，支付頭款30%。
@@ -49,6 +51,8 @@ const state = {
   previewData: null,
   numberWasSuggested: false,
   quotationCurrentPage: 1,
+  customerCurrentPage: 1,
+  quoteItemCurrentPage: 1,
   quotationSelectedIds: new Set(),
   quotationProjectFilterId: "",
   quotationProjectPriceCustomized: false,
@@ -305,13 +309,38 @@ async function saveCustomer() {
   }
 }
 
+function renderManagedPagination(hostSelector, totalItems, currentPage, pageSize, label) {
+  const host = $(hostSelector);
+  if (!host) return 1;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const page = Math.min(Math.max(1, currentPage || 1), totalPages);
+  if (totalPages <= 1) {
+    host.innerHTML = "";
+    return page;
+  }
+  const visiblePages = new Set([1, totalPages]);
+  for (let value = page - 2; value <= page + 2; value += 1) if (value >= 1 && value <= totalPages) visiblePages.add(value);
+  const pageButtons = [...visiblePages].sort((a, b) => a - b).map((value, index, pages) => {
+    const gap = index && value - pages[index - 1] > 1 ? `<span class="pagination-ellipsis" aria-hidden="true">…</span>` : "";
+    return `${gap}<button class="page-number ${value === page ? "active" : ""}" type="button" data-page="${value}" ${value === page ? 'aria-current="page"' : ""}>${value}</button>`;
+  }).join("");
+  const options = Array.from({ length: totalPages }, (_, index) => index + 1)
+    .map(value => `<option value="${value}" ${value === page ? "selected" : ""}>${value}</option>`).join("");
+  host.innerHTML = `<button class="page-direction" type="button" data-page="${page - 1}" ${page === 1 ? "disabled" : ""}>上一頁</button><div class="pagination-pages">${pageButtons}</div><span class="pagination-summary">第 ${page} / ${totalPages} 頁</span><label class="pagination-jump"><span>跳至</span><select data-page-select aria-label="選擇${esc(label)}頁數">${options}</select><span>頁</span></label><button class="page-direction" type="button" data-page="${page + 1}" ${page === totalPages ? "disabled" : ""}>下一頁</button>`;
+  return page;
+}
+
 function renderCustomers() {
   const body = $("#customerTableBody");
   if (!body) return;
   const keyword = $("#customerSearch")?.value.trim().toLocaleLowerCase("zh-Hant") || "";
   const list = state.customers.filter(customer => !keyword || [customer.name, customer.taxId, customer.contactName, customer.phone, customer.email]
     .join(" ").toLocaleLowerCase("zh-Hant").includes(keyword));
-  body.innerHTML = list.length ? list.map(customer => `
+  state.customerCurrentPage = renderManagedPagination("#customerPagination", list.length, state.customerCurrentPage, CUSTOMERS_PER_PAGE, "客戶");
+  const startIndex = (state.customerCurrentPage - 1) * CUSTOMERS_PER_PAGE;
+  const pageList = list.slice(startIndex, startIndex + CUSTOMERS_PER_PAGE);
+  if ($("#customerResultCount")) $("#customerResultCount").textContent = list.length ? `共 ${list.length} 筆（顯示 ${startIndex + 1}–${Math.min(startIndex + CUSTOMERS_PER_PAGE, list.length)}）` : "共 0 筆";
+  body.innerHTML = pageList.length ? pageList.map(customer => `
     <tr>
       <td><b>${esc(customer.name)}</b>${customer.address ? `<div class="table-sub">${esc(customer.address)}</div>` : ""}</td>
       <td>${esc(customer.taxId || "—")}</td>
@@ -439,7 +468,11 @@ function renderQuoteItems() {
     const indicator = $("span", button);
     if (indicator) indicator.textContent = active ? (state.quotationItemSort.direction === "asc" ? "↑" : "↓") : "";
   });
-  body.innerHTML = list.length ? list.map(item => `
+  state.quoteItemCurrentPage = renderManagedPagination("#quoteItemPagination", list.length, state.quoteItemCurrentPage, QUOTE_ITEMS_PER_PAGE, "常用報價項目");
+  const startIndex = (state.quoteItemCurrentPage - 1) * QUOTE_ITEMS_PER_PAGE;
+  const pageList = list.slice(startIndex, startIndex + QUOTE_ITEMS_PER_PAGE);
+  if ($("#quoteItemResultCount")) $("#quoteItemResultCount").textContent = list.length ? `共 ${list.length} 筆（顯示 ${startIndex + 1}–${Math.min(startIndex + QUOTE_ITEMS_PER_PAGE, list.length)}）` : "共 0 筆";
+  body.innerHTML = pageList.length ? pageList.map(item => `
     <tr><td>${esc(item.category || "未分類")}</td><td><b>${esc(item.name)}</b>${item.note ? `<div class="table-sub">${esc(item.note)}</div>` : ""}</td><td class="num">${item.calcMode === "included" ? "—" : money(item.unitPrice)}</td><td>${esc(item.unit || "—")}</td><td>${esc(calcModeLabel(item.calcMode, item.continuationRate))}</td><td>${esc(quoteItemEquipmentName(item) || "—")}</td><td><div class="row-actions"><button class="btn ghost small" type="button" data-item-edit="${esc(item.id)}" ${canManageCatalog() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-item-delete="${esc(item.id)}" ${canDelete() ? "" : "disabled"}>刪除</button></div></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty-state">尚無常用報價項目</div></td></tr>`;
   refreshCatalogPicker();
 }
@@ -1319,6 +1352,9 @@ function detach() {
   state.quotationItems = [];
   state.quotations = [];
   state.quotationSelectedIds.clear();
+  state.customerCurrentPage = 1;
+  state.quoteItemCurrentPage = 1;
+  state.quotationCurrentPage = 1;
   state.projects = [];
   state.equipment = [];
   renderAllQuoteModules();
@@ -1346,7 +1382,19 @@ function bindEvents() {
   $("#customerOpenCreate")?.addEventListener("click", () => openCustomer());
   $("#customerForm")?.addEventListener("submit", event => { event.preventDefault(); saveCustomer(); });
   $$('[data-customer-close],#customerDrawerClose').forEach(button => button.addEventListener("click", () => closeDrawer("#customerDrawer")));
-  $("#customerSearch")?.addEventListener("input", renderCustomers);
+  $("#customerSearch")?.addEventListener("input", () => { state.customerCurrentPage = 1; renderCustomers(); });
+  $("#customerPagination")?.addEventListener("click", event => {
+    const button = event.target.closest("button[data-page]");
+    if (!button || button.disabled) return;
+    state.customerCurrentPage = Number(button.dataset.page) || 1;
+    renderCustomers();
+  });
+  $("#customerPagination")?.addEventListener("change", event => {
+    const select = event.target.closest("select[data-page-select]");
+    if (!select) return;
+    state.customerCurrentPage = Number(select.value) || 1;
+    renderCustomers();
+  });
   $("#customerTableBody")?.addEventListener("click", async event => {
     const edit = event.target.closest("[data-customer-edit]");
     const del = event.target.closest("[data-customer-delete]");
@@ -1361,13 +1409,26 @@ function bindEvents() {
   $("#quoteItemOpenCreate")?.addEventListener("click", () => openQuoteItem());
   $("#quoteItemForm")?.addEventListener("submit", event => { event.preventDefault(); saveQuoteItem(); });
   $$('[data-quote-item-close],#quoteItemDrawerClose').forEach(button => button.addEventListener("click", () => closeDrawer("#quoteItemDrawer")));
-  $("#quoteItemSearch")?.addEventListener("input", renderQuoteItems);
+  $("#quoteItemSearch")?.addEventListener("input", () => { state.quoteItemCurrentPage = 1; renderQuoteItems(); });
   $$('[data-quote-item-sort]').forEach(button => button.addEventListener("click", () => {
     const key = button.dataset.quoteItemSort;
     if (state.quotationItemSort.key === key) state.quotationItemSort.direction = state.quotationItemSort.direction === "asc" ? "desc" : "asc";
     else state.quotationItemSort = { key, direction: key === "unitPrice" ? "desc" : "asc" };
+    state.quoteItemCurrentPage = 1;
     renderQuoteItems();
   }));
+  $("#quoteItemPagination")?.addEventListener("click", event => {
+    const button = event.target.closest("button[data-page]");
+    if (!button || button.disabled) return;
+    state.quoteItemCurrentPage = Number(button.dataset.page) || 1;
+    renderQuoteItems();
+  });
+  $("#quoteItemPagination")?.addEventListener("change", event => {
+    const select = event.target.closest("select[data-page-select]");
+    if (!select) return;
+    state.quoteItemCurrentPage = Number(select.value) || 1;
+    renderQuoteItems();
+  });
   $("#quoteItemEquipmentId")?.addEventListener("change", event => {
     const equipment = state.equipment.find(item => item.id === event.target.value);
     if (!equipment) return;
