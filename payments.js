@@ -19,6 +19,7 @@ const TODAY = () => {
 
 const collections = {
   projects: collection(db, "projects"),
+  quotations: collection(db, "quotations"),
   customers: collection(db, "customers"),
   payments: collection(db, "payments"),
   receipts: collection(db, "receipts")
@@ -29,6 +30,7 @@ const state = {
   role: null,
   access: null,
   projects: [],
+  quotations: [],
   customers: [],
   payments: [],
   receipts: [],
@@ -150,6 +152,26 @@ function timestampValue(value) {
   return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 }
 
+function quotationForProject(project) {
+  if (!project) return null;
+  if (project.confirmedQuotationId) {
+    const confirmed = state.quotations.find(quotation => quotation.id === project.confirmedQuotationId);
+    if (confirmed) return confirmed;
+  }
+  return state.quotations
+    .filter(quotation => quotation.projectId === project.id && quotation.status === "confirmed")
+    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || timestampValue(b.updatedAt) - timestampValue(a.updatedAt))[0] || null;
+}
+
+function quotationNumberForProject(project) {
+  return project?.confirmedQuotationNumber || quotationForProject(project)?.number || "";
+}
+
+function projectNameWithQuotation(project) {
+  const number = quotationNumberForProject(project);
+  return `${number ? `<span class="quotation-number-ref">${esc(number)}</span>` : ""}${esc(project?.name || "未命名專案")}`;
+}
+
 function switchTab(tab) {
   document.querySelector(`.tab-button[data-tab="${tab}"]`)?.click();
 }
@@ -194,7 +216,8 @@ function refreshProjectOptions(selectedId = "") {
     .map(project => {
       const total = projectTotalTaxed(project);
       const suffix = total ? `｜含稅 ${money(total)}` : "｜總價待確認";
-      return `<option value="${esc(project.id)}">${esc(project.name || "未命名專案")}｜${esc(project.client || "未填客戶")}${suffix}</option>`;
+      const number = quotationNumberForProject(project);
+      return `<option value="${esc(project.id)}">${number ? `${esc(number)}｜` : ""}${esc(project.name || "未命名專案")}｜${esc(project.client || "未填客戶")}${suffix}</option>`;
     }).join("");
   select.innerHTML = `<option value="">請選擇專案</option>${options}`;
   if (current && state.projects.some(project => project.id === current)) select.value = current;
@@ -324,6 +347,7 @@ async function savePayment() {
     projectStartDate: project.startDate || "",
     projectEndDate: project.endDate || "",
     projectTotalTaxed: total,
+    quotationNumber: quotationNumberForProject(project),
     paymentType: $("#paymentType").value,
     label: $("#paymentLabel").value.trim() || defaultLabel($("#paymentType").value),
     amount,
@@ -572,7 +596,7 @@ function filteredProjects() {
       const receiptText = state.receipts
         .filter(receipt => receipt.projectId === project.id || paymentIds.has(receipt.paymentId))
         .map(receipt => [receipt.reference, receipt.receivedDate, receipt.method].join(" ")).join(" ");
-      return [project.name, project.client, project.location, projectStatusLabel(project.status), paymentStatusLabel(summary.status), paymentText, receiptText]
+      return [quotationNumberForProject(project), project.name, project.client, project.location, projectStatusLabel(project.status), paymentStatusLabel(summary.status), paymentText, receiptText]
         .join(" ").toLocaleLowerCase("zh-Hant").includes(keyword);
     });
 
@@ -645,7 +669,7 @@ function renderPayments() {
       ? money(summary.totalOutstanding)
       : (summary.isTracked ? `${money(summary.totalOutstanding)}<div class="table-sub">總價待確認</div>` : "尚未登記");
     return `<tr class="payment-project-row" data-payment-toggle-project="${esc(project.id)}">
-      <td><b>${esc(project.name || "未命名專案")}</b><div class="table-sub">${esc(project.client || "—")}</div></td>
+      <td><b>${projectNameWithQuotation(project)}</b><div class="table-sub">${esc(project.client || "—")}</div></td>
       <td>${esc(project.startDate || "—")}～${esc(project.endDate || "—")}<div class="table-sub">${esc(projectStatusLabel(project.status))}</div></td>
       <td class="num">${summary.total ? money(summary.total) : '<span class="pending-value">待確認</span>'}</td>
       <td class="num">${money(summary.invoiced)}</td>
@@ -800,6 +824,7 @@ function detach() {
   state.unsubs.forEach(unsubscribe => unsubscribe());
   state.unsubs = [];
   state.projects = [];
+  state.quotations = [];
   state.customers = [];
   state.payments = [];
   state.receipts = [];
@@ -809,6 +834,7 @@ function detach() {
 
 function attach() {
   listen("projects", "projects");
+  listen("quotations", "quotations");
   listen("customers", "customers");
   listen("payments", "payments");
   listen("receipts", "receipts");

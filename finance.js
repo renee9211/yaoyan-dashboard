@@ -21,6 +21,7 @@ const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selec
 
 const collections = {
   projects: collection(db, "projects"),
+  quotations: collection(db, "quotations"),
   payments: collection(db, "payments"),
   receipts: collection(db, "receipts"),
   expenses: collection(db, "expenses"),
@@ -34,6 +35,7 @@ const state = {
   user: null,
   access: null,
   projects: [],
+  quotations: [],
   payments: [],
   receipts: [],
   expenses: [],
@@ -131,6 +133,22 @@ function financeCalculator() {
 
 function projectFor(id) { return state.projects.find(project => project.id === id); }
 
+function quotationForProject(project) {
+  if (!project) return null;
+  if (project.confirmedQuotationId) {
+    const confirmed = state.quotations.find(quotation => quotation.id === project.confirmedQuotationId);
+    if (confirmed) return confirmed;
+  }
+  return state.quotations
+    .filter(quotation => quotation.projectId === project.id && quotation.status === "confirmed")
+    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || timestampValue(b.updatedAt) - timestampValue(a.updatedAt))[0] || null;
+}
+
+function quotationNumberForProject(projectOrId) {
+  const project = typeof projectOrId === "string" ? projectFor(projectOrId) : projectOrId;
+  return project?.confirmedQuotationNumber || quotationForProject(project)?.number || "";
+}
+
 function receivedForPayment(payment, throughDate = "") {
   return financeCalculator().receivedForPayment(payment, throughDate);
 }
@@ -140,7 +158,9 @@ function allReceiptRows() {
 }
 
 function paymentRow(payment) {
-  return financeCalculator().paymentRow(payment);
+  const row = financeCalculator().paymentRow(payment);
+  const project = projectFor(payment.projectId);
+  return { ...row, quotationNumber: payment.quotationNumber || quotationNumberForProject(project) };
 }
 
 function filterContext() {
@@ -233,7 +253,7 @@ function updateFinanceFilterUi(context) {
 function matchesContext(row, context, { includeKeyword = true } = {}) {
   if (context.customer !== "all" && row.customerName !== context.customer) return false;
   if (!includeKeyword || !context.keyword) return true;
-  return [row.customerName, row.projectName, row.invoiceNumber, row.label, row.vendor, row.note]
+  return [row.customerName, row.projectName, row.quotationNumber, row.invoiceNumber, row.receiptNumber, row.label, row.vendor, row.note, row.lineNote]
     .join(" ").toLocaleLowerCase("zh-Hant").includes(context.keyword);
 }
 
@@ -309,7 +329,7 @@ function renderNext30(rows, context) {
   const pageList = paginateFinanceRows(list, "next30");
   $("#financeNext30Body").innerHTML = pageList.length ? pageList.map(row => `<tr>
     <td><b>${esc(row.expectedPaymentDate)}</b></td>
-    <td><b>${esc(row.customerName)}</b><div class="table-sub">${esc(row.projectName)}</div></td>
+    <td><b>${esc(row.customerName)}</b><div class="table-sub">${row.quotationNumber ? `<span class="quotation-number-ref">${esc(row.quotationNumber)}</span>` : ""}${esc(row.projectName)}</div></td>
     <td>${esc(row.label || "款項")}<div class="table-sub">發票：${esc(row.invoiceNumber || "—")}</div></td>
     <td class="num">${money(row.amount)}</td><td class="num">${money(row.received)}</td><td class="num"><b>${money(row.remaining)}</b></td>
   </tr>`).join("") : `<tr><td colspan="6"><div class="empty-state">未來 30 天沒有符合條件的預計收款。</div></td></tr>`;
@@ -328,7 +348,7 @@ function renderReceivables(rows, context) {
   $("#financeOverdueCount").textContent = `${overdue.length} 筆逾期`;
   const pageList = paginateFinanceRows(sorted, "receivables");
   $("#financeReceivableBody").innerHTML = pageList.length ? pageList.map(row => `<tr>
-    <td><b>${esc(row.customerName)}</b><div class="table-sub">${esc(row.projectName)}</div></td>
+    <td><b>${esc(row.customerName)}</b><div class="table-sub">${row.quotationNumber ? `<span class="quotation-number-ref">${esc(row.quotationNumber)}</span>` : ""}${esc(row.projectName)}</div></td>
     <td>${esc(row.label || "款項")}</td>
     <td>${esc(row.requestDate || "—")}<div class="table-sub">發票：${esc(row.invoiceNumber || "—")} ${row.invoiceDate ? `｜${esc(row.invoiceDate)}` : ""}</div></td>
     <td>${esc(row.expectedPaymentDate || "—")}</td>
@@ -372,13 +392,13 @@ function payableStatus(expense, asOf = isoDate()) {
 function payableRows(context) {
   const projectRows = state.expenses.filter(expense => !expense.voided).map(expense => {
     const project = projectFor(expense.projectId);
-    return { ...expense, source: "專案支出", sourceName: expense.projectName || project?.name || "未命名專案", customerName: expense.customerName || project?.client || "", itemName: expenseCategoryLabel(expense.category) };
+    return { ...expense, source: "專案支出", sourceName: expense.projectName || project?.name || "未命名專案", customerName: expense.customerName || project?.client || "", quotationNumber: expense.quotationNumber || quotationNumberForProject(project), itemName: expenseCategoryLabel(expense.category) };
   });
   const companyRows = state.companyExpenses.filter(expense => !expense.voided).map(expense => ({ ...expense, source: "公司支出", sourceName: companyExpenseCategoryLabel(expense.category), customerName: "", itemName: expense.name || "未命名支出" }));
   return [...projectRows, ...companyRows]
     .filter(expense => expense.payableTracked === true && !expense.paidDate)
     .filter(expense => context.customer === "all" || expense.customerName === context.customer)
-    .filter(expense => !context.keyword || [expense.vendor, expense.itemName, expense.sourceName, expense.customerName, expense.note].join(" ").toLocaleLowerCase("zh-Hant").includes(context.keyword));
+    .filter(expense => !context.keyword || [expense.vendor, expense.itemName, expense.sourceName, expense.customerName, expense.quotationNumber, expense.receiptNumber, expense.note, expense.lineNote].join(" ").toLocaleLowerCase("zh-Hant").includes(context.keyword));
 }
 
 function renderPayables(context) {
@@ -400,7 +420,7 @@ function renderPayables(context) {
   const pageList = paginateFinanceRows(rows, "payables");
   $("#financePayableBody").innerHTML = pageList.length ? pageList.map(expense => {
     const status = payableStatus(expense, context.asOf);
-    return `<tr><td>${esc(expense.expectedPaymentDate || "—")}</td><td><b>${esc(expense.vendor || "未填廠商")}</b><div class="table-sub">${esc(expense.itemName)}</div></td><td>${esc(expense.source)}<div class="table-sub">${esc(expense.sourceName)}</div></td><td class="num"><b>${money(expense.amount)}</b></td><td><span class="badge ${status.badge}">${esc(status.label)}</span></td></tr>`;
+    return `<tr><td>${esc(expense.expectedPaymentDate || "—")}</td><td><b>${esc(expense.vendor || "未填廠商")}</b><div class="table-sub">${esc(expense.itemName)}</div></td><td>${esc(expense.source)}<div class="table-sub">${expense.quotationNumber ? `<span class="quotation-number-ref">${esc(expense.quotationNumber)}</span>` : ""}${esc(expense.sourceName)}</div></td><td class="num"><b>${money(expense.amount)}</b></td><td><span class="badge ${status.badge}">${esc(status.label)}</span></td></tr>`;
   }).join("") : `<tr><td colspan="5"><div class="empty-state">目前沒有待付的廠商款項。</div></td></tr>`;
 }
 
@@ -408,7 +428,7 @@ function filteredExpenses(context) {
   return state.expenses.filter(expense => !expense.voided)
     .map(expense => {
       const project = projectFor(expense.projectId);
-      return { ...expense, projectName: expense.projectName || project?.name || "未命名專案", customerName: expense.customerName || project?.client || "未填客戶" };
+      return { ...expense, projectName: expense.projectName || project?.name || "未命名專案", customerName: expense.customerName || project?.client || "未填客戶", quotationNumber: expense.quotationNumber || quotationNumberForProject(project) };
     })
     .filter(expense => !context.month || String(expense.expenseDate || "").startsWith(context.month))
     .filter(expense => matchesContext(expense, context));
@@ -425,12 +445,13 @@ function renderExpenses(context) {
   const pageList = paginateFinanceRows(list, "expenses");
   $("#expenseTableBody").innerHTML = pageList.length ? pageList.map(expense => { const status = payableStatus(expense, context.asOf); return `<tr>
     <td>${esc(expense.expenseDate || "—")}</td>
-    <td><b>${esc(expense.projectName)}</b><div class="table-sub">${esc(expense.customerName)}</div></td>
+    <td>${expense.quotationNumber ? `<span class="quotation-number-ref">${esc(expense.quotationNumber)}</span>` : ""}<b>${esc(expense.projectName)}</b><div class="table-sub">${esc(expense.customerName)}</div></td>
     <td>${esc(expenseCategoryLabel(expense.category))}<div class="table-sub">${esc(expense.vendor || "—")}</div></td>
+    <td>${esc(expense.receiptNumber || "—")}</td>
     <td class="num">${money(expense.amount)}</td><td>${expense.taxMode === "untaxed" ? "未稅" : "含稅"}</td><td class="num"><b>${money(expenseUntaxed(expense))}</b></td><td><span class="badge ${status.badge}">${esc(status.label)}</span></td>
-    <td>${esc(expense.note || "—")}</td>
+    <td>${esc(expense.lineNote || expense.note || "—")}${expense.lineNote && expense.note ? `<div class="table-sub">${esc(expense.note)}</div>` : ""}</td>
     <td><div class="row-actions"><button class="btn ghost small" type="button" data-expense-edit="${esc(expense.id)}" ${canManageExpenses() ? "" : "disabled"}>編輯</button><button class="btn ghost small" type="button" data-expense-void="${esc(expense.id)}" ${canManageExpenses() ? "" : "disabled"}>作廢</button></div></td>
-  </tr>`; }).join("") : `<tr><td colspan="9"><div class="empty-state">選定月份尚無逐筆外部支出；舊專案手動成本仍會保留在案件毛利計算。</div></td></tr>`;
+  </tr>`; }).join("") : `<tr><td colspan="10"><div class="empty-state">選定月份尚無逐筆外部支出；舊專案手動成本仍會保留在案件毛利計算。</div></td></tr>`;
 }
 
 function filteredCompanyExpenses(context) {
@@ -515,37 +536,91 @@ function renderFinance() {
   renderAnalysis({ keyword: "", customer: "all", month: $("#reportMonth")?.value || monthValue(), asOf: context.asOf });
 }
 
-function refreshExpenseProjects(selected = "") {
-  const select = $("#expenseProjectId");
-  if (!select) return;
-  const current = selected || select.value;
-  select.innerHTML = `<option value="">請選擇專案</option>${state.projects.filter(project => project.status !== "lost").sort((a, b) => String(b.startDate || "").localeCompare(String(a.startDate || ""))).map(project => `<option value="${esc(project.id)}">${esc(project.name)}${project.client ? `｜${esc(project.client)}` : ""}</option>`).join("")}`;
-  select.value = current;
+function expenseProjectOptions(selected = "") {
+  return `<option value="">請選擇專案</option>${state.projects
+    .filter(project => project.status !== "lost")
+    .sort((a, b) => String(b.startDate || "").localeCompare(String(a.startDate || "")))
+    .map(project => {
+      const number = quotationNumberForProject(project);
+      const label = [number, project.name, project.client].filter(Boolean).join("｜");
+      return `<option value="${esc(project.id)}" ${project.id === selected ? "selected" : ""}>${esc(label || "未命名專案")}</option>`;
+    }).join("")}`;
 }
 
-function updateExpenseHint() {
-  const amount = integerValue($("#expenseAmount")?.value);
-  const untaxed = $("#expenseTaxMode")?.value === "untaxed" ? amount : taxedToUntaxed(amount);
-  $("#expenseUntaxedHint").textContent = `未稅成本：${money(untaxed)}`;
+function expenseCategoryOptions(selected = "outsourcing_equipment") {
+  return [
+    ["outsourcing_equipment", "外包設備"], ["temporary_staff", "臨時人力"], ["transport", "運輸"],
+    ["consumables", "耗材"], ["venue", "場租／其他場地費"], ["other", "其他"]
+  ].map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`).join("");
+}
+
+function expenseLineHtml(line = {}, { removable = true } = {}) {
+  const amount = integerValue(line.amount);
+  return `<tr class="expense-line-row">
+    <td><select class="select expense-line-project" required>${expenseProjectOptions(line.projectId || "")}</select></td>
+    <td><select class="select expense-line-category">${expenseCategoryOptions(line.category || "outsourcing_equipment")}</select></td>
+    <td><select class="select expense-line-tax"><option value="taxed" ${line.taxMode !== "untaxed" ? "selected" : ""}>含稅</option><option value="untaxed" ${line.taxMode === "untaxed" ? "selected" : ""}>未稅</option></select></td>
+    <td><input class="input expense-line-amount" inputmode="numeric" value="${amount ? money(amount) : ""}" required /></td>
+    <td><input class="input expense-line-receipt" value="${esc(line.receiptNumber || "")}" placeholder="選填" /></td>
+    <td><input class="input expense-line-note" value="${esc(line.lineNote || "")}" placeholder="選填" /></td>
+    <td><button class="icon-btn expense-line-remove" type="button" aria-label="刪除此列" ${removable ? "" : "disabled"}>✕</button></td>
+  </tr>`;
+}
+
+function renderExpenseLines(lines = [{}], { editing = false } = {}) {
+  const body = $("#expenseLines");
+  if (!body) return;
+  const safeLines = lines.length ? lines : [{}];
+  body.innerHTML = safeLines.map(line => expenseLineHtml(line, { removable: !editing && safeLines.length > 1 })).join("");
+  $("#expenseAddLine")?.classList.toggle("hidden", editing);
+  updateExpenseBatchTotal();
+}
+
+function refreshExpenseProjects() {
+  $$(".expense-line-project", $("#expenseLines")).forEach(select => {
+    const current = select.value;
+    select.innerHTML = expenseProjectOptions(current);
+    select.value = current;
+  });
+}
+
+function updateExpenseBatchTotal() {
+  const rows = $$(".expense-line-row", $("#expenseLines"));
+  const totals = rows.reduce((result, row) => {
+    const amount = integerValue($(".expense-line-amount", row)?.value);
+    const taxMode = $(".expense-line-tax", row)?.value === "untaxed" ? "untaxed" : "taxed";
+    result.input += amount;
+    result.untaxed += taxMode === "untaxed" ? amount : taxedToUntaxed(amount);
+    return result;
+  }, { input: 0, untaxed: 0 });
+  if ($("#expenseBatchTotal")) $("#expenseBatchTotal").textContent = `共 ${rows.length} 筆｜輸入金額合計 ${money(totals.input)}｜未稅成本 ${money(totals.untaxed)}`;
+  $$(".expense-line-remove", $("#expenseLines")).forEach(button => { button.disabled = Boolean($("#expenseId")?.value) || rows.length <= 1; });
+}
+
+function readExpenseLines() {
+  return $$(".expense-line-row", $("#expenseLines")).map((row, index) => ({
+    index,
+    projectId: $(".expense-line-project", row)?.value || "",
+    category: $(".expense-line-category", row)?.value || "other",
+    taxMode: $(".expense-line-tax", row)?.value === "untaxed" ? "untaxed" : "taxed",
+    amount: integerValue($(".expense-line-amount", row)?.value),
+    receiptNumber: $(".expense-line-receipt", row)?.value.trim() || "",
+    lineNote: $(".expense-line-note", row)?.value.trim() || ""
+  }));
 }
 
 function openExpense(expense = null) {
   if (!canManageExpenses()) return alert("你目前沒有新增或編輯外部支出的權限");
-  refreshExpenseProjects(expense?.projectId || "");
   $("#expenseId").value = expense?.id || "";
-  $("#expenseProjectId").value = expense?.projectId || "";
   $("#expenseDate").value = expense?.expenseDate || isoDate();
-  $("#expenseCategory").value = expense?.category || "outsourcing_equipment";
   $("#expenseVendor").value = expense?.vendor || "";
-  $("#expenseAmount").value = expense?.amount ? money(expense.amount) : "";
-  $("#expenseTaxMode").value = expense?.taxMode || "taxed";
   $("#expenseVendorBillDate").value = expense?.vendorBillDate || "";
   $("#expenseExpectedPaymentDate").value = expense?.expectedPaymentDate || "";
   $("#expensePaidDate").value = expense ? (expense.payableTracked === true ? (expense.paidDate || "") : (expense.expenseDate || "")) : "";
   $("#expensePaymentMethod").value = expense?.paymentMethod || "bank_transfer";
   $("#expenseNote").value = expense?.note || "";
-  $("#expenseDrawerTitle").textContent = expense ? "編輯外部支出" : "新增外部支出";
-  updateExpenseHint();
+  $("#expenseDrawerTitle").textContent = expense ? "編輯支出明細" : "新增外部支出";
+  renderExpenseLines(expense ? [expense] : [{}], { editing: Boolean(expense) });
   $("#expenseDrawer").classList.remove("hidden");
   $("#expenseDrawer").setAttribute("aria-hidden", "false");
   document.body.classList.add("drawer-open");
@@ -560,49 +635,73 @@ function closeExpense() {
 async function saveExpense() {
   if (!canManageExpenses() || !state.user) return alert("你目前沒有管理外部支出的權限");
   const id = $("#expenseId").value;
-  const project = projectFor($("#expenseProjectId").value);
-  if (!project) return alert("請選擇專案");
-  const amount = integerValue($("#expenseAmount").value);
-  if (!amount) return alert("請填寫支出金額");
-  const taxMode = $("#expenseTaxMode").value === "untaxed" ? "untaxed" : "taxed";
-  const payload = {
-    projectId: project.id, projectName: project.name || "", customerName: project.client || "",
-    expenseDate: $("#expenseDate").value, category: $("#expenseCategory").value,
-    vendor: $("#expenseVendor").value.trim(), amount, taxMode,
-    costUntaxed: taxMode === "untaxed" ? amount : taxedToUntaxed(amount),
+  const expenseDate = $("#expenseDate").value;
+  if (!expenseDate) return alert("請填寫成本／憑證日期");
+  const lines = readExpenseLines();
+  if (!lines.length) return alert("請至少新增一筆支出明細");
+  if (lines.length > 50) return alert("單次最多新增 50 筆支出明細，請分批儲存");
+  const missingProject = lines.find(line => !projectFor(line.projectId));
+  if (missingProject) return alert(`第 ${missingProject.index + 1} 列尚未選擇對應專案`);
+  const missingAmount = lines.find(line => !line.amount);
+  if (missingAmount) return alert(`第 ${missingAmount.index + 1} 列尚未填寫支出金額`);
+  const shared = {
+    expenseDate,
+    vendor: $("#expenseVendor").value.trim(),
     vendorBillDate: $("#expenseVendorBillDate").value,
     expectedPaymentDate: $("#expenseExpectedPaymentDate").value,
     paidDate: $("#expensePaidDate").value,
     paymentMethod: $("#expensePaymentMethod").value,
+    note: $("#expenseNote").value.trim(),
     payableTracked: true,
-    note: $("#expenseNote").value.trim(), voided: false,
+    voided: false,
     updatedAt: serverTimestamp(), updatedBy: state.user.uid
   };
-  const legacyCost = integerValue(project.cost);
-  const activeExistingExpenses = state.expenses.filter(expense => expense.projectId === project.id && !expense.voided && expense.id !== id);
-  const migrateLegacyCost = !id && legacyCost > 0 && activeExistingExpenses.length === 0;
-  if (migrateLegacyCost) {
-    const confirmed = confirm(`此專案目前有舊版「手動外部支出」${money(legacyCost)} 元。\n\n按「確定」後，系統會先建立一筆「期初外部支出」，再新增本次支出，避免舊成本從報表消失。\n\n若手動金額已包含本次支出，請按「取消」，先回專案調整手動合計再新增。`);
+  const projects = [...new Map(lines.map(line => [line.projectId, projectFor(line.projectId)])).values()];
+  const legacyProjects = id ? [] : projects.filter(project => integerValue(project.cost) > 0 && !state.expenses.some(expense => expense.projectId === project.id && !expense.voided));
+  if (legacyProjects.length) {
+    const list = legacyProjects.map(project => `• ${project.name || "未命名專案"}：${money(project.cost)} 元`).join("\n");
+    const confirmed = confirm(`以下專案仍有舊版「手動外部支出」：\n\n${list}\n\n按「確定」後，系統會各自建立一筆期初支出，再新增本次明細，避免舊成本從報表消失。\n\n若手動金額已包含本次支出，請按「取消」，先回專案調整手動合計。`);
     if (!confirmed) return;
   }
   try {
-    let targetId = id;
-    if (id) await updateDoc(doc(db, "expenses", id), payload);
-    else if (migrateLegacyCost) {
-      const batch = writeBatch(db);
-      const ref = doc(collections.expenses);
-      const legacyRef = doc(collections.expenses);
-      targetId = ref.id;
-      batch.set(legacyRef, {
+    const currentExpense = id ? state.expenses.find(expense => expense.id === id) : null;
+    const batchId = currentExpense?.expenseBatchId || doc(collections.expenses).id;
+    const payloads = lines.map((line, index) => {
+      const project = projectFor(line.projectId);
+      return {
+        ...shared,
         projectId: project.id,
         projectName: project.name || "",
         customerName: project.client || "",
-        expenseDate: payload.expenseDate || project.startDate || isoDate(),
+        quotationNumber: quotationNumberForProject(project),
+        category: line.category,
+        amount: line.amount,
+        taxMode: line.taxMode,
+        costUntaxed: line.taxMode === "untaxed" ? line.amount : taxedToUntaxed(line.amount),
+        receiptNumber: line.receiptNumber,
+        lineNote: line.lineNote,
+        expenseBatchId: batchId,
+        expenseBatchIndex: currentExpense?.expenseBatchIndex ?? index,
+        expenseBatchSize: id ? (currentExpense?.expenseBatchSize || 1) : lines.length
+      };
+    });
+    if (id) {
+      await updateDoc(doc(db, "expenses", id), payloads[0]);
+      await logAction({ action: "update", module: "expenses", targetType: "expense", targetId: id, targetName: payloads[0].projectName, summary: `${expenseCategoryLabel(payloads[0].category)}｜${money(payloads[0].amount)} 元${payloads[0].receiptNumber ? `｜憑證 ${payloads[0].receiptNumber}` : ""}` });
+    } else {
+      const batch = writeBatch(db);
+      legacyProjects.forEach(project => {
+        const legacyRef = doc(collections.expenses);
+        batch.set(legacyRef, {
+        projectId: project.id, projectName: project.name || "", customerName: project.client || "", quotationNumber: quotationNumberForProject(project),
+        expenseDate: expenseDate || project.startDate || isoDate(),
         category: "other",
         vendor: "",
-        amount: legacyCost,
+        amount: integerValue(project.cost),
         taxMode: "untaxed",
-        costUntaxed: legacyCost,
+        costUntaxed: integerValue(project.cost),
+        receiptNumber: "",
+        lineNote: "",
         vendorBillDate: "",
         expectedPaymentDate: "",
         paidDate: "",
@@ -616,16 +715,14 @@ async function saveExpense() {
         updatedAt: serverTimestamp(),
         updatedBy: state.user.uid
       });
-      batch.set(ref, { ...payload, createdAt: serverTimestamp(), createdBy: state.user.uid });
+      });
+      payloads.forEach(payload => {
+        const ref = doc(collections.expenses);
+        batch.set(ref, { ...payload, createdAt: serverTimestamp(), createdBy: state.user.uid });
+      });
       await batch.commit();
-      await logAction({ action: "sync", module: "expenses", targetType: "expense", targetId: legacyRef.id, targetName: project.name, summary: `舊版手動成本轉為期初外部支出｜${money(legacyCost)} 元` });
+      await logAction({ action: "create", module: "expenses", targetType: "expenseBatch", targetId: batchId, targetName: shared.vendor || `${payloads.length} 筆外部支出`, summary: `批次新增 ${payloads.length} 筆｜輸入金額合計 ${money(payloads.reduce((sum, payload) => sum + payload.amount, 0))} 元｜對應 ${projects.length} 個專案` });
     }
-    else {
-      const ref = doc(collections.expenses);
-      targetId = ref.id;
-      await setDoc(ref, { ...payload, createdAt: serverTimestamp(), createdBy: state.user.uid });
-    }
-    await logAction({ action: id ? "update" : "create", module: "expenses", targetType: "expense", targetId, targetName: project.name, summary: `${expenseCategoryLabel(payload.category)}｜${money(payload.amount)} 元${payload.vendor ? `｜${payload.vendor}` : ""}` });
     closeExpense();
   } catch (error) {
     console.error(error);
@@ -870,13 +967,14 @@ function listen(name, target, options = {}) {
 function detach() {
   state.unsubs.forEach(unsubscribe => unsubscribe());
   state.unsubs = [];
-  state.projects = []; state.payments = []; state.receipts = []; state.expenses = []; state.companyExpenses = []; state.equipment = []; state.users = []; state.auditLogs = [];
+  state.projects = []; state.quotations = []; state.payments = []; state.receipts = []; state.expenses = []; state.companyExpenses = []; state.equipment = []; state.users = []; state.auditLogs = [];
   resetFinancePages();
   renderFinance(); renderSystemAccess();
 }
 
 function attach() {
   listen("projects", "projects");
+  listen("quotations", "quotations");
   listen("payments", "payments");
   listen("receipts", "receipts");
   listen("expenses", "expenses");
@@ -932,8 +1030,28 @@ function bindEvents() {
   $("#expenseOpenCreate")?.addEventListener("click", () => openExpense());
   $("#expenseForm")?.addEventListener("submit", event => { event.preventDefault(); saveExpense(); });
   $$('[data-expense-close],#expenseDrawerClose').forEach(button => button.addEventListener("click", closeExpense));
-  ["#expenseAmount", "#expenseTaxMode"].forEach(selector => $(selector)?.addEventListener("input", updateExpenseHint));
-  $("#expenseAmount")?.addEventListener("blur", event => { event.target.value = event.target.value ? money(event.target.value) : ""; updateExpenseHint(); });
+  $("#expenseAddLine")?.addEventListener("click", () => {
+    if ($$(".expense-line-row", $("#expenseLines")).length >= 50) return alert("單次最多新增 50 筆支出明細");
+    $("#expenseLines")?.insertAdjacentHTML("beforeend", expenseLineHtml({}, { removable: true }));
+    updateExpenseBatchTotal();
+  });
+  $("#expenseLines")?.addEventListener("click", event => {
+    const button = event.target.closest(".expense-line-remove");
+    if (!button || button.disabled) return;
+    button.closest(".expense-line-row")?.remove();
+    updateExpenseBatchTotal();
+  });
+  $("#expenseLines")?.addEventListener("input", event => {
+    if (event.target.matches(".expense-line-amount,.expense-line-tax")) updateExpenseBatchTotal();
+  });
+  $("#expenseLines")?.addEventListener("change", event => {
+    if (event.target.matches(".expense-line-tax")) updateExpenseBatchTotal();
+  });
+  $("#expenseLines")?.addEventListener("focusout", event => {
+    if (!event.target.matches(".expense-line-amount")) return;
+    event.target.value = event.target.value ? money(event.target.value) : "";
+    updateExpenseBatchTotal();
+  });
   $("#companyExpenseOpenCreate")?.addEventListener("click", () => openCompanyExpense());
   $("#companyExpenseForm")?.addEventListener("submit", event => { event.preventDefault(); saveCompanyExpense(); });
   $$('[data-company-expense-close],#companyExpenseDrawerClose').forEach(button => button.addEventListener("click", closeCompanyExpense));

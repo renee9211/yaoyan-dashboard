@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css?v=phase3-v13-1" />
+  <link rel="stylesheet" href="styles.css?v=phase3-v13-2" />
 </head>
 
 <body>
@@ -184,7 +184,7 @@
 
       <section class="finance-section">
         <div class="finance-section-head"><div><h3>外部支出明細</h3><p>記錄已確認的專案成本；付款日另行追蹤，含稅金額會自動換算為未稅成本供毛利計算。</p></div><div class="finance-section-actions"><span id="expenseResultCount">共 0 筆</span><label class="field-inline finance-sort-field"><span>排序</span><select id="expenseSort" class="select"><option value="dateDesc">成本日｜近到遠</option><option value="dateAsc">成本日｜遠到近</option><option value="amountDesc">金額｜高到低</option><option value="amountAsc">金額｜低到高</option><option value="nameAsc">專案｜A–Z</option><option value="nameDesc">專案｜Z–A</option></select></label></div></div>
-        <div class="card table-card"><div class="table-scroll"><table class="table expense-table"><thead><tr><th>成本日期</th><th>專案／客戶</th><th>類別／廠商</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅成本</th><th>付款狀態</th><th>備註</th><th>操作</th></tr></thead><tbody id="expenseTableBody"></tbody></table></div><div id="expensePagination" class="pagination"></div></div>
+        <div class="card table-card"><div class="table-scroll"><table class="table expense-table"><thead><tr><th>成本日期</th><th>專案／客戶</th><th>類別／報支人</th><th>發票／憑證</th><th class="num">支出金額</th><th>稅別</th><th class="num">未稅成本</th><th>付款狀態</th><th>備註</th><th>操作</th></tr></thead><tbody id="expenseTableBody"></tbody></table></div><div id="expensePagination" class="pagination"></div></div>
       </section>
 
       <section class="finance-section">
@@ -740,26 +740,23 @@
   <!-- 外部支出 Drawer -->
   <div id="expenseDrawer" class="drawer hidden" aria-hidden="true">
     <button class="drawer-backdrop" type="button" data-expense-close aria-label="關閉外部支出表單"></button>
-    <aside class="drawer-panel narrow" role="dialog" aria-modal="true" aria-labelledby="expenseDrawerTitle">
+    <aside class="drawer-panel expense-drawer" role="dialog" aria-modal="true" aria-labelledby="expenseDrawerTitle">
       <div class="drawer-head"><div><div class="drawer-eyebrow">財務總覽</div><h2 id="expenseDrawerTitle">新增外部支出</h2></div><button id="expenseDrawerClose" class="icon-btn" type="button">✕</button></div>
       <form id="expenseForm" class="drawer-form">
         <input id="expenseId" type="hidden" />
         <div class="drawer-content">
-          <section class="form-section"><h3>支出資料</h3><div class="form-grid">
-            <label class="field field-full"><span>連結專案 *</span><select id="expenseProjectId" class="select" required><option value="">請選擇專案</option></select></label>
-            <label class="field"><span>成本／憑證日期 *</span><input id="expenseDate" class="input" type="date" required /><small class="field-help">作為專案成本歸屬月份。</small></label>
-            <label class="field"><span>類別</span><select id="expenseCategory" class="select"><option value="outsourcing_equipment">外包設備</option><option value="temporary_staff">臨時人力</option><option value="transport">運輸</option><option value="consumables">耗材</option><option value="venue">場租／其他場地費</option><option value="other">其他</option></select></label>
-            <label class="field"><span>廠商／收款方</span><input id="expenseVendor" class="input" /></label>
-            <label class="field"><span>支出金額 *</span><input id="expenseAmount" class="input" inputmode="numeric" required /></label>
-            <label class="field field-full"><span>金額稅別</span><select id="expenseTaxMode" class="select"><option value="taxed">含稅</option><option value="untaxed">未稅</option></select><small id="expenseUntaxedHint" class="field-help">未稅成本：0</small></label>
+          <section class="form-section"><div class="section-head"><div><h3>報支資料</h3><p class="field-help">同一次報支可加入多筆明細；每列的專案、類別、稅別與金額各自獨立。</p></div></div><div class="form-grid">
+            <label class="field"><span>成本／憑證日期 *</span><input id="expenseDate" class="input" type="date" required /><small class="field-help">作為各專案成本歸屬月份。</small></label>
+            <label class="field"><span>報支人／收款方</span><input id="expenseVendor" class="input" placeholder="例如：王小明、○○器材行" /></label>
             <label class="field"><span>廠商請款日</span><input id="expenseVendorBillDate" class="input" type="date" /></label>
             <label class="field"><span>預計付款日</span><input id="expenseExpectedPaymentDate" class="input" type="date" /></label>
             <label class="field"><span>實際付款日</span><input id="expensePaidDate" class="input" type="date" /><small class="field-help">留白表示尚未付款。</small></label>
             <label class="field"><span>付款方式</span><select id="expensePaymentMethod" class="select"><option value="bank_transfer">銀行轉帳</option><option value="cash">現金</option><option value="check">支票</option><option value="card">刷卡</option><option value="other">其他</option></select></label>
-            <label class="field field-full"><span>備註</span><textarea id="expenseNote" class="textarea" rows="4"></textarea></label>
+            <label class="field field-full"><span>整批備註</span><textarea id="expenseNote" class="textarea" rows="2" placeholder="例如：10 月員工代墊費用"></textarea></label>
           </div></section>
+          <section class="form-section expense-lines-section"><div class="section-head"><div><h3>支出明細</h3><p class="field-help">同一張發票拆分至多個專案時，各列填寫相同憑證號碼即可。</p></div><button id="expenseAddLine" class="btn ghost small" type="button">＋ 新增一列</button></div><div class="expense-lines-scroll"><table class="expense-lines-table"><thead><tr><th>對應專案 *</th><th>類別</th><th>金額稅別</th><th>金額 *</th><th>發票／憑證號碼</th><th>明細備註</th><th></th></tr></thead><tbody id="expenseLines"></tbody></table></div><div id="expenseBatchTotal" class="expense-batch-total">共 1 筆｜含稅／未稅輸入合計 0｜未稅成本 0</div></section>
         </div>
-        <div class="drawer-actions"><button class="btn ghost" type="button" data-expense-close>取消</button><button class="btn primary" type="submit">儲存外部支出</button></div>
+        <div class="drawer-actions"><button class="btn ghost" type="button" data-expense-close>取消</button><button class="btn primary" type="submit">儲存支出明細</button></div>
       </form>
     </aside>
   </div>
@@ -856,7 +853,7 @@
 
   <script type="module" src="./app.js?v=phase3-v13-1"></script>
   <script type="module" src="./quotations.js?v=phase3-v13-1"></script>
-  <script type="module" src="./payments.js?v=phase3-v13"></script>
-  <script type="module" src="./finance.js?v=phase3-v13-1"></script>
+  <script type="module" src="./payments.js?v=phase3-v13-2"></script>
+  <script type="module" src="./finance.js?v=phase3-v13-2"></script>
 </body>
 </html>
