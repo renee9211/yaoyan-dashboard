@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css?v=phase3-v13-2" />
+  <link rel="stylesheet" href="styles.css?v=phase3-v13-3" />
 </head>
 
 <body>
@@ -308,6 +308,16 @@
       <div class="card table-card quotation-table-card">
         <div class="table-scroll">
           <table class="table quotation-table">
+            <colgroup>
+              <col class="quotation-col-select" />
+              <col class="quotation-col-number" />
+              <col class="quotation-col-project" />
+              <col class="quotation-col-version" />
+              <col class="quotation-col-price" />
+              <col class="quotation-col-status" />
+              <col class="quotation-col-date" />
+              <col class="quotation-col-actions" />
+            </colgroup>
             <thead><tr><th class="batch-checkbox-column"><input id="quotationSelectAll" class="batch-checkbox" type="checkbox" aria-label="選取本頁所有可修改報價" /></th><th>報價編號</th><th>連結專案名稱</th><th>版本</th><th class="num quotation-price-heading">專案價<span>（含稅）</span></th><th>狀態</th><th class="quotation-date-heading">活動日期／更新日期</th><th>操作</th></tr></thead>
             <tbody id="quotationTableBody"></tbody>
           </table>

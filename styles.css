@@ -1526,7 +1526,21 @@ body.drawer-open{ overflow:hidden; }
 .quotation-project-scope button{ border:0; padding:4px 7px; background:transparent; color:#9a4b00; cursor:pointer; font-weight:900; }
 .customer-table,.item-table,.quotation-table{ min-width:900px; }
 .item-table th{ white-space:nowrap; }
-.quotation-table{ min-width:1090px; }
+.quotation-table{ min-width:1384px; table-layout:fixed; }
+.quotation-table col.quotation-col-select{ width:42px; }
+.quotation-table col.quotation-col-number{ width:112px; }
+.quotation-table col.quotation-col-project{ width:350px; }
+.quotation-table col.quotation-col-version{ width:104px; }
+.quotation-table col.quotation-col-price{ width:110px; }
+.quotation-table col.quotation-col-status{ width:90px; }
+.quotation-table col.quotation-col-date{ width:156px; }
+.quotation-table col.quotation-col-actions{ width:420px; }
+.quotation-table th:nth-child(2),
+.quotation-table td:nth-child(2),
+.quotation-table th:nth-child(n+4),
+.quotation-table td:nth-child(n+4){ white-space:nowrap; }
+.quotation-table td:nth-child(3){ overflow-wrap:anywhere; }
+.quotation-table td:last-child .row-actions{ flex-wrap:nowrap; white-space:nowrap; }
 .quotation-price-heading span{ display:block; }
 .quotation-date-heading{ white-space:nowrap; }
 .quote-kpi-grid{
