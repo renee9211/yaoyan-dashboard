@@ -135,18 +135,17 @@ function projectFor(id) { return state.projects.find(project => project.id === i
 
 function quotationForProject(project) {
   if (!project) return null;
-  if (project.confirmedQuotationId) {
-    const confirmed = state.quotations.find(quotation => quotation.id === project.confirmedQuotationId);
-    if (confirmed) return confirmed;
-  }
-  return state.quotations
+  const linked = state.quotations
     .filter(quotation => quotation.projectId === project.id && quotation.status === "confirmed")
-    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || timestampValue(b.updatedAt) - timestampValue(a.updatedAt))[0] || null;
+    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || timestampValue(b.updatedAt) - timestampValue(a.updatedAt));
+  if (linked[0]) return linked[0];
+  if (project.confirmedQuotationId) return state.quotations.find(quotation => quotation.id === project.confirmedQuotationId) || null;
+  return null;
 }
 
 function quotationNumberForProject(projectOrId) {
   const project = typeof projectOrId === "string" ? projectFor(projectOrId) : projectOrId;
-  return project?.confirmedQuotationNumber || quotationForProject(project)?.number || "";
+  return quotationForProject(project)?.number || project?.confirmedQuotationNumber || "";
 }
 
 function receivedForPayment(payment, throughDate = "") {
@@ -160,7 +159,7 @@ function allReceiptRows() {
 function paymentRow(payment) {
   const row = financeCalculator().paymentRow(payment);
   const project = projectFor(payment.projectId);
-  return { ...row, quotationNumber: payment.quotationNumber || quotationNumberForProject(project) };
+  return { ...row, quotationNumber: quotationNumberForProject(project) || payment.quotationNumber || "" };
 }
 
 function filterContext() {
@@ -392,7 +391,7 @@ function payableStatus(expense, asOf = isoDate()) {
 function payableRows(context) {
   const projectRows = state.expenses.filter(expense => !expense.voided).map(expense => {
     const project = projectFor(expense.projectId);
-    return { ...expense, source: "專案支出", sourceName: expense.projectName || project?.name || "未命名專案", customerName: expense.customerName || project?.client || "", quotationNumber: expense.quotationNumber || quotationNumberForProject(project), itemName: expenseCategoryLabel(expense.category) };
+    return { ...expense, source: "專案支出", sourceName: expense.projectName || project?.name || "未命名專案", customerName: expense.customerName || project?.client || "", quotationNumber: quotationNumberForProject(project) || expense.quotationNumber || "", itemName: expenseCategoryLabel(expense.category) };
   });
   const companyRows = state.companyExpenses.filter(expense => !expense.voided).map(expense => ({ ...expense, source: "公司支出", sourceName: companyExpenseCategoryLabel(expense.category), customerName: "", itemName: expense.name || "未命名支出" }));
   return [...projectRows, ...companyRows]
@@ -428,7 +427,7 @@ function filteredExpenses(context) {
   return state.expenses.filter(expense => !expense.voided)
     .map(expense => {
       const project = projectFor(expense.projectId);
-      return { ...expense, projectName: expense.projectName || project?.name || "未命名專案", customerName: expense.customerName || project?.client || "未填客戶", quotationNumber: expense.quotationNumber || quotationNumberForProject(project) };
+      return { ...expense, projectName: expense.projectName || project?.name || "未命名專案", customerName: expense.customerName || project?.client || "未填客戶", quotationNumber: quotationNumberForProject(project) || expense.quotationNumber || "" };
     })
     .filter(expense => !context.month || String(expense.expenseDate || "").startsWith(context.month))
     .filter(expense => matchesContext(expense, context));

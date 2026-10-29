@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css?v=phase3-v13-3" />
+  <link rel="stylesheet" href="styles.css?v=phase3-v13-4" />
 </head>
 
 <body>
@@ -235,6 +235,7 @@
         <label class="field-inline"><span>月份</span><input id="paymentMonthFilter" class="input" type="month" /></label>
         <label class="field-inline"><span>收款狀態</span><select id="paymentStatusFilter" class="select"><option value="all">全部狀態</option><option value="pending">待請款</option><option value="requested">已請款待收</option><option value="partial">部分收款</option><option value="paid">已收款</option><option value="overdue">逾期未收</option><option value="pricePending">總價待確認</option></select></label>
         <label class="field-inline"><span>案況</span><select id="paymentProjectStatusFilter" class="select"><option value="all">全部案況</option><option value="planning">規劃中</option><option value="confirmed">已成案</option><option value="executing">執行中</option><option value="closed">已結案</option></select></label>
+        <label class="field-inline"><span>報價連結</span><select id="paymentQuotationStatusFilter" class="select"><option value="all">全部報價狀態</option><option value="confirmed">已確認</option><option value="unconfirmed">尚未確認</option><option value="unsynced">金額未同步</option><option value="missing">未建立報價</option></select></label>
         <label class="field-inline"><span>排序</span><select id="paymentSort" class="select"><option value="statusAsc">收款狀態｜需處理優先</option><option value="statusDesc">收款狀態｜已完成優先</option><option value="dateAsc">活動日期｜近到遠</option><option value="dateDesc">活動日期｜遠到近</option><option value="nameAsc">專案名稱｜A–Z</option><option value="nameDesc">專案名稱｜Z–A</option><option value="outstandingDesc">全案待收｜高到低</option><option value="outstandingAsc">全案待收｜低到高</option></select></label>
         <button id="paymentClearFilters" class="btn ghost small filter-clear hidden" type="button">清除篩選</button>
       </div>
@@ -257,15 +258,13 @@
               <col class="payment-col-project" />
               <col class="payment-col-date" />
               <col class="payment-col-total" />
-              <col class="payment-col-invoiced" />
-              <col class="payment-col-invoiced" />
-              <col class="payment-col-invoiced" />
-              <col class="payment-col-received" />
+              <col class="payment-col-progress" />
+              <col class="payment-col-progress" />
               <col class="payment-col-outstanding" />
               <col class="payment-col-status" />
               <col class="payment-col-actions" />
             </colgroup>
-            <thead><tr><th>專案／客戶</th><th>活動日期／案況</th><th class="num">專案價（含稅）</th><th class="num">已請款</th><th class="num">尚未請款</th><th class="num">應收帳款</th><th class="num">已收款</th><th class="num">全案待收</th><th>收款狀態</th><th>操作</th></tr></thead>
+            <thead><tr><th>報價編號／專案／客戶</th><th>活動日期／案況</th><th class="num">專案價（含稅）</th><th>請款進度</th><th>收款進度</th><th class="num">全案待收</th><th>收款狀態</th><th>操作</th></tr></thead>
             <tbody id="paymentProjectTableBody"></tbody>
           </table>
         </div>
@@ -863,7 +862,7 @@
 
   <script type="module" src="./app.js?v=phase3-v13-1"></script>
   <script type="module" src="./quotations.js?v=phase3-v13-1"></script>
-  <script type="module" src="./payments.js?v=phase3-v13-2"></script>
-  <script type="module" src="./finance.js?v=phase3-v13-2"></script>
+  <script type="module" src="./payments.js?v=phase3-v13-4"></script>
+  <script type="module" src="./finance.js?v=phase3-v13-4"></script>
 </body>
 </html>

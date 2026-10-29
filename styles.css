@@ -1783,29 +1783,38 @@ body.drawer-open{ overflow:hidden; }
 }
 .payment-outstanding-kpi b{ color:#9a4b00; }
 .payment-toolbar{
-  grid-template-columns:minmax(260px,1fr) 160px 190px 170px 220px auto;
+  grid-template-columns:minmax(250px,1fr) 150px 180px 155px 175px 215px auto;
   margin-bottom:0;
 }
 .payment-project-table{
-  min-width:1490px;
+  min-width:1455px;
   table-layout:fixed;
 }
+.payment-project-table col.payment-col-project{ width:332px; }
 .payment-project-table col.payment-col-date{ width:178px; }
 .payment-project-table col.payment-col-total{ width:135px; }
-.payment-project-table col.payment-col-invoiced{ width:108px; }
-.payment-project-table col.payment-col-received{ width:108px; }
+.payment-project-table col.payment-col-progress{ width:170px; }
 .payment-project-table col.payment-col-outstanding{ width:126px; }
 .payment-project-table col.payment-col-status{ width:140px; }
-.payment-project-table col.payment-col-actions{ width:188px; }
+.payment-project-table col.payment-col-actions{ width:204px; }
 .payment-project-table th:nth-child(2),
 .payment-project-table td:nth-child(2),
-.payment-project-table th:nth-child(n+3):nth-child(-n+7),
-.payment-project-table td:nth-child(n+3):nth-child(-n+7){ white-space:nowrap; }
+.payment-project-table th:nth-child(3),
+.payment-project-table td:nth-child(3),
+.payment-project-table th:nth-child(6),
+.payment-project-table td:nth-child(6){ white-space:nowrap; }
 .payment-project-table td:first-child{
   overflow-wrap:anywhere;
   word-break:break-word;
 }
 .payment-project-table td:last-child .row-actions{ flex-wrap:nowrap; }
+.payment-quotation-line{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:6px; }
+.payment-quotation-line .quotation-number-ref{ margin-right:0; }
+.payment-quotation-status{ height:20px; padding:0 7px; font-size:10px; }
+.payment-progress{ display:grid; gap:5px; min-width:0; }
+.payment-progress > div{ display:flex; align-items:center; justify-content:space-between; gap:10px; white-space:nowrap; }
+.payment-progress span{ color:var(--muted); font-size:11px; font-weight:850; }
+.payment-progress b{ font-variant-numeric:tabular-nums; font-size:12px; }
 .report-table{ min-width:1760px; }
 .payment-project-row{ cursor:pointer; }
 .payment-project-row:hover td{ background:#fffaf2; }

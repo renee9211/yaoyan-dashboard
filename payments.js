@@ -154,22 +154,48 @@ function timestampValue(value) {
 
 function quotationForProject(project) {
   if (!project) return null;
-  if (project.confirmedQuotationId) {
-    const confirmed = state.quotations.find(quotation => quotation.id === project.confirmedQuotationId);
-    if (confirmed) return confirmed;
-  }
-  return state.quotations
+  const linked = state.quotations
     .filter(quotation => quotation.projectId === project.id && quotation.status === "confirmed")
-    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || timestampValue(b.updatedAt) - timestampValue(a.updatedAt))[0] || null;
+    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || timestampValue(b.updatedAt) - timestampValue(a.updatedAt));
+  if (linked[0]) return linked[0];
+  if (project.confirmedQuotationId) return state.quotations.find(quotation => quotation.id === project.confirmedQuotationId) || null;
+  return null;
 }
 
 function quotationNumberForProject(project) {
-  return project?.confirmedQuotationNumber || quotationForProject(project)?.number || "";
+  return quotationForProject(project)?.number || project?.confirmedQuotationNumber || "";
 }
 
-function projectNameWithQuotation(project) {
-  const number = quotationNumberForProject(project);
-  return `${number ? `<span class="quotation-number-ref">${esc(number)}</span>` : ""}${esc(project?.name || "未命名專案")}`;
+function latestLinkedQuotation(project) {
+  if (!project) return null;
+  return state.quotations
+    .filter(quotation => quotation.projectId === project.id)
+    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || timestampValue(b.updatedAt) - timestampValue(a.updatedAt))[0] || null;
+}
+
+function quotationLinkState(project) {
+  const confirmed = quotationForProject(project);
+  if (confirmed) {
+    const unsynced = integerValue(confirmed.projectPriceTaxed) !== projectTotalTaxed(project);
+    return {
+      key: unsynced ? "unsynced" : "confirmed",
+      number: confirmed.number || project?.confirmedQuotationNumber || "",
+      label: unsynced ? "金額未同步" : "已確認",
+      badge: unsynced ? "orange" : "green"
+    };
+  }
+  const latest = latestLinkedQuotation(project);
+  if (latest) return {
+    key: "unconfirmed",
+    number: latest.number || "",
+    label: latest.status === "sent" ? "已寄出未確認" : "草稿未確認",
+    badge: latest.status === "sent" ? "blue" : "neutral"
+  };
+  return { key: "missing", number: "", label: "未建立報價", badge: "orange" };
+}
+
+function projectNameWithQuotation(project, quoteState = quotationLinkState(project)) {
+  return `<div class="payment-quotation-line">${quoteState.number ? `<span class="quotation-number-ref">${esc(quoteState.number)}</span>` : ""}<span class="badge ${esc(quoteState.badge)} payment-quotation-status">${esc(quoteState.label)}</span></div><b>${esc(project?.name || "未命名專案")}</b><div class="table-sub">${esc(project?.client || "—")}</div>`;
 }
 
 function switchTab(tab) {
@@ -572,13 +598,14 @@ function filteredProjects() {
   const month = $("#paymentMonthFilter")?.value || "";
   const statusFilter = $("#paymentStatusFilter")?.value || "all";
   const projectStatusFilter = $("#paymentProjectStatusFilter")?.value || "all";
+  const quotationStatusFilter = $("#paymentQuotationStatusFilter")?.value || "all";
   const sortBy = $("#paymentSort")?.value || "statusAsc";
   const statusRank = { overdue: 0, partial: 1, requested: 2, pending: 3, pricePending: 4, paid: 5 };
 
   const list = state.projects
     .filter(project => project.status !== "lost")
-    .map(project => ({ project, summary: projectPaymentSummary(project) }))
-    .filter(({ project, summary }) => {
+    .map(project => ({ project, summary: projectPaymentSummary(project), quoteState: quotationLinkState(project) }))
+    .filter(({ project, summary, quoteState }) => {
       if (month) {
         const monthStart = `${month}-01`;
         const [year, monthNumber] = month.split("-").map(Number);
@@ -589,6 +616,7 @@ function filteredProjects() {
       }
       if (projectStatusFilter !== "all" && project.status !== projectStatusFilter) return false;
       if (statusFilter !== "all" && summary.status !== statusFilter) return false;
+      if (quotationStatusFilter !== "all" && quoteState.key !== quotationStatusFilter) return false;
       if (!keyword) return true;
       const projectPayments = state.payments.filter(payment => payment.projectId === project.id);
       const paymentIds = new Set(projectPayments.map(payment => payment.id));
@@ -596,7 +624,7 @@ function filteredProjects() {
       const receiptText = state.receipts
         .filter(receipt => receipt.projectId === project.id || paymentIds.has(receipt.paymentId))
         .map(receipt => [receipt.reference, receipt.receivedDate, receipt.method].join(" ")).join(" ");
-      return [quotationNumberForProject(project), project.name, project.client, project.location, projectStatusLabel(project.status), paymentStatusLabel(summary.status), paymentText, receiptText]
+      return [quoteState.number, quoteState.label, project.name, project.client, project.location, projectStatusLabel(project.status), paymentStatusLabel(summary.status), paymentText, receiptText]
         .join(" ").toLocaleLowerCase("zh-Hant").includes(keyword);
     });
 
@@ -628,7 +656,8 @@ function updatePaymentFilterUi() {
     $("#paymentSearch")?.value.trim() ||
     $("#paymentMonthFilter")?.value ||
     ($("#paymentStatusFilter")?.value || "all") !== "all" ||
-    ($("#paymentProjectStatusFilter")?.value || "all") !== "all"
+    ($("#paymentProjectStatusFilter")?.value || "all") !== "all" ||
+    ($("#paymentQuotationStatusFilter")?.value || "all") !== "all"
   );
   $("#paymentClearFilters")?.classList.toggle("hidden", !hasFilters);
 }
@@ -664,23 +693,21 @@ function renderPayments() {
   $("#paymentResultCount").textContent = `共 ${list.length} 個專案${list.length ? `（顯示 ${start + 1}–${Math.min(start + PAYMENTS_PER_PAGE, list.length)}）` : ""}`;
   renderPagination(list.length);
 
-  body.innerHTML = pageList.length ? pageList.map(({ project, summary }) => {
+  body.innerHTML = pageList.length ? pageList.map(({ project, summary, quoteState }) => {
     const totalOutstandingText = summary.total
       ? money(summary.totalOutstanding)
       : (summary.isTracked ? `${money(summary.totalOutstanding)}<div class="table-sub">總價待確認</div>` : "尚未登記");
     return `<tr class="payment-project-row" data-payment-toggle-project="${esc(project.id)}">
-      <td><b>${projectNameWithQuotation(project)}</b><div class="table-sub">${esc(project.client || "—")}</div></td>
+      <td>${projectNameWithQuotation(project, quoteState)}</td>
       <td>${esc(project.startDate || "—")}～${esc(project.endDate || "—")}<div class="table-sub">${esc(projectStatusLabel(project.status))}</div></td>
       <td class="num">${summary.total ? money(summary.total) : '<span class="pending-value">待確認</span>'}</td>
-      <td class="num">${money(summary.invoiced)}</td>
-      <td class="num">${summary.total ? money(summary.unbilled) : "—"}</td>
-      <td class="num"><b>${money(summary.receivable)}</b></td>
-      <td class="num">${money(summary.received)}</td>
+      <td><div class="payment-progress"><div><span>已請款</span><b>${money(summary.invoiced)}</b></div><div><span>尚未請款</span><b>${summary.total ? money(summary.unbilled) : "—"}</b></div></div></td>
+      <td><div class="payment-progress"><div><span>已收款</span><b>${money(summary.received)}</b></div><div><span>應收帳款</span><b>${money(summary.receivable)}</b></div></div></td>
       <td class="num">${totalOutstandingText}</td>
       <td><span class="badge ${paymentStatusBadge(summary.status)}">${esc(summary.isTracked ? paymentStatusLabel(summary.status) : "尚未建立款項")}</span></td>
       <td><div class="row-actions"><button class="btn ghost small" type="button" data-payment-add-project="${esc(project.id)}" ${canEdit() ? "" : "disabled"}>新增款項</button><button class="btn ghost small" type="button" data-payment-expand="${esc(project.id)}">查看明細</button></div></td>
-    </tr><tr class="payment-project-detail" data-payment-detail-project="${esc(project.id)}" hidden><td colspan="10">${renderPaymentDetails(project, summary)}</td></tr>`;
-  }).join("") : `<tr><td colspan="10"><div class="empty-state">找不到符合條件的專案</div></td></tr>`;
+    </tr><tr class="payment-project-detail" data-payment-detail-project="${esc(project.id)}" hidden><td colspan="8">${renderPaymentDetails(project, summary)}</td></tr>`;
+  }).join("") : `<tr><td colspan="8"><div class="empty-state">找不到符合條件的專案</div></td></tr>`;
 
   const tracked = state.projects.filter(project => project.status !== "lost").map(projectPaymentSummary);
   $("#paymentProjectTotal").textContent = money(tracked.reduce((sum, item) => sum + item.total, 0));
@@ -861,12 +888,14 @@ function bindEvents() {
   $("#paymentMonthFilter")?.addEventListener("change", resetPage);
   $("#paymentStatusFilter")?.addEventListener("change", resetPage);
   $("#paymentProjectStatusFilter")?.addEventListener("change", resetPage);
+  $("#paymentQuotationStatusFilter")?.addEventListener("change", resetPage);
   $("#paymentSort")?.addEventListener("change", resetPage);
   $("#paymentClearFilters")?.addEventListener("click", () => {
     if ($("#paymentSearch")) $("#paymentSearch").value = "";
     if ($("#paymentMonthFilter")) $("#paymentMonthFilter").value = "";
     if ($("#paymentStatusFilter")) $("#paymentStatusFilter").value = "all";
     if ($("#paymentProjectStatusFilter")) $("#paymentProjectStatusFilter").value = "all";
+    if ($("#paymentQuotationStatusFilter")) $("#paymentQuotationStatusFilter").value = "all";
     resetPage();
   });
   $("#paymentBatchAction")?.addEventListener("change", updatePaymentBatchUi);
