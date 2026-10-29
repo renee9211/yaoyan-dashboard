@@ -316,7 +316,7 @@ let currentUser = null;
 let currentRole = null;
 let currentAccess = null;
 let realtimeUnsubscribers = [];
-let state = { projects: [], equipments: [], payments: [], receipts: [], quotations: [], expenses: [], companyExpenses: [] };
+let state = { projects: [], equipments: [], payments: [], receipts: [], quotations: [], quotationItems: [], expenses: [], companyExpenses: [] };
 let selectedProjectStatus = "all";
 const selectedProjectIds = new Set();
 let projectCurrentPage = 1;
@@ -1565,14 +1565,19 @@ function renderEquipmentsTable() {
   }
 
   pageList.forEach(e => {
-    const dailyDepreciation = equipmentDailyDepreciation(e);
+    const linkedQuoteItems = state.quotationItems
+      .filter(item => item.equipmentId === e.id || (!item.equipmentId && String(item.equipmentName || "").trim() === String(e.name || "").trim()))
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant", { numeric: true, sensitivity: "base" }));
+    const linkedQuotePriceHtml = linkedQuoteItems.length
+      ? linkedQuoteItems.map((item, index) => `<div${index ? ' class="table-sub"' : ""}><b>${escapeHtml(formatMoney(item.unitPrice || 0))}</b>${item.unit ? `／${escapeHtml(item.unit)}` : ""}${linkedQuoteItems.length > 1 ? `｜${escapeHtml(item.name || "未命名項目")}` : ""}</div>`).join("")
+      : '<span class="pending-value">尚未連結</span>';
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><span class="badge neutral">${escapeHtml(e.category || "未分類")}</span></td>
       <td>${escapeHtml(e.name)}</td>
       <td class="num">${escapeHtml(String(e.qty ?? 0))}</td>
       <td>${parseIntSafe(e.unitPurchasePrice) ? `購入價 ${escapeHtml(formatMoney(e.unitPurchasePrice))}<div class="table-sub">${escapeHtml(e.acquisitionDate || "購入日未填")}｜${escapeHtml(String(e.depreciationYears || 6))} 年｜殘值 ${escapeHtml(formatMoney(e.residualValue || 0))}</div>` : '<span class="pending-value">尚未設定</span>'}</td>
-      <td class="num">${dailyDepreciation === null ? '<span class="pending-value">尚未估算</span>' : `<b>${escapeHtml(formatMoney(dailyDepreciation))}</b><div class="table-sub">預估 ${escapeHtml(String(e.annualUsageDays))} 天／年</div>`}</td>
+      <td class="num">${linkedQuotePriceHtml}</td>
       <td>${escapeHtml(e.note ?? "")}</td>
       <td>
         <div class="row-actions">
@@ -2053,6 +2058,7 @@ function detachListeners() {
   state.payments = [];
   state.receipts = [];
   state.quotations = [];
+  state.quotationItems = [];
   state.expenses = [];
   state.companyExpenses = [];
   openProjectIds.clear();
@@ -2074,6 +2080,7 @@ function attachRealtimeListeners() {
   listen("payments", "payments", "讀取請款／收款失敗：請先更新 Firestore Rules");
   listen("receipts", "receipts", "讀取實際收款紀錄失敗：請先更新新版 Firestore Rules");
   listen("quotations", "quotations", "讀取報價狀態失敗：請確認 Firestore Rules 已包含 quotations 權限");
+  listen("quotationItems", "quotationItems", "讀取常用報價項目失敗：請確認 Firestore Rules 已包含 quotationItems 權限");
   listen("expenses", "expenses", "讀取外部支出失敗：請先更新第三階段 Firestore Rules");
   listen("companyExpenses", "companyExpenses", "讀取公司支出失敗：請先更新新版 Firestore Rules");
 }
