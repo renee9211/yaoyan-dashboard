@@ -1,4 +1,5 @@
 // Phase 3 v8: single source of truth for all financial calculations.
+import { projectReportingMonth } from "./relation-utils.js?v=phase3-v13-6";
 export const TAX_RATE = 0.05;
 
 export function amountValue(value) {
@@ -69,6 +70,7 @@ let cachedCalculator = null;
 export function createFinanceCalculator(input = {}) {
   const normalized = {
     projects: input.projects || [],
+    quotations: input.quotations || [],
     payments: input.payments || [],
     receipts: input.receipts || [],
     expenses: input.expenses || [],
@@ -203,7 +205,11 @@ export function createFinanceCalculator(input = {}) {
 
   function monthlySummary(month) {
     const range = monthRange(month);
-    const projects = normalized.projects.filter(project => project.status !== "lost" && projectInMonth(project, month));
+    const projects = normalized.projects.filter(project =>
+      project.status !== "lost" &&
+      !(project.calendarSyncStatus === "cancelled" && project.status !== "closed") &&
+      projectReportingMonth(project, normalized.quotations) === month
+    );
     const revenue = projects.reduce((sum, project) => sum + projectRevenueUntaxed(project), 0);
     const externalCost = projects.reduce((sum, project) => sum + projectExternalCost(project), 0);
     const profit = revenue - externalCost;

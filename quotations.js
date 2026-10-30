@@ -2,6 +2,7 @@
 import { db, watchAuth, getUserAccess, hasPermission, ensureUserDoc, defaultPermissionsForRole } from "./firebase.js";
 import { logAction } from "./audit.js";
 import { subscribeCollection, createRenderScheduler } from "./data-store.js";
+import { quotationMonthFromNumber } from "./relation-utils.js?v=phase3-v13-6";
 import {
   collection, doc, setDoc, updateDoc, deleteDoc,
   serverTimestamp, writeBatch
@@ -293,6 +294,10 @@ async function saveCustomer() {
     updatedBy: state.user?.uid || ""
   };
   if (!payload.name) return alert("請填寫客戶／公司名稱");
+  const duplicate = state.customers.find(customer =>
+    customer.id !== id && String(customer.name || "").trim().toLocaleLowerCase() === payload.name.toLocaleLowerCase()
+  );
+  if (duplicate) return alert("已有相同名稱的客戶，請直接編輯既有客戶資料，避免專案連結到不同筆客戶。");
   try {
     let targetId = id;
     if (id) await updateDoc(doc(db, "customers", id), payload);
@@ -869,12 +874,21 @@ async function saveQuotation() {
     if (id) {
       const existing = state.quotations.find(q => q.id === id);
       if (existing && Number(existing.version || 1) < maxVersion(existing.seriesId)) return alert("舊版本已鎖定，請從最新版複製為新版本");
-      await updateDoc(doc(db, "quotations", id), { ...payload, updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+      await updateDoc(doc(db, "quotations", id), {
+        ...payload,
+        ...(payload.status === "confirmed" && existing?.status !== "confirmed" ? { confirmedAt: serverTimestamp() } : {}),
+        updatedAt: serverTimestamp(), updatedBy: state.user.uid
+      });
     } else {
       const ref = doc(collections.quotations);
       savedId = ref.id;
       const seriesId = payload.seriesId || ref.id;
-      await setDoc(ref, { ...payload, seriesId, createdAt: serverTimestamp(), createdBy: state.user.uid, updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+      await setDoc(ref, {
+        ...payload,
+        seriesId,
+        ...(payload.status === "confirmed" ? { confirmedAt: serverTimestamp() } : {}),
+        createdAt: serverTimestamp(), createdBy: state.user.uid, updatedAt: serverTimestamp(), updatedBy: state.user.uid
+      });
     }
     await logAction({ action: id ? "update" : "create", module: "quotations", targetType: "quotation", targetId: savedId, targetName: `${payload.number} / V${payload.version}`, summary: `${payload.customerName}｜${payload.projectName}｜專案價 ${money(payload.projectPriceTaxed)} 元｜${statusLabel(payload.status)}` });
     closeDrawer("#quotationDrawer");
@@ -908,6 +922,7 @@ async function writeBackProject(quotation, quotationId) {
       confirmedQuotationId: quotationId,
       confirmedQuotationNumber: quotation.number,
       confirmedQuotationVersion: quotation.version,
+      confirmedQuotationMonth: quotationMonthFromNumber(quotation.number),
       updatedAt: serverTimestamp()
     });
     await logAction({ action: "sync", module: "quotations", targetType: "project", targetId: quotation.projectId, targetName: quotation.projectName || quotation.number, summary: `由 ${quotation.number} / V${quotation.version || 1} 回寫專案價 ${money(quotation.projectPriceTaxed)} 元` });
@@ -929,6 +944,7 @@ async function createProjectFromQuotation(quotation, quotationId) {
   batch.set(projectRef, {
     name: quotation.projectName,
     client: quotation.customerName || "",
+    customerId: quotation.customerId || "",
     location: locations.join("／"),
     startDate: eventDates[0] || "",
     endDate: eventDates[eventDates.length - 1] || eventDates[0] || "",
@@ -942,6 +958,7 @@ async function createProjectFromQuotation(quotation, quotationId) {
     confirmedQuotationId: quotationId,
     confirmedQuotationNumber: quotation.number,
     confirmedQuotationVersion: quotation.version || 1,
+    confirmedQuotationMonth: quotationMonthFromNumber(quotation.number),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
@@ -1177,6 +1194,7 @@ async function applyQuotationBatchStatus() {
       changed.slice(offset, offset + 400).forEach(quotation => {
         batch.update(doc(db, "quotations", quotation.id), {
           status: nextStatus,
+          ...(nextStatus === "confirmed" && quotation.status !== "confirmed" ? { confirmedAt: serverTimestamp() } : {}),
           updatedAt: serverTimestamp(),
           updatedBy: state.user.uid
         });
@@ -1233,6 +1251,7 @@ async function syncQuotationBatchToProjects() {
         confirmedQuotationId: quotation.id,
         confirmedQuotationNumber: quotation.number || "",
         confirmedQuotationVersion: Number(quotation.version || 1),
+        confirmedQuotationMonth: quotationMonthFromNumber(quotation.number),
         updatedAt: serverTimestamp(),
         updatedBy: state.user.uid
       });
@@ -1401,6 +1420,11 @@ function bindEvents() {
     if (edit) openCustomer(state.customers.find(item => item.id === edit.dataset.customerEdit));
     if (del && canDelete() && confirm("確定刪除此客戶？已建立的歷史報價仍會保留客戶快照。")) {
       const customer = state.customers.find(item => item.id === del.dataset.customerDelete);
+      const linkedProjects = state.projects.filter(project => project.customerId === customer?.id);
+      const linkedQuotations = state.quotations.filter(quotation => quotation.customerId === customer?.id && quotation.status !== "void");
+      if (linkedProjects.length || linkedQuotations.length) {
+        return alert(`此客戶仍有關聯資料，不能永久刪除：\n\n• 專案 ${linkedProjects.length} 筆\n• 未作廢報價 ${linkedQuotations.length} 筆\n\n請保留客戶主檔，以免專案、報價與付款條件失去連結。`);
+      }
       await deleteDoc(doc(db, "customers", del.dataset.customerDelete));
       await logAction({ action: "delete", module: "customers", targetType: "customer", targetId: del.dataset.customerDelete, targetName: customer?.name || "", summary: "永久刪除客戶資料" });
     }
@@ -1510,7 +1534,20 @@ function bindEvents() {
     const project = state.projects.find(item => item.id === event.target.value);
     if (!project) return;
     $("#quotationProjectName").value = project.name || "";
-    if (!$("#quotationCustomerName").value) $("#quotationCustomerName").value = project.client || "";
+    if (!$("#quotationCustomerId").value && project.customerId) {
+      const customer = state.customers.find(item => item.id === project.customerId);
+      if (customer) {
+        $("#quotationCustomerId").value = customer.id;
+        $("#quotationCustomerSearch").value = customerOptionLabel(customer);
+        $("#quotationCustomerName").value = customer.name || "";
+        $("#quotationContactName").value = customer.contactName || "";
+        $("#quotationPhone").value = customer.phone || "";
+        $("#quotationEmail").value = customer.email || "";
+        $("#quotationTaxId").value = customer.taxId || "";
+      }
+    } else if (!$("#quotationCustomerName").value) {
+      $("#quotationCustomerName").value = project.client || "";
+    }
     if (state.numberWasSuggested) $("#quotationNumber").value = suggestedNumber(project.startDate);
     const first = $(".quote-event-row", $("#quotationEvents"));
     if (first) {

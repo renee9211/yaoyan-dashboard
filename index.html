@@ -440,7 +440,7 @@
       <div class="panel-head">
         <div>
           <h2>月報表</h2>
-          <p class="hint">「檔期專案金額」統計該月有執行檔期的案件，並非會計營收；本月請款與實收則依各自日期歸月。</p>
+          <p class="hint">專案收入與外部支出依目前採用報價編號中的年月歸屬；本月請款與實收仍依各自日期歸月。</p>
         </div>
 
         <div class="panel-actions">
@@ -452,7 +452,7 @@
       <!-- ✅ KPI 左大右小 -->
       <div class="report-kpi">
         <div class="kpi-card big">
-          <div class="kpi-label">檔期專案金額（未稅）</div>
+          <div class="kpi-label">報價歸屬專案金額（未稅）</div>
           <div class="kpi-value" id="kpiMonthRevenue">0</div>
           <div class="kpi-sub">
             <span class="kpi-dot">檔期案件毛利：<span id="kpiMonthProfit">0</span></span>
@@ -471,7 +471,7 @@
         </div>
 
         <div class="kpi-card c3">
-          <div class="kpi-label">本月專案數（跨檔期）</div>
+          <div class="kpi-label">本月報價歸屬專案數</div>
           <div class="kpi-value" id="kpiMonthProjects">0</div>
         </div>
       </div>
@@ -488,6 +488,7 @@
           <thead>
             <tr>
               <th>專案</th>
+              <th>報價編號</th>
               <th>客戶</th>
               <th>地點</th>
               <th>期間</th>
@@ -507,7 +508,7 @@
           <tbody id="reportTableBody"></tbody>
           <tfoot>
             <tr>
-              <td colspan="7" style="text-align:right; font-weight:950;">合計</td>
+              <td colspan="8" style="text-align:right; font-weight:950;">合計</td>
               <td class="num" id="reportTotalInvoiced"></td>
               <td class="num" id="reportTotalUnbilled"></td>
               <td class="num" id="reportTotalReceived"></td>
@@ -596,12 +597,13 @@
 
       <form id="project-form" class="drawer-form">
         <input id="projectId" type="hidden" />
+        <input id="projectCustomerId" type="hidden" />
         <div class="drawer-content">
           <section class="form-section">
             <h3>基本資料</h3>
             <div class="form-grid">
               <label class="field field-full"><span>專案名稱 *</span><input id="projectName" class="input" placeholder="例如：XX 演唱會｜特效支援" /></label>
-              <label class="field"><span>客戶</span><input id="projectClient" class="input" placeholder="例如：主辦 / 品牌" /></label>
+              <label class="field"><span>客戶</span><input id="projectClient" class="input" list="projectCustomerOptions" placeholder="搜尋或選擇客戶" /><datalist id="projectCustomerOptions"></datalist></label>
               <label class="field"><span>地點</span><input id="projectLocation" class="input" placeholder="例如：台北小巨蛋" /></label>
               <label class="field"><span>開始日期 *</span><input id="projectStart" class="input" type="date" /></label>
               <label class="field"><span>結束日期 *</span><input id="projectEnd" class="input" type="date" /></label>
@@ -860,9 +862,9 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=phase3-v13-5"></script>
-  <script type="module" src="./quotations.js?v=phase3-v13-1"></script>
-  <script type="module" src="./payments.js?v=phase3-v13-4"></script>
-  <script type="module" src="./finance.js?v=phase3-v13-4"></script>
+  <script type="module" src="./app.js?v=phase3-v13-6"></script>
+  <script type="module" src="./quotations.js?v=phase3-v13-6"></script>
+  <script type="module" src="./payments.js?v=phase3-v13-6"></script>
+  <script type="module" src="./finance.js?v=phase3-v13-6"></script>
 </body>
 </html>

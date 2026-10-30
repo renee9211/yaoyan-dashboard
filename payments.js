@@ -2,7 +2,12 @@
 import { db, watchAuth, getUserAccess, hasPermission, ensureUserDoc, defaultPermissionsForRole } from "./firebase.js";
 import { logAction } from "./audit.js";
 import { subscribeCollection, createRenderScheduler } from "./data-store.js";
-import { createFinanceCalculator } from "./finance-calculations.js";
+import { createFinanceCalculator } from "./finance-calculations.js?v=phase3-v13-6";
+import {
+  confirmedQuotationForProject,
+  latestQuotationForProject,
+  projectQuotationNumber
+} from "./relation-utils.js?v=phase3-v13-6";
 import {
   collection, doc, setDoc, updateDoc, deleteDoc,
   serverTimestamp, writeBatch
@@ -153,24 +158,15 @@ function timestampValue(value) {
 }
 
 function quotationForProject(project) {
-  if (!project) return null;
-  const linked = state.quotations
-    .filter(quotation => quotation.projectId === project.id && quotation.status === "confirmed")
-    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || timestampValue(b.updatedAt) - timestampValue(a.updatedAt));
-  if (linked[0]) return linked[0];
-  if (project.confirmedQuotationId) return state.quotations.find(quotation => quotation.id === project.confirmedQuotationId) || null;
-  return null;
+  return confirmedQuotationForProject(project, state.quotations);
 }
 
 function quotationNumberForProject(project) {
-  return quotationForProject(project)?.number || project?.confirmedQuotationNumber || "";
+  return projectQuotationNumber(project, state.quotations);
 }
 
 function latestLinkedQuotation(project) {
-  if (!project) return null;
-  return state.quotations
-    .filter(quotation => quotation.projectId === project.id)
-    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || timestampValue(b.updatedAt) - timestampValue(a.updatedAt))[0] || null;
+  return latestQuotationForProject(project, state.quotations);
 }
 
 function quotationLinkState(project) {
@@ -195,7 +191,7 @@ function quotationLinkState(project) {
 }
 
 function projectNameWithQuotation(project, quoteState = quotationLinkState(project)) {
-  return `<div class="payment-quotation-line">${quoteState.number ? `<span class="quotation-number-ref">${esc(quoteState.number)}</span>` : ""}<span class="badge ${esc(quoteState.badge)} payment-quotation-status">${esc(quoteState.label)}</span></div><b>${esc(project?.name || "未命名專案")}</b><div class="table-sub">${esc(project?.client || "—")}</div>`;
+  return `<div class="payment-quotation-line">${quoteState.number ? `<span class="quotation-number-ref">${esc(quoteState.number)}</span>` : ""}<span class="badge ${esc(quoteState.badge)} payment-quotation-status">${esc(quoteState.label)}</span></div><b>${esc(project?.name || "未命名專案")}</b><div class="table-sub">${esc(projectClientName(project) || "—")}</div>`;
 }
 
 function switchTab(tab) {
@@ -227,9 +223,17 @@ function closeReceiptDrawer() {
 }
 
 function customerForProject(project) {
+  if (project?.customerId) {
+    const linked = state.customers.find(customer => customer.id === project.customerId);
+    if (linked) return linked;
+  }
   const client = String(project?.client || "").trim().toLocaleLowerCase("zh-Hant");
   if (!client) return null;
   return state.customers.find(customer => String(customer.name || "").trim().toLocaleLowerCase("zh-Hant") === client) || null;
+}
+
+function projectClientName(project) {
+  return customerForProject(project)?.name || project?.client || "";
 }
 
 function refreshProjectOptions(selectedId = "") {
@@ -237,13 +241,13 @@ function refreshProjectOptions(selectedId = "") {
   if (!select) return;
   const current = selectedId || select.value;
   const options = state.projects
-    .filter(project => project.status !== "lost")
+    .filter(project => project.status !== "lost" || project.id === current)
     .sort((a, b) => String(b.endDate || "").localeCompare(String(a.endDate || "")))
     .map(project => {
       const total = projectTotalTaxed(project);
       const suffix = total ? `｜含稅 ${money(total)}` : "｜總價待確認";
       const number = quotationNumberForProject(project);
-      return `<option value="${esc(project.id)}">${number ? `${esc(number)}｜` : ""}${esc(project.name || "未命名專案")}｜${esc(project.client || "未填客戶")}${suffix}</option>`;
+      return `<option value="${esc(project.id)}">${number ? `${esc(number)}｜` : ""}${esc(project.name || "未命名專案")}｜${esc(projectClientName(project) || "未填客戶")}${suffix}</option>`;
     }).join("");
   select.innerHTML = `<option value="">請選擇專案</option>${options}`;
   if (current && state.projects.some(project => project.id === current)) select.value = current;
@@ -369,7 +373,7 @@ async function savePayment() {
   const payload = {
     projectId: project.id,
     projectName: project.name || "",
-    customerName: project.client || "",
+    customerName: projectClientName(project),
     projectStartDate: project.startDate || "",
     projectEndDate: project.endDate || "",
     projectTotalTaxed: total,
@@ -603,7 +607,7 @@ function filteredProjects() {
   const statusRank = { overdue: 0, partial: 1, requested: 2, pending: 3, pricePending: 4, paid: 5 };
 
   const list = state.projects
-    .filter(project => project.status !== "lost")
+    .filter(project => project.status !== "lost" || projectPaymentSummary(project).isTracked)
     .map(project => ({ project, summary: projectPaymentSummary(project), quoteState: quotationLinkState(project) }))
     .filter(({ project, summary, quoteState }) => {
       if (month) {
@@ -624,7 +628,7 @@ function filteredProjects() {
       const receiptText = state.receipts
         .filter(receipt => receipt.projectId === project.id || paymentIds.has(receipt.paymentId))
         .map(receipt => [receipt.reference, receipt.receivedDate, receipt.method].join(" ")).join(" ");
-      return [quoteState.number, quoteState.label, project.name, project.client, project.location, projectStatusLabel(project.status), paymentStatusLabel(summary.status), paymentText, receiptText]
+      return [quoteState.number, quoteState.label, project.name, projectClientName(project), project.location, projectStatusLabel(project.status), paymentStatusLabel(summary.status), paymentText, receiptText]
         .join(" ").toLocaleLowerCase("zh-Hant").includes(keyword);
     });
 
@@ -705,11 +709,13 @@ function renderPayments() {
       <td><div class="payment-progress"><div><span>已收款</span><b>${money(summary.received)}</b></div><div><span>應收帳款</span><b>${money(summary.receivable)}</b></div></div></td>
       <td class="num">${totalOutstandingText}</td>
       <td><span class="badge ${paymentStatusBadge(summary.status)}">${esc(summary.isTracked ? paymentStatusLabel(summary.status) : "尚未建立款項")}</span></td>
-      <td><div class="row-actions"><button class="btn ghost small" type="button" data-payment-add-project="${esc(project.id)}" ${canEdit() ? "" : "disabled"}>新增款項</button><button class="btn ghost small" type="button" data-payment-expand="${esc(project.id)}">查看明細</button></div></td>
+      <td><div class="row-actions"><button class="btn ghost small" type="button" data-payment-add-project="${esc(project.id)}" ${canEdit() && project.status !== "lost" ? "" : "disabled"}>新增款項</button><button class="btn ghost small" type="button" data-payment-expand="${esc(project.id)}">查看明細</button></div></td>
     </tr><tr class="payment-project-detail" data-payment-detail-project="${esc(project.id)}" hidden><td colspan="8">${renderPaymentDetails(project, summary)}</td></tr>`;
   }).join("") : `<tr><td colspan="8"><div class="empty-state">找不到符合條件的專案</div></td></tr>`;
 
-  const tracked = state.projects.filter(project => project.status !== "lost").map(projectPaymentSummary);
+  const tracked = state.projects
+    .filter(project => project.status !== "lost" || projectPaymentSummary(project).isTracked)
+    .map(projectPaymentSummary);
   $("#paymentProjectTotal").textContent = money(tracked.reduce((sum, item) => sum + item.total, 0));
   $("#paymentInvoicedTotal").textContent = money(tracked.reduce((sum, item) => sum + item.invoiced, 0));
   $("#paymentReceivedTotal").textContent = money(tracked.reduce((sum, item) => sum + item.received, 0));

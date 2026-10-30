@@ -6,11 +6,15 @@ import {
 import { logAction } from "./audit.js";
 import { subscribeCollection, createRenderScheduler } from "./data-store.js";
 import {
+  confirmedQuotationForProject,
+  projectQuotationNumber
+} from "./relation-utils.js?v=phase3-v13-6";
+import {
   taxedToUntaxed,
   expenseUntaxed as calculateExpenseUntaxed,
   isCapitalExpense as calculateIsCapitalExpense,
   createFinanceCalculator
-} from "./finance-calculations.js";
+} from "./finance-calculations.js?v=phase3-v13-6";
 import {
   collection, doc, setDoc, updateDoc, writeBatch,
   serverTimestamp
@@ -21,6 +25,7 @@ const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selec
 
 const collections = {
   projects: collection(db, "projects"),
+  customers: collection(db, "customers"),
   quotations: collection(db, "quotations"),
   payments: collection(db, "payments"),
   receipts: collection(db, "receipts"),
@@ -35,6 +40,7 @@ const state = {
   user: null,
   access: null,
   projects: [],
+  customers: [],
   quotations: [],
   payments: [],
   receipts: [],
@@ -133,19 +139,27 @@ function financeCalculator() {
 
 function projectFor(id) { return state.projects.find(project => project.id === id); }
 
-function quotationForProject(project) {
+function customerForProject(project) {
   if (!project) return null;
-  const linked = state.quotations
-    .filter(quotation => quotation.projectId === project.id && quotation.status === "confirmed")
-    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || timestampValue(b.updatedAt) - timestampValue(a.updatedAt));
-  if (linked[0]) return linked[0];
-  if (project.confirmedQuotationId) return state.quotations.find(quotation => quotation.id === project.confirmedQuotationId) || null;
-  return null;
+  if (project.customerId) {
+    const linked = state.customers.find(customer => customer.id === project.customerId);
+    if (linked) return linked;
+  }
+  const client = String(project.client || "").trim().toLocaleLowerCase("zh-Hant");
+  return client ? state.customers.find(customer => String(customer.name || "").trim().toLocaleLowerCase("zh-Hant") === client) || null : null;
+}
+
+function projectClientName(project) {
+  return customerForProject(project)?.name || project?.client || "";
+}
+
+function quotationForProject(project) {
+  return confirmedQuotationForProject(project, state.quotations);
 }
 
 function quotationNumberForProject(projectOrId) {
   const project = typeof projectOrId === "string" ? projectFor(projectOrId) : projectOrId;
-  return quotationForProject(project)?.number || project?.confirmedQuotationNumber || "";
+  return projectQuotationNumber(project, state.quotations);
 }
 
 function receivedForPayment(payment, throughDate = "") {
@@ -159,7 +173,12 @@ function allReceiptRows() {
 function paymentRow(payment) {
   const row = financeCalculator().paymentRow(payment);
   const project = projectFor(payment.projectId);
-  return { ...row, quotationNumber: quotationNumberForProject(project) || payment.quotationNumber || "" };
+  return {
+    ...row,
+    projectName: project?.name || row.projectName,
+    customerName: projectClientName(project) || row.customerName,
+    quotationNumber: quotationNumberForProject(project) || payment.quotationNumber || ""
+  };
 }
 
 function filterContext() {
@@ -294,7 +313,8 @@ function refreshCustomerOptions() {
   if (!select) return;
   const current = select.value || "all";
   const names = new Set();
-  state.projects.forEach(project => project.client && names.add(project.client));
+  state.customers.forEach(customer => customer.name && names.add(customer.name));
+  state.projects.forEach(project => projectClientName(project) && names.add(projectClientName(project)));
   state.payments.forEach(payment => payment.customerName && names.add(payment.customerName));
   state.expenses.forEach(expense => expense.customerName && names.add(expense.customerName));
   select.innerHTML = `<option value="all">全部客戶</option>${[...names].sort((a, b) => a.localeCompare(b, "zh-Hant")).map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join("")}`;
@@ -391,7 +411,7 @@ function payableStatus(expense, asOf = isoDate()) {
 function payableRows(context) {
   const projectRows = state.expenses.filter(expense => !expense.voided).map(expense => {
     const project = projectFor(expense.projectId);
-    return { ...expense, source: "專案支出", sourceName: expense.projectName || project?.name || "未命名專案", customerName: expense.customerName || project?.client || "", quotationNumber: quotationNumberForProject(project) || expense.quotationNumber || "", itemName: expenseCategoryLabel(expense.category) };
+    return { ...expense, source: "專案支出", sourceName: project?.name || expense.projectName || "未命名專案", customerName: projectClientName(project) || expense.customerName || "", quotationNumber: quotationNumberForProject(project) || expense.quotationNumber || "", itemName: expenseCategoryLabel(expense.category) };
   });
   const companyRows = state.companyExpenses.filter(expense => !expense.voided).map(expense => ({ ...expense, source: "公司支出", sourceName: companyExpenseCategoryLabel(expense.category), customerName: "", itemName: expense.name || "未命名支出" }));
   return [...projectRows, ...companyRows]
@@ -427,7 +447,7 @@ function filteredExpenses(context) {
   return state.expenses.filter(expense => !expense.voided)
     .map(expense => {
       const project = projectFor(expense.projectId);
-      return { ...expense, projectName: expense.projectName || project?.name || "未命名專案", customerName: expense.customerName || project?.client || "未填客戶", quotationNumber: quotationNumberForProject(project) || expense.quotationNumber || "" };
+      return { ...expense, projectName: project?.name || expense.projectName || "未命名專案", customerName: projectClientName(project) || expense.customerName || "未填客戶", quotationNumber: quotationNumberForProject(project) || expense.quotationNumber || "" };
     })
     .filter(expense => !context.month || String(expense.expenseDate || "").startsWith(context.month))
     .filter(expense => matchesContext(expense, context));
@@ -541,7 +561,7 @@ function expenseProjectOptions(selected = "") {
     .sort((a, b) => String(b.startDate || "").localeCompare(String(a.startDate || "")))
     .map(project => {
       const number = quotationNumberForProject(project);
-      const label = [number, project.name, project.client].filter(Boolean).join("｜");
+      const label = [number, project.name, projectClientName(project)].filter(Boolean).join("｜");
       return `<option value="${esc(project.id)}" ${project.id === selected ? "selected" : ""}>${esc(label || "未命名專案")}</option>`;
     }).join("")}`;
 }
@@ -671,7 +691,7 @@ async function saveExpense() {
         ...shared,
         projectId: project.id,
         projectName: project.name || "",
-        customerName: project.client || "",
+        customerName: projectClientName(project),
         quotationNumber: quotationNumberForProject(project),
         category: line.category,
         amount: line.amount,
@@ -692,7 +712,7 @@ async function saveExpense() {
       legacyProjects.forEach(project => {
         const legacyRef = doc(collections.expenses);
         batch.set(legacyRef, {
-        projectId: project.id, projectName: project.name || "", customerName: project.client || "", quotationNumber: quotationNumberForProject(project),
+        projectId: project.id, projectName: project.name || "", customerName: projectClientName(project), quotationNumber: quotationNumberForProject(project),
         expenseDate: expenseDate || project.startDate || isoDate(),
         category: "other",
         vendor: "",
@@ -966,13 +986,14 @@ function listen(name, target, options = {}) {
 function detach() {
   state.unsubs.forEach(unsubscribe => unsubscribe());
   state.unsubs = [];
-  state.projects = []; state.quotations = []; state.payments = []; state.receipts = []; state.expenses = []; state.companyExpenses = []; state.equipment = []; state.users = []; state.auditLogs = [];
+  state.projects = []; state.customers = []; state.quotations = []; state.payments = []; state.receipts = []; state.expenses = []; state.companyExpenses = []; state.equipment = []; state.users = []; state.auditLogs = [];
   resetFinancePages();
   renderFinance(); renderSystemAccess();
 }
 
 function attach() {
   listen("projects", "projects");
+  listen("customers", "customers");
   listen("quotations", "quotations");
   listen("payments", "payments");
   listen("receipts", "receipts");

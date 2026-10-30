@@ -14,6 +14,11 @@ import {
 import { logAction } from "./audit.js";
 import { subscribeCollection, createRenderScheduler } from "./data-store.js";
 import {
+  confirmedQuotationForProject,
+  latestQuotationForProject,
+  projectQuotationNumber
+} from "./relation-utils.js?v=phase3-v13-6";
+import {
   normalizeTaxMode,
   taxedToUntaxed,
   projectRevenueUntaxed,
@@ -21,7 +26,7 @@ import {
   expenseUntaxed,
   isCapitalExpense,
   createFinanceCalculator
-} from "./finance-calculations.js";
+} from "./finance-calculations.js?v=phase3-v13-6";
 
 import {
   collection, doc, addDoc, updateDoc, deleteDoc,
@@ -161,7 +166,7 @@ function projectEquipmentCostEstimate(project) {
   let amount = 0;
   let configured = 0;
   used.forEach(item => {
-    const equipment = state.equipments.find(entry => String(entry.name || "").trim() === String(item.name || "").trim());
+    const equipment = equipmentForUsage(item);
     const daily = equipmentDailyDepreciation(equipment);
     if (daily === null) return;
     configured += 1;
@@ -210,6 +215,7 @@ const dom = {
   projectDrawerClose: () => $("#projectDrawerClose"),
 
   projectId: () => $("#projectId"),
+  projectCustomerId: () => $("#projectCustomerId"),
   projectName: () => $("#projectName"),
   projectClient: () => $("#projectClient"),
   projectLocation: () => $("#projectLocation"),
@@ -316,7 +322,7 @@ let currentUser = null;
 let currentRole = null;
 let currentAccess = null;
 let realtimeUnsubscribers = [];
-let state = { projects: [], equipments: [], payments: [], receipts: [], quotations: [], quotationItems: [], expenses: [], companyExpenses: [] };
+let state = { projects: [], customers: [], equipments: [], payments: [], receipts: [], quotations: [], quotationItems: [], expenses: [], companyExpenses: [] };
 let selectedProjectStatus = "all";
 const selectedProjectIds = new Set();
 let projectCurrentPage = 1;
@@ -480,15 +486,56 @@ function setupQuoteTaxModeSegmented() {
 }
 
 /* =========================================================
-   8) Equipment dropdown helpers
+   8) Customer / equipment relationship helpers
 ========================================================= */
-function getEquipmentNameList() {
-  return (state.equipments || [])
-    .map(e => String(e?.name || "").trim())
-    .filter(Boolean);
+function customerForProject(project) {
+  if (!project) return null;
+  if (project.customerId) {
+    const linked = state.customers.find(customer => customer.id === project.customerId);
+    if (linked) return linked;
+  }
+  const client = String(project.client || "").trim().toLocaleLowerCase("zh-Hant");
+  return client ? state.customers.find(customer => String(customer.name || "").trim().toLocaleLowerCase("zh-Hant") === client) || null : null;
 }
 
-function buildEquipNameSelect(selectedValue = "") {
+function projectClientName(project) {
+  return customerForProject(project)?.name || project?.client || "";
+}
+
+function refreshProjectCustomerOptions() {
+  const list = $("#projectCustomerOptions");
+  if (!list) return;
+  list.innerHTML = state.customers
+    .filter(customer => customer.name)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), "zh-Hant"))
+    .map(customer => `<option value="${escapeHtml(customer.name)}"></option>`)
+    .join("");
+}
+
+function syncProjectCustomerSelection() {
+  const input = dom.projectClient();
+  const idInput = dom.projectCustomerId();
+  if (!input || !idInput) return;
+  const name = input.value.trim().toLocaleLowerCase("zh-Hant");
+  const customer = state.customers.find(item => String(item.name || "").trim().toLocaleLowerCase("zh-Hant") === name);
+  idInput.value = customer?.id || "";
+}
+
+function equipmentForUsage(item) {
+  if (!item) return null;
+  if (item.equipmentId) {
+    const linked = state.equipments.find(equipment => equipment.id === item.equipmentId);
+    if (linked) return linked;
+  }
+  const name = String(item.name || "").trim();
+  return name ? state.equipments.find(equipment => String(equipment.name || "").trim() === name) || null : null;
+}
+
+function equipmentUsageName(item) {
+  return equipmentForUsage(item)?.name || item?.name || "";
+}
+
+function buildEquipNameSelect(item = {}) {
   const sel = document.createElement("select");
   sel.className = "select equip-name";
 
@@ -497,13 +544,14 @@ function buildEquipNameSelect(selectedValue = "") {
   opt0.textContent = "請選擇設備";
   sel.appendChild(opt0);
 
-  const names = getEquipmentNameList();
-  const hasSelected = selectedValue && names.includes(selectedValue);
+  const linked = equipmentForUsage(item);
+  const legacyName = String(item?.name || "").trim();
+  const selectedValue = linked?.id || (legacyName ? `legacy:${legacyName}` : "");
 
-  if (selectedValue && !hasSelected) {
+  if (legacyName && !linked) {
     const optMissing = document.createElement("option");
     optMissing.value = selectedValue;
-    optMissing.textContent = `${selectedValue}（已刪除）`;
+    optMissing.textContent = `${legacyName}（已刪除）`;
     sel.appendChild(optMissing);
   }
 
@@ -514,15 +562,15 @@ function buildEquipNameSelect(selectedValue = "") {
     .forEach(equipment => {
       const category = String(equipment.category || "未分類").trim() || "未分類";
       if (!groups.has(category)) groups.set(category, []);
-      groups.get(category).push(String(equipment.name).trim());
+      groups.get(category).push(equipment);
     });
-  groups.forEach((equipmentNames, category) => {
+  groups.forEach((equipments, category) => {
     const group = document.createElement("optgroup");
     group.label = category;
-    equipmentNames.forEach(name => {
+    equipments.forEach(equipment => {
       const opt = document.createElement("option");
-      opt.value = name;
-      opt.textContent = name;
+      opt.value = equipment.id;
+      opt.textContent = equipment.name;
       group.appendChild(opt);
     });
     sel.appendChild(group);
@@ -542,7 +590,9 @@ function refreshEquipUsageDropdowns() {
     if (!currentNameEl) return;
 
     const currentValue = (currentNameEl.value || "").trim();
-    const newSel = buildEquipNameSelect(currentValue);
+    const currentEquipment = state.equipments.find(equipment => equipment.id === currentValue);
+    const legacyName = currentValue.startsWith("legacy:") ? currentValue.slice(7) : currentNameEl.selectedOptions?.[0]?.textContent || "";
+    const newSel = buildEquipNameSelect(currentEquipment ? { equipmentId: currentEquipment.id, name: currentEquipment.name } : { name: legacyName.replace(/（已刪除）$/, "") });
     currentNameEl.replaceWith(newSel);
   });
 }
@@ -563,7 +613,7 @@ function addEquipUsageRow(item = {}) {
   const row = document.createElement("div");
   row.className = "equip-usage-row";
 
-  const nameSel = buildEquipNameSelect(String(item?.name ?? "").trim());
+  const nameSel = buildEquipNameSelect(item);
   const qtyInput = document.createElement("input");
   qtyInput.className = "equip-qty";
   qtyInput.type = "number";
@@ -604,10 +654,16 @@ function readEquipUsageRows() {
   const result = [];
 
   rows.forEach(r => {
-    const name = (r.querySelector(".equip-name")?.value || "").trim();
+    const selection = (r.querySelector(".equip-name")?.value || "").trim();
     const qtyRaw = r.querySelector(".equip-qty")?.value ?? "";
     const qty = Math.max(0, Math.trunc(Number(qtyRaw) || 0));
-    if (name) result.push({ name, qty });
+    if (!selection) return;
+    if (selection.startsWith("legacy:")) {
+      result.push({ equipmentId: "", name: selection.slice(7), qty });
+      return;
+    }
+    const equipment = state.equipments.find(item => item.id === selection);
+    if (equipment) result.push({ equipmentId: equipment.id, name: equipment.name || "", qty });
   });
 
   return result;
@@ -618,6 +674,7 @@ function readEquipUsageRows() {
 ========================================================= */
 function resetProjectForm() {
   dom.projectId() && (dom.projectId().value = "");
+  dom.projectCustomerId() && (dom.projectCustomerId().value = "");
   dom.projectName() && (dom.projectName().value = "");
   dom.projectClient() && (dom.projectClient().value = "");
   dom.projectLocation() && (dom.projectLocation().value = "");
@@ -656,8 +713,10 @@ function setCalendarManagedFields(isManaged, isCancelled = false) {
 
 function fillProjectForm(p) {
   dom.projectId().value = p.id;
+  const linkedCustomer = customerForProject(p);
+  dom.projectCustomerId().value = linkedCustomer?.id || p.customerId || "";
   dom.projectName().value = p.name ?? "";
-  dom.projectClient().value = p.client ?? "";
+  dom.projectClient().value = linkedCustomer?.name || p.client || "";
   dom.projectLocation().value = p.location ?? "";
   dom.projectStart().value = p.startDate ?? "";
   dom.projectEnd().value = p.endDate ?? "";
@@ -765,7 +824,8 @@ function closeEquipmentDrawer({ force = false } = {}) {
 /* =========================================================
    10.5) Sync equipment rename -> projects.equipmentsUsed[].name
 ========================================================= */
-async function syncEquipmentNameInProjects(oldName, newName) {
+async function syncEquipmentNameInProjects(equipmentId, oldName, newName) {
+  equipmentId = String(equipmentId || "").trim();
   oldName = String(oldName || "").trim();
   newName = String(newName || "").trim();
   if (!oldName || !newName || oldName === newName) return;
@@ -782,9 +842,9 @@ async function syncEquipmentNameInProjects(oldName, newName) {
     const updated = used.map(item => {
       if (!item) return item;
       const nm = String(item.name || "").trim();
-      if (nm === oldName) {
+      if (item.equipmentId === equipmentId || (!item.equipmentId && nm === oldName)) {
         changed = true;
-        return { ...item, name: newName };
+        return { ...item, equipmentId, name: newName };
       }
       return item;
     });
@@ -813,7 +873,10 @@ async function upsertProjectFromForm() {
 
   const existingProject = id ? state.projects.find(project => project.id === id) : null;
   let name = dom.projectName().value.trim();
-  const client = dom.projectClient().value.trim();
+  syncProjectCustomerSelection();
+  const customerId = dom.projectCustomerId()?.value || "";
+  const customer = state.customers.find(item => item.id === customerId);
+  const client = customer?.name || dom.projectClient().value.trim();
   let location = dom.projectLocation().value.trim();
   let startDate = dom.projectStart().value;
   let endDate = dom.projectEnd().value;
@@ -839,7 +902,7 @@ async function upsertProjectFromForm() {
   if (endDate < startDate) return alert("結束日期不能早於開始日期");
 
   const payload = {
-    name, client, location,
+    name, client, customerId, location,
     startDate, endDate, status,
     quote,
     quoteTaxMode,
@@ -1041,7 +1104,7 @@ async function upsertEquipmentFromForm() {
       // ✅ 如果是改名：同步更新所有專案 equipmentsUsed[].name
       const newName = name;
       if (String(oldName || "").trim() && String(newName || "").trim() && oldName.trim() !== newName.trim()) {
-        await syncEquipmentNameInProjects(oldName, newName);
+        await syncEquipmentNameInProjects(id, oldName, newName);
       }
       await logAction({ action: "update", module: "equipment", targetType: "equipment", targetId: id, targetName: name, summary: oldName && oldName !== name ? `設備更名：${oldName} → ${name}` : `${category || "未分類"}｜更新數量為 ${qty}` });
     } else {
@@ -1061,10 +1124,11 @@ async function deleteEquipment(equipmentId) {
   if (!currentUser) return alert("請先登入");
   if (!canDelete()) return alert("只有 admin 可以刪除");
   const equipment = state.equipments.find(item => item.id === equipmentId);
-  const linkedProjects = state.projects.filter(project => (project.equipmentsUsed || []).some(item => String(item.name || "").trim() === String(equipment?.name || "").trim()));
+  const linkedProjects = state.projects.filter(project => (project.equipmentsUsed || []).some(item => item.equipmentId === equipmentId || (!item.equipmentId && String(item.name || "").trim() === String(equipment?.name || "").trim())));
   const linkedPurchases = state.companyExpenses.filter(expense => expense.equipmentId === equipmentId);
-  if (linkedProjects.length || linkedPurchases.length) {
-    return alert(`此設備仍有關聯資料，不能永久刪除：\n\n• 專案使用 ${linkedProjects.length} 筆\n• 採購支出 ${linkedPurchases.length} 筆\n\n請將庫存數量改為 0 並保留設備主檔。`);
+  const linkedQuoteItems = state.quotationItems.filter(item => item.equipmentId === equipmentId);
+  if (linkedProjects.length || linkedPurchases.length || linkedQuoteItems.length) {
+    return alert(`此設備仍有關聯資料，不能永久刪除：\n\n• 專案使用 ${linkedProjects.length} 筆\n• 常用報價項目 ${linkedQuoteItems.length} 筆\n• 採購支出 ${linkedPurchases.length} 筆\n\n請將庫存數量改為 0 並保留設備主檔。`);
   }
   if (!confirm(`確定永久刪除設備「${equipment?.name || ""}」？`)) return;
   try {
@@ -1089,7 +1153,7 @@ function renderEquipmentsUsedHtml(p) {
   const list = Array.isArray(p.equipmentsUsed) ? p.equipmentsUsed : [];
   const items = list
     .filter(x => x && String(x.name || "").trim())
-    .map(x => `${escapeHtml(String(x.name).trim())} × <b>${escapeHtml(String(x.qty ?? 0))}</b>`);
+    .map(x => `${escapeHtml(String(equipmentUsageName(x)).trim())} × <b>${escapeHtml(String(x.qty ?? 0))}</b>`);
   if (!items.length) return "—";
   return items.join("<br>");
 }
@@ -1268,7 +1332,7 @@ function getFilteredSortedProjects() {
 
   const list = state.projects.filter(p => {
     if (keyword) {
-      const haystack = [p.name, p.client, p.location].join(" ").toLocaleLowerCase("zh-Hant");
+      const haystack = [p.name, projectClientName(p), p.location].join(" ").toLocaleLowerCase("zh-Hant");
       if (!haystack.includes(keyword)) return false;
     }
     if (selectedProjectStatus !== "all" && p.status !== selectedProjectStatus) return false;
@@ -1376,8 +1440,8 @@ function renderProjectsTable() {
     const paymentSummary = getProjectPaymentSummary(p.id, projectTotalTaxed);
     const collectionStatus = projectCollectionStatus(p, paymentSummary);
     const relatedQuotations = projectQuotations(p.id);
-    const latestQuotation = relatedQuotations[0] || null;
-    const confirmedQuotation = relatedQuotations.find(quotation => quotation.status === "confirmed") || null;
+    const latestQuotation = latestQuotationForProject(p, state.quotations);
+    const confirmedQuotation = confirmedQuotationForProject(p, state.quotations);
     const quoteStatus = confirmedQuotation
       ? {
           label: "已確認",
@@ -1404,7 +1468,7 @@ function renderProjectsTable() {
       <td>
         <div class="project-title">
           <div class="name">${escapeHtml(p.name || "")}${p.note ? '<span class="note-dot" title="有備註">備註</span>' : ""}${calendarBadge}</div>
-          <div class="client">${escapeHtml(p.client || "—")}</div>
+          <div class="client">${escapeHtml(projectClientName(p) || "—")}</div>
         </div>
       </td>
       <td><div class="period">${escapeHtml(period)}</div><div class="table-sub">${escapeHtml(p.location || "—")}</div></td>
@@ -1445,7 +1509,7 @@ function renderProjectsTable() {
             <h4>基本資料</h4>
             <div class="details-grid">
               <div>
-                <div class="kv"><div class="k">客戶</div><div class="v">${escapeHtml(p.client || "—")}</div></div>
+                <div class="kv"><div class="k">客戶</div><div class="v">${escapeHtml(projectClientName(p) || "—")}</div></div>
                 <div class="kv"><div class="k">活動日期</div><div class="v">${escapeHtml(p.startDate || "—")}～${escapeHtml(p.endDate || "—")}</div></div>
               </div>
               <div>
@@ -1631,7 +1695,7 @@ function computeUsageForDate(dateISO) {
 
   equipmentProjects.forEach(p => {
     (p.equipmentsUsed || []).forEach(item => {
-      const ename = String(item.name || "").trim();
+      const ename = String(equipmentUsageName(item) || "").trim();
       const qty = Number(item.qty) || 0;
       if (!ename || qty <= 0) return;
 
@@ -1765,8 +1829,8 @@ function renderCalendar() {
           : p.startDate === dateISO
             ? "開始"
             : projectEnd === dateISO ? "結束" : "進行中";
-        const meta = [rangePoint, statusLabel(p.status), calendarSyncLabel(p), p.client || "未填客戶"].filter(Boolean).join("｜");
-        const title = [p.name || "未命名專案", p.client, `${p.startDate || ""}～${projectEnd || ""}`, statusLabel(p.status), calendarSyncLabel(p)].filter(Boolean).join("｜");
+        const meta = [rangePoint, statusLabel(p.status), calendarSyncLabel(p), projectClientName(p) || "未填客戶"].filter(Boolean).join("｜");
+        const title = [p.name || "未命名專案", projectClientName(p), `${p.startDate || ""}～${projectEnd || ""}`, statusLabel(p.status), calendarSyncLabel(p)].filter(Boolean).join("｜");
         return `<div class="calendar-project status-${escapeHtml(p.status || "planning")}" title="${escapeHtml(title)}"><span class="calendar-project-name">${escapeHtml(p.name || "未命名專案")}</span><span class="calendar-project-meta">${escapeHtml(meta)}</span></div>`;
       }).join("");
       more = activeProjects.length > 6
@@ -1888,11 +1952,13 @@ function renderReport() {
 
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
     const quoteModeLabel = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
+    const quotationNumber = p.confirmedQuotationNumber || projectQuotationNumber(p, state.quotations);
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(p.name)}</td>
-      <td>${escapeHtml(p.client || "")}</td>
+      <td>${escapeHtml(quotationNumber || "—")}</td>
+      <td>${escapeHtml(projectClientName(p))}</td>
       <td>${escapeHtml(p.location || "")}</td>
       <td>${escapeHtml(period)}</td>
       <td>${escapeHtml(statusLabel(p.status))}</td>
@@ -1945,7 +2011,7 @@ function exportReportCsv() {
 
   // ✅ 欄位順序：期間/狀態 在前；報價/模式 靠近營收前
   const rows = [[
-    "專案","客戶","地點",
+    "專案","報價編號","客戶","地點",
     "期間","狀態",
     "報價金額","報價模式",
     "累計已請款(含稅)","尚未請款(含稅)","累計已收款(含稅)","應收帳款(含稅)","全案待收(含稅)",
@@ -1963,7 +2029,8 @@ function exportReportCsv() {
 
     rows.push([
       p.name || "",
-      p.client || "",
+      p.confirmedQuotationNumber || projectQuotationNumber(p, state.quotations),
+      projectClientName(p),
       p.location || "",
       period,
       statusLabel(p.status),
@@ -2054,6 +2121,7 @@ function detachListeners() {
   realtimeUnsubscribers = [];
 
   state.projects = [];
+  state.customers = [];
   state.equipments = [];
   state.payments = [];
   state.receipts = [];
@@ -2076,6 +2144,7 @@ function attachRealtimeListeners() {
     }, { onError: () => alert(errorMessage) }));
   };
   listen("projects", "projects", "讀取專案失敗：請確認 Firestore 權限與登入狀態");
+  listen("customers", "customers", "讀取客戶失敗：請確認 Firestore Rules 已包含 customers 權限");
   listen("equipment", "equipments", "讀取設備失敗：請確認 Firestore 權限與登入狀態");
   listen("payments", "payments", "讀取請款／收款失敗：請先更新 Firestore Rules");
   listen("receipts", "receipts", "讀取實際收款紀錄失敗：請先更新新版 Firestore Rules");
@@ -2086,6 +2155,7 @@ function attachRealtimeListeners() {
 }
 
 function renderAll() {
+  refreshProjectCustomerOptions();
   renderProjectsTable();
   renderEquipmentsTable();
   renderCalendar();
@@ -2110,6 +2180,8 @@ function bindEvents() {
   dom.projectQuote()?.addEventListener("input", syncRevenueFromQuoteToInput);
   dom.projectQuote()?.addEventListener("change", syncRevenueFromQuoteToInput);
   dom.projectQuoteTaxMode()?.addEventListener("change", syncRevenueFromQuoteToInput);
+  dom.projectClient()?.addEventListener("input", syncProjectCustomerSelection);
+  dom.projectClient()?.addEventListener("change", syncProjectCustomerSelection);
 
   dom.projectOpenCreate()?.addEventListener("click", () => openProjectDrawer());
   dom.projectDrawerClose()?.addEventListener("click", () => closeProjectDrawer());
