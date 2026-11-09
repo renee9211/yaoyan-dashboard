@@ -2,6 +2,7 @@
 import { db, watchAuth, getUserAccess, hasPermission, ensureUserDoc, defaultPermissionsForRole } from "./firebase.js";
 import { logAction } from "./audit.js";
 import { subscribeCollection, createRenderScheduler } from "./data-store.js";
+import { bindUiControlMemory, forgetUiControls, restoreUiControls } from "./ui-state.js?v=phase3-v14-1";
 import { createFinanceCalculator } from "./finance-calculations.js?v=phase3-v14";
 import {
   confirmedQuotationForProject,
@@ -902,6 +903,7 @@ function bindEvents() {
     if ($("#paymentStatusFilter")) $("#paymentStatusFilter").value = "all";
     if ($("#paymentProjectStatusFilter")) $("#paymentProjectStatusFilter").value = "all";
     if ($("#paymentQuotationStatusFilter")) $("#paymentQuotationStatusFilter").value = "all";
+    forgetUiControls(["paymentSearch", "paymentMonthFilter", "paymentStatusFilter", "paymentProjectStatusFilter", "paymentQuotationStatusFilter"]);
     resetPage();
   });
   $("#paymentBatchAction")?.addEventListener("change", updatePaymentBatchUi);
@@ -1008,6 +1010,8 @@ function bindEvents() {
 }
 
 function init() {
+  restoreUiControls(["paymentSearch", "paymentMonthFilter", "paymentStatusFilter", "paymentProjectStatusFilter", "paymentQuotationStatusFilter", "paymentSort"]);
+  bindUiControlMemory(["paymentSearch", "paymentMonthFilter", "paymentStatusFilter", "paymentProjectStatusFilter", "paymentQuotationStatusFilter", "paymentSort"]);
   bindEvents();
   renderPayments();
   watchAuth(async user => {

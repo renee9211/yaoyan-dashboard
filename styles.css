@@ -1323,7 +1323,7 @@ body.drawer-open{ overflow:hidden; }
   margin:12px 0;
 }
 .finance-kpi{
-  min-height:120px;
+  min-height:92px;
   padding:17px;
   border:1px solid var(--line2);
   border-radius:16px;
@@ -1408,6 +1408,27 @@ body.drawer-open{ overflow:hidden; }
 .report-operating-result{ background:#f0fdf4; border-color:#bbf7d0; }
 
 .finance-section{ margin-top:22px; }
+.finance-section-nav{
+  display:flex;
+  gap:8px;
+  margin-top:12px;
+  padding:8px;
+  overflow-x:auto;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#fff;
+}
+.finance-section-nav button{
+  flex:0 0 auto;
+  border:0;
+  border-radius:999px;
+  padding:8px 12px;
+  background:#f5f6f8;
+  color:var(--text);
+  font-weight:850;
+  cursor:pointer;
+}
+.finance-section-nav button:hover{ background:#fff1e6; color:#a84b00; }
 .finance-section-head{
   display:flex;
   align-items:flex-end;
@@ -1415,6 +1436,23 @@ body.drawer-open{ overflow:hidden; }
   gap:12px;
   margin:0 2px 9px;
 }
+.finance-section-toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  margin-left:auto;
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:7px 10px;
+  background:#fff;
+  color:var(--muted);
+  font-weight:850;
+  cursor:pointer;
+}
+.finance-section-toggle i{ font-style:normal; transition:transform .18s ease; }
+.finance-section-toggle[aria-expanded="true"] i{ transform:rotate(180deg); }
+.finance-collapsible.collapsed > :not(.finance-section-head){ display:none; }
+.finance-collapsible.collapsed .finance-section-head{ margin-bottom:0; }
 .finance-section-head h3{ margin:0; font-size:16px; }
 .finance-section-head p,.finance-section-head > span{ margin:4px 0 0; color:var(--muted); font-size:12px; font-weight:750; }
 .finance-section-actions{ display:flex; align-items:flex-end; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
@@ -1522,26 +1560,72 @@ body.drawer-open{ overflow:hidden; }
    Phase 1: Customers, quotation catalog and quotations
 ========================================================= */
 .simple-toolbar{ grid-template-columns:minmax(240px,620px); margin-bottom:12px; }
-.quote-toolbar{ grid-template-columns:minmax(260px,1fr) repeat(3,minmax(160px,190px)); margin-bottom:8px; }
+.quote-toolbar{ grid-template-columns:minmax(220px,1fr) repeat(4,minmax(128px,160px)) auto; margin-bottom:8px; }
 .quotation-project-scope{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 12px; padding:9px 12px; border:1px solid rgba(255,126,0,.35); border-radius:12px; background:rgba(255,126,0,.08); color:#7c3f00; font-size:13px; }
 .quotation-project-scope button{ border:0; padding:4px 7px; background:transparent; color:#9a4b00; cursor:pointer; font-weight:900; }
 .customer-table,.item-table,.quotation-table{ min-width:900px; }
 .item-table th{ white-space:nowrap; }
-.quotation-table{ min-width:1384px; table-layout:fixed; }
+.quotation-table{ min-width:1062px; table-layout:fixed; }
 .quotation-table col.quotation-col-select{ width:42px; }
 .quotation-table col.quotation-col-number{ width:112px; }
-.quotation-table col.quotation-col-project{ width:350px; }
-.quotation-table col.quotation-col-version{ width:104px; }
+.quotation-table col.quotation-col-project{ width:300px; }
+.quotation-table col.quotation-col-version{ width:90px; }
 .quotation-table col.quotation-col-price{ width:110px; }
 .quotation-table col.quotation-col-status{ width:90px; }
 .quotation-table col.quotation-col-date{ width:156px; }
-.quotation-table col.quotation-col-actions{ width:420px; }
+.quotation-table col.quotation-col-actions{ width:160px; }
 .quotation-table th:nth-child(2),
 .quotation-table td:nth-child(2),
 .quotation-table th:nth-child(n+4),
 .quotation-table td:nth-child(n+4){ white-space:nowrap; }
 .quotation-table td:nth-child(3){ overflow-wrap:anywhere; }
 .quotation-table td:last-child .row-actions{ flex-wrap:nowrap; white-space:nowrap; }
+.quotation-row-actions{ position:relative; align-items:center; }
+.row-action-menu{ position:relative; }
+.row-action-menu > summary{ list-style:none; cursor:pointer; user-select:none; }
+.row-action-menu > summary::-webkit-details-marker{ display:none; }
+.row-action-menu > summary::after{ content:"⌄"; margin-left:5px; color:var(--muted); }
+.row-action-menu[open] > summary::after{ content:"⌃"; }
+.row-action-menu-list{
+  position:absolute;
+  z-index:30;
+  top:calc(100% + 6px);
+  right:0;
+  display:grid;
+  min-width:176px;
+  padding:7px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#fff;
+  box-shadow:0 14px 34px rgba(24,32,45,.18);
+}
+.row-action-menu-list .btn{ justify-content:flex-start; width:100%; border:0; }
+.danger-text{ color:#b42318 !important; }
+
+.project-workflow{
+  display:grid;
+  gap:9px;
+  margin-top:12px;
+  padding:12px;
+  border:1px solid #e8eaee;
+  border-radius:14px;
+  background:#fafbfc;
+}
+.project-workflow-steps{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.project-workflow-step{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:6px 9px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:850;
+}
+.project-workflow-step.done{ color:#067647; background:#e8f8f1; }
+.project-workflow-step.pending{ color:#667085; background:#eef0f3; }
+.project-workflow-step + .project-workflow-step::before{ content:"›"; margin-left:-13px; margin-right:3px; color:#98a2b3; }
+.project-workflow-warnings{ display:flex; gap:6px; flex-wrap:wrap; }
+.project-workflow-warnings span{ padding:6px 9px; border-radius:8px; color:#9a3412; background:#fff3e8; font-size:12px; font-weight:800; }
 .quotation-price-heading span{ display:block; }
 .quotation-date-heading{ white-space:nowrap; }
 .quote-kpi-grid{
@@ -1792,6 +1876,8 @@ body.drawer-open{ overflow:hidden; }
   margin:10px 0 14px;
 }
 .payment-kpi-grid.standard-finance-kpis{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+.payment-kpi-grid.standard-finance-kpis .mini-kpi{ min-height:86px; padding:13px 15px; }
+.payment-kpi-grid.standard-finance-kpis .mini-kpi b{ font-size:24px; }
 .payment-kpi-grid .mini-kpi small{ display:block; margin-top:5px; color:var(--muted); font-size:11px; font-weight:750; }
 .payment-outstanding-kpi{
   border-color:rgba(245,158,11,.28);

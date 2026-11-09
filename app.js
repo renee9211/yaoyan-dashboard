@@ -14,6 +14,13 @@ import {
 import { logAction } from "./audit.js";
 import { subscribeCollection, createRenderScheduler } from "./data-store.js";
 import {
+  bindUiControlMemory,
+  forgetUiControls,
+  rememberedTab,
+  rememberTab,
+  restoreUiControls
+} from "./ui-state.js?v=phase3-v14-1";
+import {
   confirmedQuotationForProject,
   latestConfirmedChangeOrders,
   latestQuotationForProject,
@@ -1431,6 +1438,32 @@ function renderEquipmentPagination(totalItems) {
   host.innerHTML = `<button class="page-direction" type="button" data-page="${equipmentCurrentPage - 1}" ${equipmentCurrentPage === 1 ? "disabled" : ""}>上一頁</button><div class="pagination-pages">${pageButtons}</div><span class="pagination-summary">第 ${equipmentCurrentPage} / ${totalPages} 頁</span><label class="pagination-jump"><span>跳至</span><select data-page-select aria-label="選擇設備頁數">${pageOptions}</select><span>頁</span></label><button class="page-direction" type="button" data-page="${equipmentCurrentPage + 1}" ${equipmentCurrentPage === totalPages ? "disabled" : ""}>下一頁</button>`;
 }
 
+function projectWorkflowState(project, confirmedQuotation, paymentSummary, collectionStatus) {
+  const quotationDone = Boolean(confirmedQuotation);
+  const syncedAmount = confirmedQuotation ? parseIntSafe(confirmedQuotation.projectPriceTaxed) : 0;
+  const priceSynced = quotationDone && (
+    project.confirmedQuotationId === confirmedQuotation.id
+    || (project.confirmedQuotationNumber && project.confirmedQuotationNumber === confirmedQuotation.number && parseIntSafe(project.quote) === syncedAmount)
+  );
+  const billed = paymentSummary.invoiced > 0;
+  const paid = getProjectTotalTaxed(project) > 0 && paymentSummary.totalOutstanding <= 1;
+  const closed = project.status === "closed";
+  const steps = [
+    { label: "專案", done: true },
+    { label: "報價確認", done: quotationDone },
+    { label: "金額同步", done: priceSynced },
+    { label: "已請款", done: billed },
+    { label: "已收清", done: paid },
+    { label: "已結案", done: closed }
+  ];
+  const warnings = [];
+  if (["confirmed", "executing", "closed"].includes(project.status) && !quotationDone) warnings.push("專案已成案，但尚無已確認報價");
+  if (quotationDone && !priceSynced) warnings.push("已確認報價尚未同步專案金額");
+  if (collectionStatus?.badge === "red") warnings.push("有逾期未收款項");
+  if (closed && paymentSummary.totalOutstanding > 1) warnings.push("專案已結案，但仍有待收款");
+  return { steps, warnings };
+}
+
 function renderProjectsTable() {
   const body = dom.projectTableBody();
   if (!body) return;
@@ -1471,6 +1504,7 @@ function renderProjectsTable() {
     const relatedQuotations = projectQuotations(p.id);
     const latestQuotation = latestQuotationForProject(p, state.quotations);
     const confirmedQuotation = confirmedQuotationForProject(p, state.quotations);
+    const workflow = projectWorkflowState(p, confirmedQuotation, paymentSummary, collectionStatus);
     const quoteStatus = confirmedQuotation
       ? {
           label: "已確認",
@@ -1532,6 +1566,13 @@ function renderProjectsTable() {
             <div class="project-status-card"><span>報價狀態</span><b><span class="badge ${quoteStatus.badge}">${escapeHtml(quoteStatus.label)}</span></b><small>${escapeHtml(quoteStatus.sub)}</small></div>
             <div class="project-status-card"><span>請款進度</span><b>${escapeHtml(formatMoney(paymentSummary.invoiced))}</b><small>${paymentSummary.scheduled ? `已排定 ${escapeHtml(formatMoney(paymentSummary.scheduled))}` : "尚未建立款項"}</small></div>
             <div class="project-status-card"><span>收款狀態</span><b><span class="badge ${collectionStatus.badge}">${escapeHtml(collectionStatus.label)}</span></b><small>${escapeHtml(collectionStatus.sub)}</small></div>
+          </div>
+
+          <div class="project-workflow" aria-label="專案流程進度">
+            <div class="project-workflow-steps">
+              ${workflow.steps.map(step => `<span class="project-workflow-step ${step.done ? "done" : "pending"}"><i aria-hidden="true">${step.done ? "✓" : "○"}</i>${escapeHtml(step.label)}</span>`).join("")}
+            </div>
+            ${workflow.warnings.length ? `<div class="project-workflow-warnings">${workflow.warnings.map(warning => `<span>⚠ ${escapeHtml(warning)}</span>`).join("")}</div>` : ""}
           </div>
 
           <section class="project-detail-section">
@@ -2122,20 +2163,25 @@ function exportReportCsv() {
    16) Tabs + Today
 ========================================================= */
 function bindTabs() {
+  const activateTab = btn => {
+    if (!btn) return;
+    dom.tabButtons().forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    $all(".tab-group").forEach(group => group.classList.toggle("has-active", group.contains(btn)));
+
+    const tab = btn.dataset.tab;
+    dom.tabPanels().forEach(p => p.classList.remove("active"));
+    $(`#tab-${tab}`)?.classList.add("active");
+    rememberTab(tab);
+
+    if (tab === "calendar") renderCalendar();
+    if (tab === "report") renderReport();
+  };
   dom.tabButtons().forEach(btn => {
-    btn.addEventListener("click", () => {
-      dom.tabButtons().forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      $all(".tab-group").forEach(group => group.classList.toggle("has-active", group.contains(btn)));
-
-      const tab = btn.dataset.tab;
-      dom.tabPanels().forEach(p => p.classList.remove("active"));
-      $(`#tab-${tab}`)?.classList.add("active");
-
-      if (tab === "calendar") renderCalendar();
-      if (tab === "report") renderReport();
-    });
+    btn.addEventListener("click", () => activateTab(btn));
   });
+  const remembered = dom.tabButtons().find(btn => btn.dataset.tab === rememberedTab() && !btn.classList.contains("hidden"));
+  activateTab(remembered || dom.tabButtons().find(btn => btn.classList.contains("active")) || dom.tabButtons()[0]);
 }
 
 function renderToday() {
@@ -2273,6 +2319,7 @@ function bindEvents() {
     dom.projectMonthFilter().value = "";
     selectedProjectStatus = "all";
     dom.projectStatusFilter().value = "all";
+    forgetUiControls(["projectSearch", "projectMonthFilter", "projectStatusFilter"]);
     resetProjectPageAndRender();
   });
   dom.projectPagination()?.addEventListener("click", (e) => {
@@ -2468,6 +2515,9 @@ function bindEvents() {
 async function init() {
   renderToday();
   ensureAuthUI();
+  restoreUiControls(["projectSearch", "projectMonthFilter", "projectStatusFilter", "projectSortBy", "equipmentSearch"]);
+  selectedProjectStatus = dom.projectStatusFilter()?.value || "all";
+  bindUiControlMemory(["projectSearch", "projectMonthFilter", "projectStatusFilter", "projectSortBy", "equipmentSearch"]);
   bindTabs();
   renderEquipUsageRows(null);
 

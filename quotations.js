@@ -2,6 +2,7 @@
 import { db, watchAuth, getUserAccess, hasPermission, ensureUserDoc, defaultPermissionsForRole } from "./firebase.js";
 import { logAction } from "./audit.js";
 import { subscribeCollection, createRenderScheduler } from "./data-store.js";
+import { bindUiControlMemory, forgetUiControls, restoreUiControls } from "./ui-state.js?v=phase3-v14-1";
 import {
   latestConfirmedChangeOrders,
   quotationMonthFromNumber,
@@ -66,6 +67,7 @@ const state = {
   quotationProjectFilterId: "",
   quotationProjectPriceCustomized: false,
   quotationProjectPricePdfVisibilityCustomized: false,
+  quotationFormDirty: false,
   quotationItemSort: { key: "category", direction: "asc" },
   quoteItemCreatedFromEquipment: false
 };
@@ -284,6 +286,16 @@ function closeDrawer(id) {
   el?.classList.add("hidden");
   el?.setAttribute("aria-hidden", "true");
   if (!$(".drawer:not(.hidden)")) document.body.classList.remove("drawer-open");
+}
+
+function closeQuotationDrawer({ force = false } = {}) {
+  const drawer = $("#quotationDrawer");
+  if (!drawer || drawer.classList.contains("hidden")) return true;
+  if (!force && state.quotationFormDirty && !confirm("這張報價有尚未儲存的修改，確定要關閉嗎？")) return false;
+  closeAllocationModal();
+  closeDrawer("#quotationDrawer");
+  state.quotationFormDirty = false;
+  return true;
 }
 
 function setMutationButtons() {
@@ -994,6 +1006,7 @@ function resetQuotationForm(quotation = null, options = {}) {
   rows.forEach(row => addQuotationRow(row, row.adjustmentType || "addition"));
   if (!rows.length) addQuotationRow(rowDataFromCatalog({}, "addition"), "addition");
   recalcQuotation();
+  state.quotationFormDirty = false;
 }
 
 function maxVersion(seriesId) {
@@ -1083,7 +1096,8 @@ async function saveQuotation() {
       });
     }
     await logAction({ action: id ? "update" : "create", module: "quotations", targetType: "quotation", targetId: savedId, targetName: `${payload.number} / V${payload.version}`, summary: `${payload.customerName}｜${payload.projectName}｜${payload.quotationKind === "change_order" ? `追加減 ${signedMoney(payload.adjustmentTotalTaxed, { plus: true })}` : `專案價 ${money(payload.projectPriceTaxed)}`} 元｜${statusLabel(payload.status)}` });
-    closeDrawer("#quotationDrawer");
+    state.quotationFormDirty = false;
+    closeQuotationDrawer({ force: true });
     if (payload.status === "confirmed") {
       if (payload.quotationKind === "change_order") await applyChangeOrderToProject({ ...payload, id: savedId, seriesId: payload.seriesId || savedId }, savedId);
       else await syncConfirmedQuotationToProject(payload, savedId);
@@ -1418,13 +1432,18 @@ function renderQuotations() {
       <td class="num"><b>${q.quotationKind === "change_order" ? signedMoney(q.adjustmentTotalTaxed ?? q.projectPriceTaxed, { plus: true }) : money(q.projectPriceTaxed)}</b></td>
       <td><span class="badge ${statusBadge(q.status)}">${esc(statusLabel(q.status))}</span></td>
       <td><b>${esc(dateText(quotationEventDate(q)))}</b><div class="table-sub">更新 ${esc(timestampText(q.updatedAt || q.createdAt))}</div></td>
-      <td><div class="row-actions">
+      <td><div class="row-actions quotation-row-actions">
         <button class="btn ghost small" type="button" data-quotation-preview="${esc(q.id)}">預覽</button>
-        <button class="btn ghost small" type="button" data-quotation-edit="${esc(q.id)}" ${canEdit() && isLatest && !["confirmed", "void"].includes(q.status) ? "" : "disabled"}>編輯</button>
-        <button class="btn ghost small" type="button" data-quotation-version="${esc(q.id)}" ${canEdit() && isLatest ? "" : "disabled"}>複製新版</button>
-        ${q.status === "confirmed" ? `<button class="btn ghost small" type="button" data-quotation-sync="${esc(q.id)}" ${(canEdit() && (q.projectId ? canEditProject() : canCreateProject())) ? "" : "disabled"}>${q.quotationKind === "change_order" ? "重新計算專案價" : q.projectId ? "同步專案金額" : "建立專案"}</button>` : ""}
-        <button class="btn ghost small" type="button" data-quotation-void="${esc(q.id)}" ${canEdit() && isLatest && q.status !== "void" ? "" : "disabled"}>作廢</button>
-        <button class="btn ghost small" type="button" data-quotation-delete="${esc(q.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
+        <details class="row-action-menu">
+          <summary class="btn ghost small">更多</summary>
+          <div class="row-action-menu-list">
+            <button class="btn ghost small" type="button" data-quotation-edit="${esc(q.id)}" ${canEdit() && isLatest && !["confirmed", "void"].includes(q.status) ? "" : "disabled"}>編輯</button>
+            <button class="btn ghost small" type="button" data-quotation-version="${esc(q.id)}" ${canEdit() && isLatest ? "" : "disabled"}>複製新版</button>
+            ${q.status === "confirmed" ? `<button class="btn ghost small" type="button" data-quotation-sync="${esc(q.id)}" ${(canEdit() && (q.projectId ? canEditProject() : canCreateProject())) ? "" : "disabled"}>${q.quotationKind === "change_order" ? "重新計算專案價" : q.projectId ? "同步專案金額" : "建立專案"}</button>` : ""}
+            <button class="btn ghost small" type="button" data-quotation-void="${esc(q.id)}" ${canEdit() && isLatest && q.status !== "void" ? "" : "disabled"}>作廢</button>
+            <button class="btn ghost small danger-text" type="button" data-quotation-delete="${esc(q.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
+          </div>
+        </details>
       </div></td>
     </tr>`;
   }).join("") : `<tr><td colspan="8"><div class="empty-state">尚無符合條件的報價</div></td></tr>`;
@@ -1835,10 +1854,7 @@ function bindEvents() {
 
   $("#quotationOpenCreate")?.addEventListener("click", () => openQuotation());
   $("#quotationForm")?.addEventListener("submit", event => { event.preventDefault(); saveQuotation(); });
-  $$('[data-quotation-close],#quotationDrawerClose').forEach(button => button.addEventListener("click", () => {
-    closeAllocationModal();
-    closeDrawer("#quotationDrawer");
-  }));
+  $$('[data-quotation-close],#quotationDrawerClose').forEach(button => button.addEventListener("click", () => closeQuotationDrawer()));
   const resetQuotationPageAndRender = () => {
     state.quotationCurrentPage = 1;
     renderQuotations();
@@ -1848,6 +1864,14 @@ function bindEvents() {
   $("#quotationKindFilter")?.addEventListener("change", resetQuotationPageAndRender);
   $("#quotationStatusFilter")?.addEventListener("change", resetQuotationPageAndRender);
   $("#quotationSort")?.addEventListener("change", resetQuotationPageAndRender);
+  $("#quotationClearFilters")?.addEventListener("click", () => {
+    $("#quotationSearch").value = "";
+    $("#quotationMonthFilter").value = "";
+    $("#quotationKindFilter").value = "all";
+    $("#quotationStatusFilter").value = "all";
+    forgetUiControls(["quotationSearch", "quotationMonthFilter", "quotationKindFilter", "quotationStatusFilter"]);
+    resetQuotationPageAndRender();
+  });
   $("#quotationSelectAll")?.addEventListener("change", event => {
     $$(".quotation-select", $("#quotationTableBody")).forEach(input => {
       if (input.disabled) return;
@@ -1984,12 +2008,14 @@ function bindEvents() {
     recalcQuotation();
   });
   $("#quotationForm")?.addEventListener("input", event => {
+    state.quotationFormDirty = true;
     const row = event.target.closest(".quotation-line");
     if (!row) return;
     if (event.target.matches(".row-mode")) syncLineMode(row);
     recalcQuotation();
   });
   $("#quotationForm")?.addEventListener("change", event => {
+    state.quotationFormDirty = true;
     const row = event.target.closest(".quotation-line");
     if (!row) return;
     if (event.target.matches(".row-mode,.row-pdf-pricing")) syncLineMode(row);
@@ -2081,6 +2107,7 @@ function bindEvents() {
   });
 
   document.addEventListener("click", event => {
+    if (!event.target.closest(".row-action-menu")) $$(".row-action-menu[open]").forEach(menu => menu.removeAttribute("open"));
     const clearProjectFilter = event.target.closest("[data-clear-quotation-project]");
     if (clearProjectFilter) {
       state.quotationProjectFilterId = "";
@@ -2136,10 +2163,18 @@ function bindEvents() {
     if (event.key !== "Escape") return;
     closeAllocationModal();
     $("#quotationPreviewModal")?.classList.add("hidden");
+    closeQuotationDrawer();
+  });
+  window.addEventListener("beforeunload", event => {
+    if (!state.quotationFormDirty || $("#quotationDrawer")?.classList.contains("hidden")) return;
+    event.preventDefault();
+    event.returnValue = "";
   });
 }
 
 function init() {
+  restoreUiControls(["quotationSearch", "quotationMonthFilter", "quotationKindFilter", "quotationStatusFilter", "quotationSort", "customerSearch", "quoteItemSearch"]);
+  bindUiControlMemory(["quotationSearch", "quotationMonthFilter", "quotationKindFilter", "quotationStatusFilter", "quotationSort", "customerSearch", "quoteItemSearch"]);
   bindEvents();
   renderAllQuoteModules();
   watchAuth(async user => {

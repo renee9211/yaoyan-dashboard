@@ -6,6 +6,13 @@ import {
 import { logAction } from "./audit.js";
 import { subscribeCollection, createRenderScheduler } from "./data-store.js";
 import {
+  bindUiControlMemory,
+  forgetUiControls,
+  rememberedUiValue,
+  rememberUiValue,
+  restoreUiControls
+} from "./ui-state.js?v=phase3-v14-1";
+import {
   confirmedQuotationForProject,
   projectQuotationNumber
 } from "./relation-utils.js?v=phase3-v14";
@@ -69,6 +76,51 @@ const financePaginationConfig = {
   receivables: { host: "#financeReceivablePagination", label: "應收帳款" },
   audit: { host: "#auditPagination", label: "操作紀錄", pageSize: 30 }
 };
+
+function setupFinanceSectionToggles() {
+  const sections = $$("#tab-finance > .finance-section");
+  const keys = ["payables", "aging", "expenses", "company", "next30", "receivables"];
+  const labels = ["應付帳款", "應收帳齡", "外部支出", "公司支出", "30 天收款", "應收帳款"];
+  sections.forEach((section, index) => {
+    const key = keys[index] || `section-${index}`;
+    const head = $(".finance-section-head", section);
+    if (!head || $(".finance-section-toggle", head)) return;
+    section.classList.add("finance-collapsible");
+    section.dataset.financeSection = key;
+    const defaultOpen = index === 0 || index === sections.length - 1;
+    const open = rememberedUiValue(`financeSection:${key}`, defaultOpen ? "open" : "closed") === "open";
+    section.classList.toggle("collapsed", !open);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "finance-section-toggle";
+    button.setAttribute("aria-expanded", String(open));
+    button.innerHTML = `<span>${open ? "收合" : "展開"}</span><i aria-hidden="true">⌄</i>`;
+    button.addEventListener("click", () => {
+      const nextOpen = section.classList.contains("collapsed");
+      section.classList.toggle("collapsed", !nextOpen);
+      button.setAttribute("aria-expanded", String(nextOpen));
+      button.querySelector("span").textContent = nextOpen ? "收合" : "展開";
+      rememberUiValue(`financeSection:${key}`, nextOpen ? "open" : "closed");
+    });
+    head.appendChild(button);
+  });
+
+  const kpis = $("#tab-finance .finance-kpi-grid");
+  if (kpis && !$(".finance-section-nav", kpis.parentElement)) {
+    const nav = document.createElement("div");
+    nav.className = "finance-section-nav";
+    nav.innerHTML = labels.map((label, index) => `<button type="button" data-finance-jump="${keys[index]}">${label}</button>`).join("");
+    nav.addEventListener("click", event => {
+      const button = event.target.closest("[data-finance-jump]");
+      if (!button) return;
+      const section = $(`[data-finance-section="${button.dataset.financeJump}"]`);
+      if (!section) return;
+      if (section.classList.contains("collapsed")) section.querySelector(".finance-section-toggle")?.click();
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    kpis.insertAdjacentElement("afterend", nav);
+  }
+}
 
 function esc(value) {
   return String(value ?? "")
@@ -311,7 +363,7 @@ function agingBadge(row, asOf) {
 function refreshCustomerOptions() {
   const select = $("#financeCustomerFilter");
   if (!select) return;
-  const current = select.value || "all";
+  const current = select.value !== "all" ? select.value : rememberedUiValue("financeCustomerFilter", "all");
   const names = new Set();
   state.customers.forEach(customer => customer.name && names.add(customer.name));
   state.projects.forEach(project => projectClientName(project) && names.add(projectClientName(project)));
@@ -1013,6 +1065,7 @@ function bindEvents() {
     if ($("#financeCustomerFilter")) $("#financeCustomerFilter").value = "all";
     if ($("#financeMonth")) $("#financeMonth").value = monthValue();
     if ($("#financeAsOfDate")) $("#financeAsOfDate").value = isoDate();
+    forgetUiControls(["financeSearch", "financeCustomerFilter", "financeMonth", "financeAsOfDate"]);
     resetAllFinancePagesAndRender();
   });
   const financeSortKeys = {
@@ -1089,6 +1142,7 @@ function bindEvents() {
   $("#companyExpenseClearFilters")?.addEventListener("click", () => {
     if ($("#companyExpenseSearch")) $("#companyExpenseSearch").value = "";
     if ($("#companyExpenseCategoryFilter")) $("#companyExpenseCategoryFilter").value = "all";
+    forgetUiControls(["companyExpenseSearch", "companyExpenseCategoryFilter"]);
     resetCompanyExpensePageAndRender();
   });
   $("#expenseTableBody")?.addEventListener("click", async event => {
@@ -1145,6 +1199,10 @@ function init() {
   const now = new Date();
   if ($("#financeMonth")) $("#financeMonth").value = monthValue(now);
   if ($("#financeAsOfDate")) $("#financeAsOfDate").value = isoDate(now);
+  const rememberedControls = ["financeSearch", "financeCustomerFilter", "financeMonth", "financeAsOfDate", "financePayableSort", "expenseSort", "financeNext30Sort", "financeReceivableSort", "companyExpenseSearch", "companyExpenseCategoryFilter", "companyExpenseSort"];
+  restoreUiControls(rememberedControls);
+  bindUiControlMemory(rememberedControls);
+  setupFinanceSectionToggles();
   bindEvents();
   renderFinance();
   renderSystemAccess();
