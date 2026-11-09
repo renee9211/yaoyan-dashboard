@@ -2,7 +2,11 @@
 import { db, watchAuth, getUserAccess, hasPermission, ensureUserDoc, defaultPermissionsForRole } from "./firebase.js";
 import { logAction } from "./audit.js";
 import { subscribeCollection, createRenderScheduler } from "./data-store.js";
-import { quotationMonthFromNumber } from "./relation-utils.js?v=phase3-v13-6";
+import {
+  latestConfirmedChangeOrders,
+  quotationMonthFromNumber,
+  signedQuotationAmount
+} from "./relation-utils.js?v=phase3-v14";
 import {
   collection, doc, setDoc, updateDoc, deleteDoc,
   serverTimestamp, writeBatch
@@ -36,7 +40,9 @@ const collections = {
   quotationItems: collection(db, "quotationItems"),
   quotations: collection(db, "quotations"),
   projects: collection(db, "projects"),
-  equipment: collection(db, "equipment")
+  equipment: collection(db, "equipment"),
+  payments: collection(db, "payments"),
+  receipts: collection(db, "receipts")
 };
 
 const state = {
@@ -48,6 +54,8 @@ const state = {
   quotations: [],
   projects: [],
   equipment: [],
+  payments: [],
+  receipts: [],
   unsubs: [],
   previewData: null,
   numberWasSuggested: false,
@@ -80,8 +88,19 @@ function numberValue(value) {
   return Number.isFinite(n) ? Math.max(0, n) : 0;
 }
 
+function signedNumberValue(value) {
+  const n = Number(String(value ?? "").replaceAll(",", "").trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
 function integerValue(value) { return Math.round(numberValue(value)); }
+function signedIntegerValue(value) { return Math.round(signedNumberValue(value)); }
 function money(value) { return Math.round(numberValue(value)).toLocaleString("zh-TW"); }
+function signedMoney(value, { plus = false } = {}) {
+  const amount = signedIntegerValue(value);
+  const prefix = amount < 0 ? "−" : plus && amount > 0 ? "+" : "";
+  return `${prefix}${Math.abs(amount).toLocaleString("zh-TW")}`;
+}
 function percentage(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "0";
@@ -193,21 +212,46 @@ function calcDealSubtotal(row) {
   return integerValue(row.dealSubtotal);
 }
 
-function calcTotals(rows, projectPriceInput = "", useCustomProjectPrice = false) {
-  const originalSubtotal = Math.round((rows || []).reduce((sum, row) => sum + calcOriginalRowSubtotal(row), 0));
-  const subtotal = Math.round((rows || []).reduce((sum, row) => sum + calcPdfRowSubtotal(row), 0));
+function isChangeOrder(value = $("#quotationKind")?.value) {
+  return value === "change_order";
+}
+
+function rowAdjustmentFactor(row, quotationKind = $("#quotationKind")?.value) {
+  return quotationKind === "change_order" && row?.adjustmentType === "reduction" ? -1 : 1;
+}
+
+function calcTotals(rows, projectPriceInput = "", useCustomProjectPrice = false, quotationKind = $("#quotationKind")?.value || "standard") {
+  const additionRows = (rows || []).filter(row => rowAdjustmentFactor(row, quotationKind) > 0);
+  const reductionRows = quotationKind === "change_order" ? (rows || []).filter(row => rowAdjustmentFactor(row, quotationKind) < 0) : [];
+  const additionSubtotal = Math.round(additionRows.reduce((sum, row) => sum + calcPdfRowSubtotal(row), 0));
+  const reductionSubtotal = Math.round(reductionRows.reduce((sum, row) => sum + calcPdfRowSubtotal(row), 0));
+  const additionOriginalSubtotal = Math.round(additionRows.reduce((sum, row) => sum + calcOriginalRowSubtotal(row), 0));
+  const reductionOriginalSubtotal = Math.round(reductionRows.reduce((sum, row) => sum + calcOriginalRowSubtotal(row), 0));
+  const originalSubtotal = additionOriginalSubtotal - reductionOriginalSubtotal;
+  const subtotal = additionSubtotal - reductionSubtotal;
   const tax = Math.round(subtotal * TAX_RATE);
   const originalTotal = subtotal + tax;
-  const dealSubtotal = Math.round((rows || []).reduce((sum, row) => sum + calcDealSubtotal(row), 0));
+  const additionDealSubtotal = Math.round(additionRows.reduce((sum, row) => sum + calcDealSubtotal(row), 0));
+  const reductionDealSubtotal = Math.round(reductionRows.reduce((sum, row) => sum + calcDealSubtotal(row), 0));
+  const dealSubtotal = additionDealSubtotal - reductionDealSubtotal;
   const calculatedTax = Math.round(dealSubtotal * TAX_RATE);
   const calculatedProjectPriceTaxed = dealSubtotal + calculatedTax;
   const hasCustomPrice = useCustomProjectPrice && String(projectPriceInput ?? "").trim() !== "";
-  const projectPriceTaxed = hasCustomPrice ? integerValue(projectPriceInput) : calculatedProjectPriceTaxed;
+  const projectPriceTaxed = hasCustomPrice
+    ? (quotationKind === "change_order" ? signedIntegerValue(projectPriceInput) : integerValue(projectPriceInput))
+    : calculatedProjectPriceTaxed;
   const projectPriceUntaxed = hasCustomPrice ? (projectPriceTaxed ? Math.round(projectPriceTaxed / (1 + TAX_RATE)) : 0) : dealSubtotal;
-  const projectTax = Math.max(0, projectPriceTaxed - projectPriceUntaxed);
+  const projectTax = projectPriceTaxed - projectPriceUntaxed;
   return {
+    quotationKind,
     subtotal,
     originalSubtotal,
+    additionSubtotal,
+    reductionSubtotal,
+    additionOriginalSubtotal,
+    reductionOriginalSubtotal,
+    additionDealSubtotal,
+    reductionDealSubtotal,
     tax,
     originalTotal,
     dealSubtotal,
@@ -217,8 +261,10 @@ function calcTotals(rows, projectPriceInput = "", useCustomProjectPrice = false)
     projectPriceUntaxed,
     projectTax,
     projectPriceMode: hasCustomPrice ? "manual" : "auto",
-    discount: Math.max(0, originalTotal - projectPriceTaxed),
-    allocationDifference: projectPriceUntaxed - dealSubtotal
+    discount: quotationKind === "change_order" ? 0 : Math.max(0, originalTotal - projectPriceTaxed),
+    allocationDifference: projectPriceUntaxed - dealSubtotal,
+    adjustmentTotalTaxed: quotationKind === "change_order" ? projectPriceTaxed : 0,
+    adjustmentTotalUntaxed: quotationKind === "change_order" ? projectPriceUntaxed : 0
   };
 }
 
@@ -528,8 +574,6 @@ function applyCustomerSearchSelection() {
 }
 
 function refreshCatalogPicker() {
-  const select = $("#quotationCatalogPicker");
-  if (!select) return;
   const items = [...state.quotationItems].sort((a, b) => String(a.category || "未分類").localeCompare(String(b.category || "未分類"), "zh-Hant", { numeric: true, sensitivity: "base" }) || String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant", { numeric: true, sensitivity: "base" }));
   const grouped = new Map();
   items.forEach(item => {
@@ -541,7 +585,15 @@ function refreshCatalogPicker() {
     const equipmentName = quoteItemEquipmentName(item);
     return `<option value="${esc(item.id)}">${esc(item.name)}${equipmentName ? `｜設備：${esc(equipmentName)}` : ""}</option>`;
   }).join("")}</optgroup>`).join("");
-  select.innerHTML = `<option value="">從常用項目新增…</option>${groups}`;
+  const pickers = [
+    ["#quotationCatalogPicker", "從常用項目新增…"],
+    ["#quotationAdditionCatalogPicker", "從常用項目追加…"],
+    ["#quotationReductionCatalogPicker", "從常用項目減項…"]
+  ];
+  pickers.forEach(([selector, label]) => {
+    const select = $(selector);
+    if (select) select.innerHTML = `<option value="">${label}</option>${groups}`;
+  });
 }
 
 function suggestedNumber(dateISO) {
@@ -586,17 +638,17 @@ function eventOptionHtml(selected = "shared") {
 }
 
 function refreshRowEventOptions() {
-  $$(".row-event", $("#quotationRows")).forEach(select => {
+  $$(".row-event", $("#quotationForm")).forEach(select => {
     const current = select.value;
     select.innerHTML = eventOptionHtml(current);
     if (![...select.options].some(option => option.value === current)) select.value = "shared";
   });
 }
 
-function rowDataFromCatalog(item = {}) {
+function rowDataFromCatalog(item = {}, adjustmentType = "addition") {
   const equipment = linkedEquipment(item);
   return {
-    id: uid(), eventId: "shared", category: item.category || "", name: item.name || "",
+    id: uid(), eventId: "shared", adjustmentType, category: item.category || "", name: item.name || "",
     unitPrice: item.unitPrice || 0, qty: 1, unit: item.unit || "", days: 1,
     calcMode: item.calcMode || "auto50", continuationRate: item.continuationRate ?? 50,
     manualSubtotal: item.calcMode === "manual" ? 0 : "", note: item.note || "",
@@ -605,13 +657,23 @@ function rowDataFromCatalog(item = {}) {
   };
 }
 
-function addQuotationRow(data = {}) {
+function quotationRowHost(adjustmentType = "addition") {
+  if (!isChangeOrder()) return $("#quotationRows");
+  return adjustmentType === "reduction" ? $("#quotationReductionRows") : $("#quotationAdditionRows");
+}
+
+function quotationLineRows() {
+  return $$(".quotation-line", $("#quotationForm"));
+}
+
+function addQuotationRow(data = {}, adjustmentType = data.adjustmentType || "addition") {
   const row = document.createElement("tr");
   row.className = "quotation-line";
   row.dataset.rowId = data.id || uid();
   row.dataset.catalogItemId = data.catalogItemId || "";
   row.dataset.equipmentId = data.equipmentId || "";
   row.dataset.equipmentName = data.equipmentName || "";
+  row.dataset.adjustmentType = adjustmentType === "reduction" ? "reduction" : "addition";
   const mode = data.calcMode || "auto50";
   const applyPricingToPdf = typeof data.applyPricingToPdf === "boolean" ? data.applyPricingToPdf : Boolean(data.equipmentId || data.equipmentName);
   const rowSnapshot = { ...data, calcMode: mode, applyPricingToPdf };
@@ -632,7 +694,7 @@ function addQuotationRow(data = {}) {
     <td><div class="quote-subtotal-cell"><input class="input row-subtotal" inputmode="numeric" value="${mode === "included" ? "—" : esc(money(mode === "manual" ? data.manualSubtotal : pdfSubtotal))}" /><small class="row-original-subtotal">${applyPricingToPdf && pdfSubtotal !== originalSubtotal ? `原價 ${esc(money(originalSubtotal))}` : ""}</small></div><input class="row-deal-subtotal" type="hidden" value="${mode === "included" ? "0" : esc(money(dealSubtotal))}" /></td>
     <td><input class="input row-note" value="${esc(data.note || "")}" /></td>
     <td><div class="quote-row-actions"><button class="quote-order-btn move-quote-row-up" type="button" title="上移" aria-label="上移報價項目">↑</button><button class="quote-order-btn move-quote-row-down" type="button" title="下移" aria-label="下移報價項目">↓</button><button class="remove-equip-row remove-quote-row" type="button" title="移除明細">✕</button></div></td>`;
-  $("#quotationRows").appendChild(row);
+  quotationRowHost(row.dataset.adjustmentType)?.appendChild(row);
   syncLineMode(row);
   recalcQuotation();
 }
@@ -688,6 +750,7 @@ function readRow(row) {
     applyPricingToPdf: $(".row-pdf-pricing", row).checked,
     dealSubtotal: mode === "included" ? 0 : integerValue($(".row-deal-subtotal", row).value),
     dealSubtotalMode: row.dataset.dealSubtotalMode === "manual" ? "manual" : "auto",
+    adjustmentType: row.dataset.adjustmentType === "reduction" ? "reduction" : "addition",
     note: $(".row-note", row).value.trim(),
     catalogItemId: row.dataset.catalogItemId || "",
     equipmentId: row.dataset.equipmentId || "",
@@ -695,10 +758,10 @@ function readRow(row) {
   };
 }
 
-function readRows() { return $$(".quotation-line", $("#quotationRows")).map(readRow).filter(row => row.name || row.category); }
+function readRows() { return quotationLineRows().map(readRow).filter(row => row.name || row.category); }
 
 function recalcQuotation() {
-  $$(".quotation-line", $("#quotationRows")).forEach(row => {
+  quotationLineRows().forEach(row => {
     const mode = $(".row-mode", row).value;
     const rowData = readRow(row);
     const originalSubtotal = calcOriginalRowSubtotal(rowData);
@@ -710,9 +773,12 @@ function recalcQuotation() {
     else if (row.dataset.dealSubtotalMode !== "manual") $(".row-deal-subtotal", row).value = money(calcPdfRowSubtotal(readRow(row)));
   });
   const totals = calcTotals(readRows(), $("#quotationProjectPrice").value, state.quotationProjectPriceCustomized);
-  if (!state.quotationProjectPriceCustomized) $("#quotationProjectPrice").value = money(totals.calculatedProjectPriceTaxed);
-  $("#quotationSubtotal").textContent = money(totals.subtotal);
-  $("#quotationCalculatedPrice").textContent = money(totals.calculatedProjectPriceTaxed);
+  if (!state.quotationProjectPriceCustomized) $("#quotationProjectPrice").value = isChangeOrder() ? signedMoney(totals.calculatedProjectPriceTaxed) : money(totals.calculatedProjectPriceTaxed);
+  $("#quotationSubtotal").textContent = isChangeOrder() ? signedMoney(totals.subtotal, { plus: true }) : money(totals.subtotal);
+  $("#quotationCalculatedPrice").textContent = isChangeOrder() ? signedMoney(totals.calculatedProjectPriceTaxed, { plus: true }) : money(totals.calculatedProjectPriceTaxed);
+  if ($("#quotationAdditionSubtotal")) $("#quotationAdditionSubtotal").textContent = money(totals.additionSubtotal);
+  if ($("#quotationReductionSubtotal")) $("#quotationReductionSubtotal").textContent = money(totals.reductionSubtotal);
+  updateChangeOrderImpact(totals);
   syncProjectPricePdfVisibility(totals);
   updateAllocationStatus(totals);
   return totals;
@@ -750,14 +816,14 @@ function updateAllocationStatus(totals) {
 function renderAllocationRows() {
   const body = $("#quotationAllocationRows");
   if (!body) return;
-  const rows = $$(".quotation-line", $("#quotationRows"));
+  const rows = quotationLineRows();
   body.innerHTML = rows.length ? rows.map(row => {
     const data = readRow(row);
     const included = data.calcMode === "included";
     const quoteSubtotal = calcPdfRowSubtotal(data);
     const internalSubtotal = calcDealSubtotal(data);
     const rate = quoteSubtotal ? (internalSubtotal / quoteSubtotal) * 100 : 0;
-    return `<tr><td><b>${esc(data.name || "未命名項目")}</b><div class="table-sub">${esc(data.category || "未分類")}</div></td><td class="num">${included ? "—" : money(quoteSubtotal)}</td><td><input class="input allocation-rate-input" type="number" min="0" step="0.01" data-allocation-rate-row="${esc(data.id)}" value="${included ? "—" : esc(percentage(rate))}" ${included || !quoteSubtotal ? "disabled" : ""} /></td><td><input class="input allocation-input" inputmode="numeric" data-allocation-row="${esc(data.id)}" value="${included ? "—" : esc(money(internalSubtotal))}" ${included ? "disabled" : ""} /></td></tr>`;
+    return `<tr><td><b>${esc(data.name || "未命名項目")}</b>${isChangeOrder() ? `<span class="badge ${data.adjustmentType === "reduction" ? "red" : "green"}">${data.adjustmentType === "reduction" ? "減項" : "追加"}</span>` : ""}<div class="table-sub">${esc(data.category || "未分類")}</div></td><td class="num">${included ? "—" : money(quoteSubtotal)}</td><td><input class="input allocation-rate-input" type="number" min="0" step="0.01" data-allocation-rate-row="${esc(data.id)}" value="${included ? "—" : esc(percentage(rate))}" ${included || !quoteSubtotal ? "disabled" : ""} /></td><td><input class="input allocation-input" inputmode="numeric" data-allocation-row="${esc(data.id)}" value="${included ? "—" : esc(money(internalSubtotal))}" ${included ? "disabled" : ""} /></td></tr>`;
   }).join("") : `<tr><td colspan="4"><div class="empty-state">尚無報價項目</div></td></tr>`;
   updateAllocationStatus(calcTotals(readRows(), $("#quotationProjectPrice").value, state.quotationProjectPriceCustomized));
 }
@@ -773,26 +839,130 @@ function closeAllocationModal() {
 }
 
 function quotationRowById(id) {
-  return $$(".quotation-line", $("#quotationRows")).find(row => row.dataset.rowId === id) || null;
+  return quotationLineRows().find(row => row.dataset.rowId === id) || null;
+}
+
+function projectBaseAmounts(project) {
+  const currentTaxed = integerValue(project?.quote);
+  const storedNetTaxed = signedIntegerValue(project?.changeOrderNetTaxed);
+  const baseTaxed = project?.baseQuoteTaxed !== undefined
+    ? integerValue(project.baseQuoteTaxed)
+    : Math.max(0, currentTaxed - storedNetTaxed);
+  const baseUntaxed = project?.baseQuoteUntaxed !== undefined
+    ? integerValue(project.baseQuoteUntaxed)
+    : baseTaxed ? Math.round(baseTaxed / (1 + TAX_RATE)) : integerValue(project?.revenue);
+  return { baseTaxed, baseUntaxed };
+}
+
+function projectContractSummary(project, { override = null, excludeSeriesId = "", excludeQuotationId = "" } = {}) {
+  const base = projectBaseAmounts(project);
+  const ordersBySeries = new Map();
+  latestConfirmedChangeOrders(state.quotations.filter(quotation => quotation.id !== excludeQuotationId), project?.id).forEach(quotation => {
+    const key = quotation.seriesId || quotation.id;
+    if (key !== excludeSeriesId) ordersBySeries.set(key, quotation);
+  });
+  if (override?.status === "confirmed") {
+    const key = override.seriesId || override.id;
+    if (key !== excludeSeriesId) ordersBySeries.set(key, override);
+  }
+  const orders = [...ordersBySeries.values()];
+  const additionTaxed = orders.reduce((sum, quotation) => sum + Math.max(0, signedQuotationAmount(quotation, "adjustmentTotalTaxed") || signedQuotationAmount(quotation, "projectPriceTaxed")), 0);
+  const reductionTaxed = orders.reduce((sum, quotation) => sum + Math.max(0, -(signedQuotationAmount(quotation, "adjustmentTotalTaxed") || signedQuotationAmount(quotation, "projectPriceTaxed"))), 0);
+  const netTaxed = additionTaxed - reductionTaxed;
+  const netUntaxed = orders.reduce((sum, quotation) => sum + (signedQuotationAmount(quotation, "adjustmentTotalUntaxed") || signedQuotationAmount(quotation, "projectPriceUntaxed")), 0);
+  return {
+    ...base,
+    orders,
+    additionTaxed,
+    reductionTaxed,
+    netTaxed,
+    netUntaxed,
+    totalTaxed: Math.max(0, base.baseTaxed + netTaxed),
+    totalUntaxed: Math.max(0, base.baseUntaxed + netUntaxed)
+  };
+}
+
+function changeOrderImpact(totals = calcTotals(readRows(), $("#quotationProjectPrice")?.value, state.quotationProjectPriceCustomized)) {
+  const project = state.projects.find(item => item.id === $("#quotationProjectId")?.value);
+  if (!project) return { project: null, beforeTaxed: 0, adjustmentTaxed: totals.adjustmentTotalTaxed || 0, afterTaxed: totals.adjustmentTotalTaxed || 0 };
+  const seriesId = $("#quotationSeriesId")?.value || "";
+  const before = projectContractSummary(project, { excludeSeriesId: seriesId });
+  return {
+    project,
+    beforeTaxed: before.totalTaxed,
+    adjustmentTaxed: signedIntegerValue(totals.adjustmentTotalTaxed),
+    afterTaxed: before.totalTaxed + signedIntegerValue(totals.adjustmentTotalTaxed)
+  };
+}
+
+function updateChangeOrderImpact(totals) {
+  const host = $("#quotationChangeOrderImpact");
+  if (!host) return;
+  host.classList.toggle("hidden", !isChangeOrder());
+  if (!isChangeOrder()) return;
+  const impact = changeOrderImpact(totals);
+  $("#quotationPriceBefore").textContent = money(impact.beforeTaxed);
+  $("#quotationPriceAfter").textContent = signedMoney(impact.afterTaxed);
+  $("#quotationPriceAfter").classList.toggle("negative-value", impact.afterTaxed < 0);
+}
+
+function projectBillingCommitments(projectId) {
+  const payments = state.payments.filter(payment => payment.projectId === projectId && !payment.voided);
+  const paymentIds = new Set(payments.map(payment => payment.id));
+  const invoiced = payments.filter(payment => payment.requestDate).reduce((sum, payment) => sum + integerValue(payment.amount), 0);
+  const actualReceipts = state.receipts.filter(receipt => !receipt.voided && (receipt.projectId === projectId || paymentIds.has(receipt.paymentId)));
+  const receiptsByPayment = new Map();
+  actualReceipts.forEach(receipt => {
+    if (!receipt.paymentId || !paymentIds.has(receipt.paymentId)) return;
+    receiptsByPayment.set(receipt.paymentId, (receiptsByPayment.get(receipt.paymentId) || 0) + integerValue(receipt.amount));
+  });
+  const paymentReceived = payments.reduce((sum, payment) => sum + (
+    receiptsByPayment.has(payment.id)
+      ? receiptsByPayment.get(payment.id)
+      : integerValue(payment.receivedAmount)
+  ), 0);
+  const directReceived = actualReceipts
+    .filter(receipt => !receipt.paymentId || !paymentIds.has(receipt.paymentId))
+    .reduce((sum, receipt) => sum + integerValue(receipt.amount), 0);
+  const received = paymentReceived + directReceived;
+  return { invoiced, received, minimumTotal: Math.max(invoiced, received) };
+}
+
+function syncQuotationKindUi() {
+  const changeOrder = isChangeOrder();
+  $("#quotationStandardLines")?.classList.toggle("hidden", changeOrder);
+  $("#quotationChangeOrderLines")?.classList.toggle("hidden", !changeOrder);
+  if ($("#quotationSubtotalLabel")) $("#quotationSubtotalLabel").textContent = changeOrder ? "本次未稅淨額" : "報價未稅合計";
+  if ($("#quotationCalculatedPriceLabel")) $("#quotationCalculatedPriceLabel").textContent = changeOrder ? "本次含稅淨額" : "系統計算含稅價";
+  if ($("#quotationProjectPriceLabel")) $("#quotationProjectPriceLabel").textContent = changeOrder ? "本次追加減（含稅）" : "專案價（含稅）";
+  $("#quotationProjectPricePdfToggle")?.classList.toggle("hidden", changeOrder);
+  if (changeOrder && $("#quotationShowProjectPriceOnPdf")) $("#quotationShowProjectPriceOnPdf").checked = true;
 }
 
 function resetQuotationForm(quotation = null, options = {}) {
   const project = options.project || null;
+  const quotationKind = quotation?.quotationKind === "change_order" || options.changeOrder ? "change_order" : "standard";
   const isNewVersion = Boolean(options.newVersion);
   const version = quotation ? (isNewVersion ? Number(quotation.version || 1) + 1 : Number(quotation.version || 1)) : 1;
   $("#quotationId").value = quotation && !isNewVersion ? quotation.id : "";
   $("#quotationSeriesId").value = quotation?.seriesId || "";
   $("#quotationVersion").value = version;
   $("#quotationVersionLabel").textContent = `V${version}`;
-  $("#quotationDrawerTitle").textContent = quotation ? (isNewVersion ? `複製為 V${version}` : `編輯報價 V${version}`) : "新增報價";
+  $("#quotationDrawerTitle").textContent = quotation
+    ? (isNewVersion ? `複製為 V${version}` : `編輯${quotationKind === "change_order" ? "追加減" : ""}報價 V${version}`)
+    : quotationKind === "change_order" ? "新增追加減報價" : "新增報價";
   refreshProjectOptions();
   refreshCustomerOptions();
   refreshCatalogPicker();
   $("#quotationProjectId").value = project?.id || quotation?.projectId || "";
+  $("#quotationKind").value = quotationKind;
+  $("#quotationKind").disabled = Boolean(quotation);
   $("#quotationCustomerId").value = quotation?.customerId || "";
   const selectedCustomer = state.customers.find(customer => customer.id === (quotation?.customerId || ""));
   $("#quotationCustomerSearch").value = selectedCustomer ? customerOptionLabel(selectedCustomer) : "";
-  const firstDate = project?.startDate || quotation?.events?.[0]?.eventDate || new Date().toISOString().slice(0, 10);
+  const firstDate = quotationKind === "change_order"
+    ? new Date().toISOString().slice(0, 10)
+    : project?.startDate || quotation?.events?.[0]?.eventDate || new Date().toISOString().slice(0, 10);
   $("#quotationNumber").value = quotation?.number || suggestedNumber(firstDate);
   state.numberWasSuggested = !quotation;
   $("#quotationStatus").value = isNewVersion ? "draft" : quotation?.status || "draft";
@@ -810,14 +980,19 @@ function resetQuotationForm(quotation = null, options = {}) {
     ? (typeof quotation.showProjectPriceOnPdf === "boolean" ? quotation.showProjectPriceOnPdf : true)
     : false;
   $("#quotationHideEventColumnOnPdf").checked = quotation?.hideEventColumnOnPdf === true;
-  $("#quotationProjectPrice").value = quotation?.projectPriceTaxed ? money(quotation.projectPriceTaxed) : "";
+  $("#quotationProjectPrice").value = quotation?.projectPriceTaxed
+    ? (quotationKind === "change_order" ? signedMoney(quotation.projectPriceTaxed) : money(quotation.projectPriceTaxed))
+    : "";
   $("#quotationEvents").innerHTML = "";
   const events = quotation?.events?.length ? quotation.events : [blankEvent({ name: "場次 1", location: project?.location || "", eventDate: project?.startDate || "", setupDate: project?.startDate && project?.endDate ? `${project.startDate}–${project.endDate}` : "" })];
   events.forEach(addEventRow);
   $("#quotationRows").innerHTML = "";
+  $("#quotationAdditionRows").innerHTML = "";
+  $("#quotationReductionRows").innerHTML = "";
+  syncQuotationKindUi();
   const rows = quotation?.rows?.length ? quotation.rows : [];
-  rows.forEach(addQuotationRow);
-  if (!rows.length) addQuotationRow(rowDataFromCatalog());
+  rows.forEach(row => addQuotationRow(row, row.adjustmentType || "addition"));
+  if (!rows.length) addQuotationRow(rowDataFromCatalog({}, "addition"), "addition");
   recalcQuotation();
 }
 
@@ -837,9 +1012,12 @@ function openQuotation(quotation = null, options = {}) {
 
 function readQuotationForm() {
   const rows = readRows();
-  const totals = calcTotals(rows, $("#quotationProjectPrice").value, state.quotationProjectPriceCustomized);
+  const quotationKind = $("#quotationKind").value === "change_order" ? "change_order" : "standard";
+  const totals = calcTotals(rows, $("#quotationProjectPrice").value, state.quotationProjectPriceCustomized, quotationKind);
+  const impact = quotationKind === "change_order" ? changeOrderImpact(totals) : null;
   return {
     pricingModel: "layered_v3",
+    quotationKind,
     seriesId: $("#quotationSeriesId").value,
     number: $("#quotationNumber").value.trim(),
     version: Number($("#quotationVersion").value) || 1,
@@ -855,6 +1033,7 @@ function readQuotationForm() {
     showProjectPriceOnPdf: $("#quotationShowProjectPriceOnPdf").checked,
     hideEventColumnOnPdf: $("#quotationHideEventColumnOnPdf").checked,
     events: readEvents(), rows, terms: $("#quotationTerms").value.trim(), note: $("#quotationNote").value.trim(),
+    ...(impact ? { projectPriceBeforeTaxed: impact.beforeTaxed, projectPriceAfterTaxed: impact.afterTaxed } : {}),
     ...totals
   };
 }
@@ -867,12 +1046,25 @@ async function saveQuotation() {
   if (!payload.customerName) return alert("請填寫客戶／公司名稱");
   if (!payload.projectName) return alert("請填寫專案名稱");
   if (!payload.rows.some(row => row.name)) return alert("請至少填寫一筆報價項目");
+  const linkedProject = state.projects.find(project => project.id === payload.projectId);
+  if (payload.quotationKind === "change_order" && !linkedProject) return alert("追加減報價必須連結既有專案");
+  if (payload.quotationKind === "change_order" && !integerValue(linkedProject?.quote)) return alert("此專案尚未建立原始專案價，請先確認並同步一般報價後，再建立追加減報價");
+  if (payload.quotationKind === "change_order" && !signedIntegerValue(payload.adjustmentTotalTaxed)) return alert("本次追加與減項互相抵銷為 0，請確認明細後再儲存");
   const duplicate = state.quotations.find(q => q.number === payload.number && Number(q.version || 1) === payload.version && q.id !== id);
   if (duplicate) return alert(`系統內已有 ${payload.number} / V${payload.version}，請修改編號或建立其他版本`);
+  const existing = id ? state.quotations.find(q => q.id === id) : null;
+  const isNewConfirmation = payload.status === "confirmed" && existing?.status !== "confirmed";
+  if (payload.quotationKind === "change_order" && isNewConfirmation) {
+    const billing = projectBillingCommitments(payload.projectId);
+    if (payload.projectPriceAfterTaxed < billing.minimumTotal) {
+      return alert(`無法確認這張追加減報價。\n\n調整後專案價：${money(payload.projectPriceAfterTaxed)}\n已請款／已收款最低需保留：${money(billing.minimumTotal)}\n\n請先處理發票折讓或收款沖銷，再確認減項。`);
+    }
+    const adjustmentText = signedMoney(payload.adjustmentTotalTaxed, { plus: true });
+    if (!confirm(`確認這張追加減報價並更新專案金額？\n\n調整前專案價：${money(payload.projectPriceBeforeTaxed)}\n本次追加減：${adjustmentText}\n調整後專案價：${money(payload.projectPriceAfterTaxed)}\n\n確認後會自動更新專案與財務，既有請款及收款紀錄不會被改寫。`)) return;
+  }
   try {
     let savedId = id;
     if (id) {
-      const existing = state.quotations.find(q => q.id === id);
       if (existing && Number(existing.version || 1) < maxVersion(existing.seriesId)) return alert("舊版本已鎖定，請從最新版複製為新版本");
       await updateDoc(doc(db, "quotations", id), {
         ...payload,
@@ -890,9 +1082,12 @@ async function saveQuotation() {
         createdAt: serverTimestamp(), createdBy: state.user.uid, updatedAt: serverTimestamp(), updatedBy: state.user.uid
       });
     }
-    await logAction({ action: id ? "update" : "create", module: "quotations", targetType: "quotation", targetId: savedId, targetName: `${payload.number} / V${payload.version}`, summary: `${payload.customerName}｜${payload.projectName}｜專案價 ${money(payload.projectPriceTaxed)} 元｜${statusLabel(payload.status)}` });
+    await logAction({ action: id ? "update" : "create", module: "quotations", targetType: "quotation", targetId: savedId, targetName: `${payload.number} / V${payload.version}`, summary: `${payload.customerName}｜${payload.projectName}｜${payload.quotationKind === "change_order" ? `追加減 ${signedMoney(payload.adjustmentTotalTaxed, { plus: true })}` : `專案價 ${money(payload.projectPriceTaxed)}`} 元｜${statusLabel(payload.status)}` });
     closeDrawer("#quotationDrawer");
-    if (payload.status === "confirmed") await syncConfirmedQuotationToProject(payload, savedId);
+    if (payload.status === "confirmed") {
+      if (payload.quotationKind === "change_order") await applyChangeOrderToProject({ ...payload, id: savedId, seriesId: payload.seriesId || savedId }, savedId);
+      else await syncConfirmedQuotationToProject(payload, savedId);
+    }
   } catch (error) {
     console.error(error);
     alert("報價儲存失敗，請確認 Firestore 規則已加入 quotations 權限");
@@ -911,14 +1106,107 @@ async function syncConfirmedQuotationToProject(quotation, quotationId) {
   if (shouldCreate) await createProjectFromQuotation(quotation, quotationId);
 }
 
+async function applyChangeOrderToProject(quotation, quotationId, { silent = false } = {}) {
+  if (quotation.quotationKind !== "change_order" || quotation.status !== "confirmed" || !quotation.projectId) return;
+  if (!canEditProject()) return alert("追加減報價已確認，但你沒有編輯專案的權限，因此尚未更新專案總價。");
+  const project = state.projects.find(item => item.id === quotation.projectId);
+  if (!project) return alert("找不到追加減報價所連結的專案");
+  const override = { ...quotation, id: quotationId, seriesId: quotation.seriesId || quotationId };
+  const summary = projectContractSummary(project, { override });
+  const billing = projectBillingCommitments(project.id);
+  if (summary.totalTaxed < billing.minimumTotal) {
+    return alert(`無法套用這張追加減報價。\n\n調整後專案價：${money(summary.totalTaxed)}\n已請款／已收款最低需保留：${money(billing.minimumTotal)}\n\n請先處理發票折讓或收款沖銷。`);
+  }
+  try {
+    await updateDoc(doc(db, "projects", project.id), {
+      baseQuoteTaxed: summary.baseTaxed,
+      baseQuoteUntaxed: summary.baseUntaxed,
+      changeOrderAdditionTaxed: summary.additionTaxed,
+      changeOrderReductionTaxed: summary.reductionTaxed,
+      changeOrderNetTaxed: summary.netTaxed,
+      changeOrderNetUntaxed: summary.netUntaxed,
+      changeOrderCount: summary.orders.length,
+      quote: summary.totalTaxed,
+      quoteTaxMode: "taxed",
+      revenue: summary.totalUntaxed,
+      lastChangeOrderId: quotationId,
+      lastChangeOrderNumber: quotation.number || "",
+      updatedAt: serverTimestamp(),
+      updatedBy: state.user?.uid || ""
+    });
+    await logAction({ action: "sync", module: "quotations", targetType: "project", targetId: project.id, targetName: project.name || quotation.projectName || quotation.number, summary: `追加減 ${quotation.number}｜${signedMoney(quotation.adjustmentTotalTaxed || quotation.projectPriceTaxed, { plus: true })}｜專案總價更新為 ${money(summary.totalTaxed)} 元` });
+    if (!silent) alert(`追加減已套用。\n\n目前專案總價：${money(summary.totalTaxed)} 元（含稅）`);
+  } catch (error) {
+    console.error(error);
+    alert("追加減報價已儲存，但專案總價更新失敗；請稍後從報價列表按「重新計算專案價」。");
+  }
+}
+
+async function voidChangeOrder(quotation) {
+  if (!canEdit()) return alert("你目前沒有管理報價的權限");
+  if (quotation.status !== "confirmed") {
+    if (!confirm(`確定將追加減報價 ${quotation.number} / V${quotation.version || 1} 標記為作廢？`)) return;
+    await updateDoc(doc(db, "quotations", quotation.id), { status: "void", updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+    await logAction({ action: "void", module: "quotations", targetType: "quotation", targetId: quotation.id, targetName: `${quotation.number} / V${quotation.version || 1}`, summary: `${quotation.customerName || ""}｜${quotation.projectName || ""}` });
+    return;
+  }
+  const project = state.projects.find(item => item.id === quotation.projectId);
+  if (!project) return alert("找不到這張追加減所連結的專案，無法安全作廢");
+  const summary = projectContractSummary(project, { excludeQuotationId: quotation.id });
+  const billing = projectBillingCommitments(project.id);
+  if (summary.totalTaxed < billing.minimumTotal) {
+    return alert(`作廢後專案價將變成 ${money(summary.totalTaxed)} 元，低於已請款／已收款 ${money(billing.minimumTotal)} 元。\n\n請先處理發票折讓或收款沖銷。`);
+  }
+  if (!confirm(`確定作廢這張已確認追加減？\n\n目前專案價：${money(integerValue(project.quote))}\n作廢後專案價：${money(summary.totalTaxed)}\n\n既有請款及收款紀錄不會被修改。`)) return;
+  try {
+    const batch = writeBatch(db);
+    batch.update(doc(db, "quotations", quotation.id), { status: "void", updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+    batch.update(doc(db, "projects", project.id), {
+      changeOrderAdditionTaxed: summary.additionTaxed,
+      changeOrderReductionTaxed: summary.reductionTaxed,
+      changeOrderNetTaxed: summary.netTaxed,
+      changeOrderNetUntaxed: summary.netUntaxed,
+      changeOrderCount: summary.orders.length,
+      quote: summary.totalTaxed,
+      quoteTaxMode: "taxed",
+      revenue: summary.totalUntaxed,
+      updatedAt: serverTimestamp(),
+      updatedBy: state.user.uid
+    });
+    await batch.commit();
+    await logAction({ action: "void", module: "quotations", targetType: "changeOrder", targetId: quotation.id, targetName: `${quotation.number} / V${quotation.version || 1}`, summary: `作廢追加減｜專案總價調整為 ${money(summary.totalTaxed)} 元` });
+    alert(`追加減已作廢，專案總價已更新為 ${money(summary.totalTaxed)} 元。`);
+  } catch (error) {
+    console.error(error);
+    alert("追加減作廢失敗，本次沒有修改專案金額。");
+  }
+}
+
 async function writeBackProject(quotation, quotationId) {
   if (!quotation.projectId || quotation.status !== "confirmed") return;
   if (!canEditProject()) return alert("你目前沒有編輯既有專案的權限；報價本身不受影響。");
   try {
+    const project = state.projects.find(item => item.id === quotation.projectId);
+    const changeOrders = latestConfirmedChangeOrders(state.quotations, quotation.projectId);
+    const changeOrderAdditionTaxed = changeOrders.reduce((sum, item) => sum + Math.max(0, signedQuotationAmount(item, "adjustmentTotalTaxed") || signedQuotationAmount(item, "projectPriceTaxed")), 0);
+    const changeOrderReductionTaxed = changeOrders.reduce((sum, item) => sum + Math.max(0, -(signedQuotationAmount(item, "adjustmentTotalTaxed") || signedQuotationAmount(item, "projectPriceTaxed"))), 0);
+    const changeOrderNetTaxed = changeOrderAdditionTaxed - changeOrderReductionTaxed;
+    const changeOrderNetUntaxed = changeOrders.reduce((sum, item) => sum + (signedQuotationAmount(item, "adjustmentTotalUntaxed") || signedQuotationAmount(item, "projectPriceUntaxed")), 0);
+    const totalTaxed = integerValue(quotation.projectPriceTaxed) + changeOrderNetTaxed;
+    const totalUntaxed = integerValue(quotation.projectPriceUntaxed) + changeOrderNetUntaxed;
+    const billing = projectBillingCommitments(quotation.projectId);
+    if (totalTaxed < billing.minimumTotal) return alert(`同步後專案價 ${money(totalTaxed)} 元低於已請款／已收款 ${money(billing.minimumTotal)} 元，請先處理折讓或收款沖銷。`);
     await updateDoc(doc(db, "projects", quotation.projectId), {
-      quote: quotation.projectPriceTaxed,
+      baseQuoteTaxed: integerValue(quotation.projectPriceTaxed),
+      baseQuoteUntaxed: integerValue(quotation.projectPriceUntaxed),
+      changeOrderAdditionTaxed,
+      changeOrderReductionTaxed,
+      changeOrderNetTaxed,
+      changeOrderNetUntaxed,
+      changeOrderCount: changeOrders.length,
+      quote: totalTaxed,
       quoteTaxMode: "taxed",
-      revenue: quotation.projectPriceUntaxed,
+      revenue: totalUntaxed,
       confirmedQuotationId: quotationId,
       confirmedQuotationNumber: quotation.number,
       confirmedQuotationVersion: quotation.version,
@@ -926,7 +1214,7 @@ async function writeBackProject(quotation, quotationId) {
       updatedAt: serverTimestamp()
     });
     await logAction({ action: "sync", module: "quotations", targetType: "project", targetId: quotation.projectId, targetName: quotation.projectName || quotation.number, summary: `由 ${quotation.number} / V${quotation.version || 1} 回寫專案價 ${money(quotation.projectPriceTaxed)} 元` });
-    alert("已將專案價回寫專案；外部支出、設備、狀態與其他舊資料都沒有變動。");
+    alert(`已更新原始專案價，並保留 ${changeOrders.length} 張已確認追加減；目前專案總價為 ${money(totalTaxed)} 元。`);
   } catch (error) {
     console.error(error);
     alert("報價已儲存，但專案回寫失敗；請確認你有專案編輯權限。");
@@ -952,6 +1240,13 @@ async function createProjectFromQuotation(quotation, quotationId) {
     quote: integerValue(quotation.projectPriceTaxed),
     quoteTaxMode: "taxed",
     revenue: integerValue(quotation.projectPriceUntaxed),
+    baseQuoteTaxed: integerValue(quotation.projectPriceTaxed),
+    baseQuoteUntaxed: integerValue(quotation.projectPriceUntaxed),
+    changeOrderAdditionTaxed: 0,
+    changeOrderReductionTaxed: 0,
+    changeOrderNetTaxed: 0,
+    changeOrderNetUntaxed: 0,
+    changeOrderCount: 0,
     cost: 0,
     equipmentsUsed: [],
     note: `由報價 ${quotation.number} / V${quotation.version || 1} 建立；專案狀態、外部支出與使用設備請再確認。`,
@@ -1083,6 +1378,7 @@ function renderQuotations() {
   if (!body) return;
   const keyword = $("#quotationSearch")?.value.trim().toLocaleLowerCase("zh-Hant") || "";
   const month = $("#quotationMonthFilter")?.value || "";
+  const kind = $("#quotationKindFilter")?.value || "all";
   const status = $("#quotationStatusFilter")?.value || "all";
   const sortBy = $("#quotationSort")?.value || "dateAsc";
   const latest = latestBySeries();
@@ -1094,6 +1390,7 @@ function renderQuotations() {
   });
   const filteredList = [...state.quotations].filter(q => {
     if (state.quotationProjectFilterId && q.projectId !== state.quotationProjectFilterId) return false;
+    if (kind !== "all" && (q.quotationKind === "change_order" ? "change_order" : "standard") !== kind) return false;
     if (status !== "all" && q.status !== status) return false;
     if (month && !(Array.isArray(q.events) && q.events.some(event => normalizedDateTokens(event?.eventDate).some(date => date.startsWith(month)))) && !quotationEventDate(q).startsWith(month)) return false;
     const linkedName = quotationDisplayProjectName(q);
@@ -1115,17 +1412,17 @@ function renderQuotations() {
     const selectable = canEdit() && isLatest && q.status !== "void";
     return `<tr>
       <td class="batch-checkbox-cell"><input class="batch-checkbox quotation-select" type="checkbox" value="${esc(q.id)}" aria-label="選取報價 ${esc(q.number)} V${esc(q.version || 1)}" ${state.quotationSelectedIds.has(q.id) ? "checked" : ""} ${selectable ? "" : "disabled"} /></td>
-      <td><button class="quote-link" type="button" data-quotation-preview="${esc(q.id)}">${esc(q.number)}</button></td>
+      <td><button class="quote-link" type="button" data-quotation-preview="${esc(q.id)}">${esc(q.number)}</button><span class="badge ${q.quotationKind === "change_order" ? "blue" : "neutral"} quotation-kind-badge">${q.quotationKind === "change_order" ? "追加減" : "一般"}</span></td>
       <td><b>${esc(quotationDisplayProjectName(q))}</b><div class="table-sub">${esc(q.customerName || "—")}</div></td>
       <td><span class="badge ${isLatest ? "orange" : "neutral"}">V${esc(q.version || 1)}${isLatest ? " 最新" : ""}</span></td>
-      <td class="num"><b>${money(q.projectPriceTaxed)}</b></td>
+      <td class="num"><b>${q.quotationKind === "change_order" ? signedMoney(q.adjustmentTotalTaxed ?? q.projectPriceTaxed, { plus: true }) : money(q.projectPriceTaxed)}</b></td>
       <td><span class="badge ${statusBadge(q.status)}">${esc(statusLabel(q.status))}</span></td>
       <td><b>${esc(dateText(quotationEventDate(q)))}</b><div class="table-sub">更新 ${esc(timestampText(q.updatedAt || q.createdAt))}</div></td>
       <td><div class="row-actions">
         <button class="btn ghost small" type="button" data-quotation-preview="${esc(q.id)}">預覽</button>
         <button class="btn ghost small" type="button" data-quotation-edit="${esc(q.id)}" ${canEdit() && isLatest && !["confirmed", "void"].includes(q.status) ? "" : "disabled"}>編輯</button>
         <button class="btn ghost small" type="button" data-quotation-version="${esc(q.id)}" ${canEdit() && isLatest ? "" : "disabled"}>複製新版</button>
-        ${q.status === "confirmed" ? `<button class="btn ghost small" type="button" data-quotation-sync="${esc(q.id)}" ${(canEdit() && (q.projectId ? canEditProject() : canCreateProject())) ? "" : "disabled"}>${q.projectId ? "同步專案金額" : "建立專案"}</button>` : ""}
+        ${q.status === "confirmed" ? `<button class="btn ghost small" type="button" data-quotation-sync="${esc(q.id)}" ${(canEdit() && (q.projectId ? canEditProject() : canCreateProject())) ? "" : "disabled"}>${q.quotationKind === "change_order" ? "重新計算專案價" : q.projectId ? "同步專案金額" : "建立專案"}</button>` : ""}
         <button class="btn ghost small" type="button" data-quotation-void="${esc(q.id)}" ${canEdit() && isLatest && q.status !== "void" ? "" : "disabled"}>作廢</button>
         <button class="btn ghost small" type="button" data-quotation-delete="${esc(q.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
       </div></td>
@@ -1137,7 +1434,7 @@ function renderQuotations() {
 
   $("#quotationSeriesCount").textContent = String(latest.size);
   $("#quotationOpenCount").textContent = String([...latest.values()].filter(q => q.status === "draft" || q.status === "sent").length);
-  $("#quotationConfirmedTotal").textContent = money([...confirmedBySeries.values()].reduce((sum, q) => sum + numberValue(q.projectPriceTaxed), 0));
+  $("#quotationConfirmedTotal").textContent = signedMoney([...confirmedBySeries.values()].reduce((sum, q) => sum + (q.quotationKind === "change_order" ? signedIntegerValue(q.adjustmentTotalTaxed ?? q.projectPriceTaxed) : integerValue(q.projectPriceTaxed)), 0));
 }
 
 function updateQuotationBatchUi(pageList = [], latest = latestBySeries()) {
@@ -1174,6 +1471,11 @@ async function applyQuotationBatchStatus() {
   if (!["draft", "sent", "confirmed", "void"].includes(nextStatus)) return alert("請先選擇要套用的報價狀態");
   const latest = latestBySeries();
   const selected = state.quotations.filter(quotation => state.quotationSelectedIds.has(quotation.id));
+  const changeOrdersRequiringIndividualAction = selected.filter(quotation => quotation.quotationKind === "change_order"
+    && (nextStatus === "confirmed" || quotation.status === "confirmed"));
+  if (changeOrdersRequiringIndividualAction.length) {
+    return alert("追加減報價的確認或作廢會改變專案總價，請逐筆開啟或作廢，讓系統先顯示調整前後金額並檢查已請款資料。");
+  }
   const blocked = selected.filter(quotation => latest.get(quotation.seriesId || quotation.id)?.id !== quotation.id || !quotationBatchTransitionAllowed(quotation.status, nextStatus));
   if (blocked.length) {
     const details = blocked.slice(0, 8)
@@ -1230,7 +1532,8 @@ async function syncQuotationBatchToProjects() {
     latest.get(quotation.seriesId || quotation.id)?.id !== quotation.id ||
     quotation.status !== "confirmed" ||
     !quotation.projectId ||
-    !state.projects.some(project => project.id === quotation.projectId)
+    !state.projects.some(project => project.id === quotation.projectId) ||
+    quotation.quotationKind === "change_order"
   );
   const duplicateProjects = [...new Set(selected.map(quotation => quotation.projectId).filter((projectId, index, ids) => projectId && ids.indexOf(projectId) !== index))];
   if (blocked.length || duplicateProjects.length) {
@@ -1238,16 +1541,51 @@ async function syncQuotationBatchToProjects() {
     const duplicateText = duplicateProjects.slice(0, 8).map(projectId => `• ${state.projects.find(project => project.id === projectId)?.name || projectId}（選到多張報價）`).join("\n");
     return alert(`批次同步必須全部為最新版、已確認、且已連結現有專案的報價；同一專案也只能選一張。本次沒有修改任何資料。${blockedText ? `\n\n不符合：\n${blockedText}` : ""}${duplicateText ? `\n\n重複專案：\n${duplicateText}` : ""}`);
   }
-  if (!confirm(`確定將 ${selected.length} 筆已確認報價的專案價同步到各自連結的專案？\n\n只會更新專案價、未稅營收與確認報價資訊，不會修改設備、外部支出或專案狀態。`)) return;
+  const pricingByQuotation = new Map(selected.map(quotation => {
+    const changeOrders = latestConfirmedChangeOrders(state.quotations, quotation.projectId);
+    const additionTaxed = changeOrders.reduce((sum, item) => sum + Math.max(0, signedQuotationAmount(item, "adjustmentTotalTaxed") || signedQuotationAmount(item, "projectPriceTaxed")), 0);
+    const reductionTaxed = changeOrders.reduce((sum, item) => sum + Math.max(0, -(signedQuotationAmount(item, "adjustmentTotalTaxed") || signedQuotationAmount(item, "projectPriceTaxed"))), 0);
+    const netTaxed = additionTaxed - reductionTaxed;
+    const netUntaxed = changeOrders.reduce((sum, item) => sum + (signedQuotationAmount(item, "adjustmentTotalUntaxed") || signedQuotationAmount(item, "projectPriceUntaxed")), 0);
+    return [quotation.id, {
+      changeOrders,
+      additionTaxed,
+      reductionTaxed,
+      netTaxed,
+      netUntaxed,
+      totalTaxed: integerValue(quotation.projectPriceTaxed) + netTaxed,
+      totalUntaxed: integerValue(quotation.projectPriceUntaxed) + netUntaxed
+    }];
+  }));
+  const belowBillingFloor = selected.filter(quotation => {
+    const pricing = pricingByQuotation.get(quotation.id);
+    return pricing.totalTaxed < projectBillingCommitments(quotation.projectId).minimumTotal;
+  });
+  if (belowBillingFloor.length) {
+    const details = belowBillingFloor.slice(0, 8).map(quotation => {
+      const pricing = pricingByQuotation.get(quotation.id);
+      return `• ${quotation.number || "未編號"}：同步後 ${money(pricing.totalTaxed)}，已請款／已收款 ${money(projectBillingCommitments(quotation.projectId).minimumTotal)}`;
+    }).join("\n");
+    return alert(`以下專案同步後的總價會低於已請款／已收款金額，本次沒有修改任何資料：\n\n${details}\n\n請先處理發票折讓或收款沖銷。`);
+  }
+  if (!confirm(`確定將 ${selected.length} 筆已確認報價的專案價同步到各自連結的專案？\n\n系統會保留各專案已確認的追加減，再重新計算目前專案總價；不會修改設備、外部支出或專案狀態。`)) return;
   const button = $("#quotationBatchSyncProjects");
   if (button) button.disabled = true;
   try {
     const batch = writeBatch(db);
     selected.forEach(quotation => {
+      const pricing = pricingByQuotation.get(quotation.id);
       batch.update(doc(db, "projects", quotation.projectId), {
-        quote: integerValue(quotation.projectPriceTaxed),
+        baseQuoteTaxed: integerValue(quotation.projectPriceTaxed),
+        baseQuoteUntaxed: integerValue(quotation.projectPriceUntaxed),
+        changeOrderAdditionTaxed: pricing.additionTaxed,
+        changeOrderReductionTaxed: pricing.reductionTaxed,
+        changeOrderNetTaxed: pricing.netTaxed,
+        changeOrderNetUntaxed: pricing.netUntaxed,
+        changeOrderCount: pricing.changeOrders.length,
+        quote: pricing.totalTaxed,
         quoteTaxMode: "taxed",
-        revenue: integerValue(quotation.projectPriceUntaxed),
+        revenue: pricing.totalUntaxed,
         confirmedQuotationId: quotation.id,
         confirmedQuotationNumber: quotation.number || "",
         confirmedQuotationVersion: Number(quotation.version || 1),
@@ -1298,32 +1636,51 @@ function buildA4(q) {
   const events = Array.isArray(q.events) ? q.events : [];
   const eventMap = new Map(events.map(event => [event.id, event.name]));
   const rows = Array.isArray(q.rows) ? q.rows : [];
+  const changeOrder = q.quotationKind === "change_order";
   const usesPdfPricing = q.pricingModel === "layered_v3";
   const usesLayeredPricing = q.pricingModel === "layered_v2" || q.dealSubtotal !== undefined || rows.some(row => row?.dealSubtotal !== undefined);
   const showEventColumn = events.length > 1 && q.hideEventColumnOnPdf !== true;
-  const lineHtml = rows.map((row, index) => {
+  const renderLine = (row, index) => {
     const included = row.calcMode === "included";
     const eventCell = showEventColumn ? `<td>${esc(row.eventId === "shared" ? "共用" : eventMap.get(row.eventId) || "—")}</td>` : "";
     const visibleSubtotal = usesPdfPricing ? calcPdfRowSubtotal(row) : usesLayeredPricing ? calcOriginalRowSubtotal(row) : calcRowSubtotal(row);
-    return `<tr><td>${index + 1}</td>${eventCell}<td>${esc(row.name)}</td><td class="num">${included ? "—" : money(row.unitPrice)}</td><td class="num">${esc(row.qty)}</td><td>${esc(row.unit || "—")}</td><td class="num">${included ? "—" : esc(row.days || 1)}</td><td class="num">${included ? "—" : money(visibleSubtotal)}</td><td>${esc(row.note || "")}</td></tr>`;
-  }).join("");
+    const signedSubtotal = changeOrder && row.adjustmentType === "reduction" ? -visibleSubtotal : visibleSubtotal;
+    return `<tr><td>${index + 1}</td>${eventCell}<td>${esc(row.name)}</td><td class="num">${included ? "—" : money(row.unitPrice)}</td><td class="num">${esc(row.qty)}</td><td>${esc(row.unit || "—")}</td><td class="num">${included ? "—" : esc(row.days || 1)}</td><td class="num">${included ? "—" : changeOrder ? signedMoney(signedSubtotal, { plus: row.adjustmentType !== "reduction" }) : money(visibleSubtotal)}</td><td>${esc(row.note || "")}</td></tr>`;
+  };
+  let lineHtml = "";
+  if (changeOrder) {
+    const additions = rows.filter(row => row.adjustmentType !== "reduction");
+    const reductions = rows.filter(row => row.adjustmentType === "reduction");
+    const colspan = showEventColumn ? 9 : 8;
+    if (additions.length) lineHtml += `<tr class="a4-change-group"><td colspan="${colspan}">追加項目 ADDITIONS</td></tr>${additions.map(renderLine).join("")}`;
+    if (reductions.length) lineHtml += `<tr class="a4-change-group"><td colspan="${colspan}">減項項目 REDUCTIONS</td></tr>${reductions.map((row, index) => renderLine(row, additions.length + index)).join("")}`;
+  } else {
+    lineHtml = rows.map(renderLine).join("");
+  }
   const showDates = events.map(event => event.eventDate).filter(Boolean).join("、") || "—";
   const setupDates = events.map(event => event.setupDate).filter(Boolean).join("、") || "—";
   const locations = [...new Set(events.map(event => event.location).filter(Boolean))].join("、") || "—";
   const pdfSubtotal = q.subtotal !== undefined
-    ? integerValue(q.subtotal)
+    ? (changeOrder ? signedIntegerValue(q.subtotal) : integerValue(q.subtotal))
     : Math.round(rows.reduce((sum, row) => sum + (usesPdfPricing ? calcPdfRowSubtotal(row) : usesLayeredPricing ? calcOriginalRowSubtotal(row) : calcRowSubtotal(row)), 0));
-  const pdfTax = q.tax !== undefined ? integerValue(q.tax) : Math.round(pdfSubtotal * TAX_RATE);
-  const pdfGrandTotal = q.originalTotal !== undefined ? integerValue(q.originalTotal) : pdfSubtotal + pdfTax;
-  const projectPriceTaxed = integerValue(q.projectPriceTaxed);
+  const pdfTax = q.tax !== undefined ? (changeOrder ? signedIntegerValue(q.tax) : integerValue(q.tax)) : Math.round(pdfSubtotal * TAX_RATE);
+  const pdfGrandTotal = q.originalTotal !== undefined ? (changeOrder ? signedIntegerValue(q.originalTotal) : integerValue(q.originalTotal)) : pdfSubtotal + pdfTax;
+  const projectPriceTaxed = changeOrder ? signedIntegerValue(q.adjustmentTotalTaxed ?? q.projectPriceTaxed) : integerValue(q.projectPriceTaxed);
   const showProjectPriceOnPdf = q.showProjectPriceOnPdf !== false;
   const projectPriceRow = showProjectPriceOnPdf
     ? `<tr class="project-price"><th>專案價（含稅）</th><td class="num">$ ${money(projectPriceTaxed)}</td></tr>`
     : "";
+  const additionSubtotal = q.additionSubtotal !== undefined ? integerValue(q.additionSubtotal) : Math.round(rows.filter(row => row.adjustmentType !== "reduction").reduce((sum, row) => sum + calcPdfRowSubtotal(row), 0));
+  const reductionSubtotal = q.reductionSubtotal !== undefined ? integerValue(q.reductionSubtotal) : Math.round(rows.filter(row => row.adjustmentType === "reduction").reduce((sum, row) => sum + calcPdfRowSubtotal(row), 0));
+  const priceBefore = integerValue(q.projectPriceBeforeTaxed);
+  const priceAfter = q.projectPriceAfterTaxed !== undefined ? signedIntegerValue(q.projectPriceAfterTaxed) : priceBefore + projectPriceTaxed;
+  const totalRows = changeOrder
+    ? `<tr class="a4-change-summary"><th>追加合計<span>Additions</span></th><td class="num">$ ${money(additionSubtotal)}</td></tr><tr class="a4-change-summary reduction"><th>減項合計<span>Reductions</span></th><td class="num">− $ ${money(reductionSubtotal)}</td></tr><tr><th>營業稅 5%<span>Tax</span></th><td class="num">$ ${signedMoney(pdfTax, { plus: true })}</td></tr><tr class="project-price"><th>本次追加減（含稅）</th><td class="num">$ ${signedMoney(projectPriceTaxed, { plus: true })}</td></tr><tr><th>調整前專案價</th><td class="num">$ ${money(priceBefore)}</td></tr><tr class="project-price"><th>調整後專案價</th><td class="num">$ ${signedMoney(priceAfter)}</td></tr>`
+    : `<tr><th>合計<span>Total</span></th><td class="num">$ ${money(pdfSubtotal)}</td></tr><tr><th>營業稅 5%<span>Tax</span></th><td class="num">$ ${money(pdfTax)}</td></tr><tr><th>總計<span>Grand Total</span></th><td class="num">$ ${money(pdfGrandTotal)}</td></tr>${projectPriceRow}`;
   return `<article class="quote-a4">
     <header class="a4-brand-header">
       <img class="a4-logo" src="${esc(COMPANY_LOGO_URL)}" alt="曜炎創意 YAoyan" />
-      <div class="a4-title"><strong>報 價 單</strong><span>QUOTATION</span></div>
+      <div class="a4-title"><strong>${changeOrder ? "追 加 減 報 價 單" : "報 價 單"}</strong><span>${changeOrder ? "CHANGE ORDER QUOTATION" : "QUOTATION"}</span></div>
     </header>
     <table class="a4-info"><tbody>
       <tr><th>客戶名稱<span>Client</span></th><td>${esc(q.customerName)}</td><th>報價日期<span>Quotation Date</span></th><td>${esc(quotationDateText(q))}</td></tr>
@@ -1336,7 +1693,7 @@ function buildA4(q) {
     <table class="a4-lines ${showEventColumn ? "" : "single-event"}"><thead><tr><th>編號<span>No.</span></th>${showEventColumn ? "<th>場次<span>Event</span></th>" : ""}<th>項目<span>Item</span></th><th>單價<span>Price</span></th><th>數量<span>Unit</span></th><th>單位</th><th>天數<span>Day</span></th><th>小計<span>Subtotal</span></th><th>備註<span>Note</span></th></tr></thead><tbody>${lineHtml || `<tr><td colspan="${showEventColumn ? 9 : 8}">尚無報價項目</td></tr>`}</tbody></table>
     <div class="a4-payment-grid">
       <div class="a4-terms-block"><div class="a4-section-title">合作與付款條件 Payment Terms</div><div class="a4-terms">${esc(q.terms || DEFAULT_TERMS)}</div>${q.note ? `<p class="a4-note"><b>備註：</b>${esc(q.note)}</p>` : ""}</div>
-      <table class="a4-total"><tbody><tr><th>合計<span>Total</span></th><td class="num">$ ${money(pdfSubtotal)}</td></tr><tr><th>營業稅 5%<span>Tax</span></th><td class="num">$ ${money(pdfTax)}</td></tr><tr><th>總計<span>Grand Total</span></th><td class="num">$ ${money(pdfGrandTotal)}</td></tr>${projectPriceRow}</tbody></table>
+      <table class="a4-total"><tbody>${totalRows}</tbody></table>
     </div>
     <footer class="a4-company"><div class="a4-company-info"><b>${esc(COMPANY.name)}</b><div>公司統編 Tax ID：${esc(COMPANY.taxId)}</div><div>業務聯絡人 Contact：${esc(COMPANY.contact)}</div><div>聯絡信箱 Email：${esc(COMPANY.email)}</div><div>匯款資訊 Remittance Info：${esc(COMPANY.bank)}<br>${esc(COMPANY.accountName)}／${esc(COMPANY.account)}</div></div><div class="a4-sign"><span>確認無誤煩請簽名回傳：</span><i></i></div></footer>
   </article>`;
@@ -1376,6 +1733,8 @@ function detach() {
   state.quotationCurrentPage = 1;
   state.projects = [];
   state.equipment = [];
+  state.payments = [];
+  state.receipts = [];
   renderAllQuoteModules();
 }
 
@@ -1385,6 +1744,8 @@ function attach() {
   listen("quotations", "quotations");
   listen("projects", "projects");
   listen("equipment", "equipment");
+  listen("payments", "payments");
+  listen("receipts", "receipts");
 }
 
 function renderAllQuoteModules() {
@@ -1484,6 +1845,7 @@ function bindEvents() {
   };
   $("#quotationSearch")?.addEventListener("input", resetQuotationPageAndRender);
   $("#quotationMonthFilter")?.addEventListener("change", resetQuotationPageAndRender);
+  $("#quotationKindFilter")?.addEventListener("change", resetQuotationPageAndRender);
   $("#quotationStatusFilter")?.addEventListener("change", resetQuotationPageAndRender);
   $("#quotationSort")?.addEventListener("change", resetQuotationPageAndRender);
   $("#quotationSelectAll")?.addEventListener("change", event => {
@@ -1518,6 +1880,20 @@ function bindEvents() {
     document.querySelector("#tab-quotations .quote-toolbar")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
   $("#quotationNumber")?.addEventListener("input", () => { state.numberWasSuggested = false; });
+  $("#quotationKind")?.addEventListener("change", event => {
+    const hasContent = readRows().some(row => row.name || row.category || row.unitPrice);
+    if (hasContent && !confirm("切換報價類型會清除目前的報價明細，是否繼續？")) {
+      event.target.value = event.target.value === "change_order" ? "standard" : "change_order";
+      return;
+    }
+    $("#quotationRows").innerHTML = "";
+    $("#quotationAdditionRows").innerHTML = "";
+    $("#quotationReductionRows").innerHTML = "";
+    state.quotationProjectPriceCustomized = false;
+    syncQuotationKindUi();
+    addQuotationRow(rowDataFromCatalog({}, "addition"), "addition");
+    recalcQuotation();
+  });
   $("#quotationProjectPrice")?.addEventListener("input", event => {
     state.quotationProjectPriceCustomized = Boolean(event.target.value.trim());
     recalcQuotation();
@@ -1532,7 +1908,10 @@ function bindEvents() {
   });
   $("#quotationProjectId")?.addEventListener("change", event => {
     const project = state.projects.find(item => item.id === event.target.value);
-    if (!project) return;
+    if (!project) {
+      recalcQuotation();
+      return;
+    }
     $("#quotationProjectName").value = project.name || "";
     if (!$("#quotationCustomerId").value && project.customerId) {
       const customer = state.customers.find(item => item.id === project.customerId);
@@ -1548,13 +1927,14 @@ function bindEvents() {
     } else if (!$("#quotationCustomerName").value) {
       $("#quotationCustomerName").value = project.client || "";
     }
-    if (state.numberWasSuggested) $("#quotationNumber").value = suggestedNumber(project.startDate);
+    if (state.numberWasSuggested) $("#quotationNumber").value = suggestedNumber(isChangeOrder() ? new Date().toISOString().slice(0, 10) : project.startDate);
     const first = $(".quote-event-row", $("#quotationEvents"));
     if (first) {
       $(".event-location", first).value = project.location || "";
       $(".event-date", first).value = project.startDate || "";
       $(".event-setup", first).value = project.startDate && project.endDate ? `${project.startDate}–${project.endDate}` : "";
     }
+    recalcQuotation();
   });
   $("#quotationCustomerSearch")?.addEventListener("input", applyCustomerSearchSelection);
   $("#quotationCustomerSearch")?.addEventListener("change", applyCustomerSearchSelection);
@@ -1569,15 +1949,27 @@ function bindEvents() {
   });
   $("#quotationEvents")?.addEventListener("input", event => {
     if (event.target.matches(".event-name")) refreshRowEventOptions();
-    if (event.target.matches(".event-date") && state.numberWasSuggested && $$(".event-date", $("#quotationEvents")).indexOf(event.target) === 0) $("#quotationNumber").value = suggestedNumber(event.target.value);
+    if (event.target.matches(".event-date") && state.numberWasSuggested && !isChangeOrder() && $$(".event-date", $("#quotationEvents")).indexOf(event.target) === 0) $("#quotationNumber").value = suggestedNumber(event.target.value);
   });
   $("#quotationAddRow")?.addEventListener("click", () => addQuotationRow(rowDataFromCatalog()));
+  $("#quotationAddAdditionRow")?.addEventListener("click", () => addQuotationRow(rowDataFromCatalog({}, "addition"), "addition"));
+  $("#quotationAddReductionRow")?.addEventListener("click", () => addQuotationRow(rowDataFromCatalog({}, "reduction"), "reduction"));
   $("#quotationCatalogPicker")?.addEventListener("change", event => {
     const item = state.quotationItems.find(entry => entry.id === event.target.value);
     if (item) addQuotationRow(rowDataFromCatalog(item));
     event.target.value = "";
   });
-  $("#quotationRows")?.addEventListener("click", event => {
+  $("#quotationAdditionCatalogPicker")?.addEventListener("change", event => {
+    const item = state.quotationItems.find(entry => entry.id === event.target.value);
+    if (item) addQuotationRow(rowDataFromCatalog(item, "addition"), "addition");
+    event.target.value = "";
+  });
+  $("#quotationReductionCatalogPicker")?.addEventListener("change", event => {
+    const item = state.quotationItems.find(entry => entry.id === event.target.value);
+    if (item) addQuotationRow(rowDataFromCatalog(item, "reduction"), "reduction");
+    event.target.value = "";
+  });
+  $("#quotationForm")?.addEventListener("click", event => {
     const remove = event.target.closest(".remove-quote-row");
     const moveUp = event.target.closest(".move-quote-row-up");
     const moveDown = event.target.closest(".move-quote-row-down");
@@ -1587,17 +1979,17 @@ function bindEvents() {
     else if (moveDown && row.nextElementSibling) row.parentElement.insertBefore(row.nextElementSibling, row);
     else if (remove) {
       row.remove();
-      if (!$(".quotation-line", $("#quotationRows"))) addQuotationRow(rowDataFromCatalog());
+      if (!quotationLineRows().length) addQuotationRow(rowDataFromCatalog({}, "addition"), "addition");
     } else return;
     recalcQuotation();
   });
-  $("#quotationRows")?.addEventListener("input", event => {
+  $("#quotationForm")?.addEventListener("input", event => {
     const row = event.target.closest(".quotation-line");
     if (!row) return;
     if (event.target.matches(".row-mode")) syncLineMode(row);
     recalcQuotation();
   });
-  $("#quotationRows")?.addEventListener("change", event => {
+  $("#quotationForm")?.addEventListener("change", event => {
     const row = event.target.closest(".quotation-line");
     if (!row) return;
     if (event.target.matches(".row-mode,.row-pdf-pricing")) syncLineMode(row);
@@ -1641,7 +2033,7 @@ function bindEvents() {
     input.value = input.matches(".allocation-input") ? money(input.value) : (input.value.trim() ? percentage(input.value) : "100");
   }, true);
   $("#quotationAllocationReset")?.addEventListener("click", () => {
-    $$(".quotation-line", $("#quotationRows")).forEach(row => { row.dataset.dealSubtotalMode = "auto"; });
+    quotationLineRows().forEach(row => { row.dataset.dealSubtotalMode = "auto"; });
     recalcQuotation();
     renderAllocationRows();
   });
@@ -1659,10 +2051,16 @@ function bindEvents() {
     if (preview && quotation) previewQuotation(quotation);
     if (edit && quotation) openQuotation(quotation);
     if (version && quotation) openQuotation(quotation, { newVersion: true });
-    if (sync && quotation) await syncConfirmedQuotationToProject(quotation, quotation.id);
-    if (voidButton && quotation && canEdit() && confirm(`確定將 ${quotation.number} / V${quotation.version || 1} 標記為作廢？報價仍會保留供日後回溯。`)) {
-      await updateDoc(doc(db, "quotations", quotation.id), { status: "void", updatedAt: serverTimestamp(), updatedBy: state.user.uid });
-      await logAction({ action: "void", module: "quotations", targetType: "quotation", targetId: quotation.id, targetName: `${quotation.number} / V${quotation.version || 1}`, summary: `${quotation.customerName || ""}｜${quotation.projectName || ""}` });
+    if (sync && quotation) {
+      if (quotation.quotationKind === "change_order") await applyChangeOrderToProject(quotation, quotation.id);
+      else await syncConfirmedQuotationToProject(quotation, quotation.id);
+    }
+    if (voidButton && quotation && canEdit()) {
+      if (quotation.quotationKind === "change_order") await voidChangeOrder(quotation);
+      else if (confirm(`確定將 ${quotation.number} / V${quotation.version || 1} 標記為作廢？報價仍會保留供日後回溯。`)) {
+        await updateDoc(doc(db, "quotations", quotation.id), { status: "void", updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+        await logAction({ action: "void", module: "quotations", targetType: "quotation", targetId: quotation.id, targetName: `${quotation.number} / V${quotation.version || 1}`, summary: `${quotation.customerName || ""}｜${quotation.projectName || ""}` });
+      }
     }
     if (del && quotation && canDelete()) {
       const linkedProject = state.projects.find(project => project.confirmedQuotationId === quotation.id);
@@ -1691,9 +2089,17 @@ function bindEvents() {
       return;
     }
     const projectButton = event.target.closest("[data-quotation-project]");
-    if (!projectButton) return;
-    const project = state.projects.find(item => item.id === projectButton.dataset.quotationProject);
+    const changeOrderButton = event.target.closest("[data-change-order-project]");
+    if (!projectButton && !changeOrderButton) return;
+    const projectId = changeOrderButton?.dataset.changeOrderProject || projectButton?.dataset.quotationProject;
+    const project = state.projects.find(item => item.id === projectId);
     if (!project) return;
+    if (changeOrderButton) {
+      if (!canEdit()) return alert("你目前沒有新增追加減報價的權限");
+      if (!integerValue(project.quote)) return alert("此專案尚未建立原始專案價，請先確認並同步一般報價");
+      openQuotation(null, { project, changeOrder: true });
+      return;
+    }
     const related = state.quotations.filter(q => q.projectId === project.id);
     if (related.length) {
       switchTab("quotations");

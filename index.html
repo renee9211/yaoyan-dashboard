@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>曜炎創意娛樂｜專案 & 設備 Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css?v=phase3-v13-4" />
+  <link rel="stylesheet" href="styles.css?v=phase3-v14" />
 </head>
 
 <body>
@@ -291,6 +291,7 @@
       <div class="card project-toolbar quote-toolbar">
         <label class="field-inline toolbar-search"><span>關鍵字</span><input id="quotationSearch" class="input" type="search" placeholder="報價編號、專案或客戶" /></label>
         <label class="field-inline"><span>月份</span><input id="quotationMonthFilter" class="input" type="month" /></label>
+        <label class="field-inline"><span>類型</span><select id="quotationKindFilter" class="select"><option value="all">全部類型</option><option value="standard">一般報價</option><option value="change_order">追加減報價</option></select></label>
         <label class="field-inline"><span>狀態</span><select id="quotationStatusFilter" class="select"><option value="all">全部狀態</option><option value="draft">草稿</option><option value="sent">已寄出</option><option value="confirmed">已確認</option><option value="void">作廢</option></select></label>
         <label class="field-inline"><span>排序</span><select id="quotationSort" class="select"><option value="dateAsc">活動日期｜近到遠</option><option value="dateDesc">活動日期｜遠到近</option><option value="nameAsc">名稱｜A–Z</option><option value="nameDesc">名稱｜Z–A</option><option value="statusAsc">狀態｜草稿到作廢</option><option value="statusDesc">狀態｜作廢到草稿</option></select></label>
       </div>
@@ -810,6 +811,7 @@
         <input id="quotationId" type="hidden" /><input id="quotationSeriesId" type="hidden" /><input id="quotationVersion" type="hidden" value="1" />
         <div class="drawer-content">
           <section class="form-section"><div class="section-head"><h3>基本資料</h3><span id="quotationVersionLabel">V1</span></div><div class="form-grid quote-basic-grid">
+            <label class="field"><span>報價類型</span><select id="quotationKind" class="select"><option value="standard">一般報價</option><option value="change_order">追加減報價</option></select><small class="field-help">追加減必須連結已有專案價的專案。</small></label>
             <label class="field"><span>連結專案</span><select id="quotationProjectId" class="select"><option value="">不連結專案</option></select></label>
             <label class="field"><span>客戶（可輸入關鍵字）</span><input id="quotationCustomerSearch" class="input" list="quotationCustomerOptions" placeholder="輸入公司、窗口、電話或 Email" autocomplete="off" /><datalist id="quotationCustomerOptions"></datalist><input id="quotationCustomerId" type="hidden" /></label>
             <label class="field"><span>報價編號 *</span><input id="quotationNumber" class="input" required placeholder="Y26072502" /></label>
@@ -824,11 +826,17 @@
 
           <section class="form-section"><div class="section-head"><h3>活動場次</h3><div class="inline-actions"><label class="quote-event-pdf-toggle"><input id="quotationHideEventColumnOnPdf" type="checkbox" /><span>PDF 隱藏場次欄</span></label><button id="quotationAddEvent" class="btn ghost small" type="button">＋ 新增場次</button></div></div><div id="quotationEvents" class="quote-events"></div></section>
 
-          <section class="form-section quote-lines-section"><div class="section-head"><div><h3>報價明細</h3><p class="field-help">勾選「套用至 PDF」時，報價小計會使用目前的計價方式；內部分項金額請由「分配專案價」調整。</p></div><div class="inline-actions"><select id="quotationCatalogPicker" class="select compact-select"><option value="">從常用項目新增…</option></select><button id="quotationAddRow" class="btn ghost small" type="button">＋ 空白列</button></div></div><div class="quote-lines-scroll"><table class="quote-lines-table"><thead><tr><th>場次</th><th>類別／項目</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>計價</th><th>續日%</th><th>報價小計</th><th>備註</th><th>順序／操作</th></tr></thead><tbody id="quotationRows"></tbody></table></div></section>
+          <section id="quotationStandardLines" class="form-section quote-lines-section"><div class="section-head"><div><h3>報價明細</h3><p class="field-help">勾選「套用至 PDF」時，報價小計會使用目前的計價方式；內部分項金額請由「分配專案價」調整。</p></div><div class="inline-actions"><select id="quotationCatalogPicker" class="select compact-select"><option value="">從常用項目新增…</option></select><button id="quotationAddRow" class="btn ghost small" type="button">＋ 空白列</button></div></div><div class="quote-lines-scroll"><table class="quote-lines-table"><thead><tr><th>場次</th><th>類別／項目</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>計價</th><th>續日%</th><th>報價小計</th><th>備註</th><th>順序／操作</th></tr></thead><tbody id="quotationRows" data-quote-rows="standard"></tbody></table></div></section>
+
+          <div id="quotationChangeOrderLines" class="change-order-editor hidden">
+            <section class="form-section quote-lines-section change-order-section addition-section"><div class="section-head"><div><h3>追加項目</h3><p class="field-help">此區金額會加入專案總價。</p></div><div class="inline-actions"><select id="quotationAdditionCatalogPicker" class="select compact-select"><option value="">從常用項目追加…</option></select><button id="quotationAddAdditionRow" class="btn ghost small" type="button">＋ 追加空白列</button></div></div><div class="quote-lines-scroll"><table class="quote-lines-table"><thead><tr><th>場次</th><th>類別／項目</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>計價</th><th>續日%</th><th>追加小計</th><th>備註</th><th>順序／操作</th></tr></thead><tbody id="quotationAdditionRows" data-quote-rows="addition"></tbody></table></div><div class="change-order-section-total">追加未稅合計 <b id="quotationAdditionSubtotal">0</b></div></section>
+            <section class="form-section quote-lines-section change-order-section reduction-section"><div class="section-head"><div><h3>減項項目</h3><p class="field-help">金額請輸入正數，系統會自動從專案總價扣除。</p></div><div class="inline-actions"><select id="quotationReductionCatalogPicker" class="select compact-select"><option value="">從常用項目減項…</option></select><button id="quotationAddReductionRow" class="btn ghost small" type="button">＋ 減項空白列</button></div></div><div class="quote-lines-scroll"><table class="quote-lines-table"><thead><tr><th>場次</th><th>類別／項目</th><th>單價</th><th>數量</th><th>單位</th><th>天數</th><th>計價</th><th>續日%</th><th>減項小計</th><th>備註</th><th>順序／操作</th></tr></thead><tbody id="quotationReductionRows" data-quote-rows="reduction"></tbody></table></div><div class="change-order-section-total reduction-total">減項未稅合計 <b id="quotationReductionSubtotal">0</b></div></section>
+          </div>
 
           <section class="form-section quote-summary-section"><div class="quote-summary-layout"><div><h3>付款條件與備註</h3><textarea id="quotationTerms" class="textarea" rows="8"></textarea><label class="field quote-note-field"><span>其他備註</span><textarea id="quotationNote" class="textarea" rows="3"></textarea></label></div><div class="quote-totals">
-            <div><span>報價未稅合計</span><b id="quotationSubtotal">0</b></div><div class="quote-allocation-row"><span>專案價分配</span><div class="quote-allocation-action"><button id="quotationOpenAllocation" class="btn ghost small" type="button">分配專案價</button><small id="quotationAllocationStatus" class="allocation-status">分配完成</small></div></div><div><span>系統計算含稅價</span><b id="quotationCalculatedPrice">0</b></div>
-            <div class="quote-project-price-block"><div class="quote-project-price-head"><span>專案價（含稅）</span><label class="quote-project-price-toggle"><input id="quotationShowProjectPriceOnPdf" type="checkbox" /><span>PDF 顯示專案價</span></label></div><input id="quotationProjectPrice" class="input money-input" inputmode="numeric" placeholder="預設帶入系統計算含稅價" /><button id="quotationUseCalculatedPrice" class="btn ghost small quote-use-calculated" type="button">帶入系統計算</button></div>
+            <div><span id="quotationSubtotalLabel">報價未稅合計</span><b id="quotationSubtotal">0</b></div><div class="quote-allocation-row"><span>專案價分配</span><div class="quote-allocation-action"><button id="quotationOpenAllocation" class="btn ghost small" type="button">分配專案價</button><small id="quotationAllocationStatus" class="allocation-status">分配完成</small></div></div><div><span id="quotationCalculatedPriceLabel">系統計算含稅價</span><b id="quotationCalculatedPrice">0</b></div>
+            <div class="quote-project-price-block"><div class="quote-project-price-head"><span id="quotationProjectPriceLabel">專案價（含稅）</span><label id="quotationProjectPricePdfToggle" class="quote-project-price-toggle"><input id="quotationShowProjectPriceOnPdf" type="checkbox" /><span>PDF 顯示專案價</span></label></div><input id="quotationProjectPrice" class="input money-input" inputmode="numeric" placeholder="預設帶入系統計算含稅價" /><button id="quotationUseCalculatedPrice" class="btn ghost small quote-use-calculated" type="button">帶入系統計算</button></div>
+            <div id="quotationChangeOrderImpact" class="change-order-impact hidden"><div><span>調整前專案價</span><b id="quotationPriceBefore">0</b></div><div><span>調整後專案價</span><b id="quotationPriceAfter">0</b></div></div>
           </div></div></section>
         </div>
         <div class="drawer-actions quote-drawer-actions"><div class="drawer-actions-left"><button id="quotationPreviewCurrent" class="btn ghost" type="button">預覽報價單</button></div><button class="btn ghost" type="button" data-quotation-close>取消</button><button class="btn primary" type="submit">儲存報價</button></div>
@@ -862,9 +870,9 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=phase3-v13-6"></script>
-  <script type="module" src="./quotations.js?v=phase3-v13-6"></script>
-  <script type="module" src="./payments.js?v=phase3-v13-6"></script>
-  <script type="module" src="./finance.js?v=phase3-v13-6"></script>
+  <script type="module" src="./app.js?v=phase3-v14"></script>
+  <script type="module" src="./quotations.js?v=phase3-v14"></script>
+  <script type="module" src="./payments.js?v=phase3-v14"></script>
+  <script type="module" src="./finance.js?v=phase3-v14"></script>
 </body>
 </html>

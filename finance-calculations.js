@@ -1,10 +1,20 @@
 // Phase 3 v8: single source of truth for all financial calculations.
-import { projectReportingMonth } from "./relation-utils.js?v=phase3-v13-6";
+import {
+  latestConfirmedChangeOrders,
+  projectReportingMonth,
+  quotationMonthFromNumber,
+  signedQuotationAmount
+} from "./relation-utils.js?v=phase3-v14";
 export const TAX_RATE = 0.05;
 
 export function amountValue(value) {
   const number = Number(String(value ?? "").replaceAll(",", "").trim());
   return Number.isFinite(number) ? Math.max(0, Math.round(number)) : 0;
+}
+
+export function signedAmountValue(value) {
+  const number = Number(String(value ?? "").replaceAll(",", "").trim());
+  return Number.isFinite(number) ? Math.round(number) : 0;
 }
 
 export function normalizeTaxMode(value) {
@@ -205,16 +215,63 @@ export function createFinanceCalculator(input = {}) {
 
   function monthlySummary(month) {
     const range = monthRange(month);
-    const projects = normalized.projects.filter(project =>
+    const eligibleProjects = normalized.projects.filter(project =>
       project.status !== "lost" &&
-      !(project.calendarSyncStatus === "cancelled" && project.status !== "closed") &&
-      projectReportingMonth(project, normalized.quotations) === month
+      !(project.calendarSyncStatus === "cancelled" && project.status !== "closed")
     );
-    const revenue = projects.reduce((sum, project) => sum + projectRevenueUntaxed(project), 0);
-    const externalCost = projects.reduce((sum, project) => sum + projectExternalCost(project), 0);
+    const entries = new Map();
+    const entryFor = project => {
+      if (!entries.has(project.id)) entries.set(project.id, {
+        ...project,
+        reportingRevenueUntaxed: 0,
+        reportingQuoteTaxed: 0,
+        reportingExternalCost: 0,
+        reportingQuotationNumbers: []
+      });
+      return entries.get(project.id);
+    };
+
+    eligibleProjects.forEach(project => {
+      if (projectReportingMonth(project, normalized.quotations) !== month) return;
+      const entry = entryFor(project);
+      const baseRevenue = project.baseQuoteUntaxed !== undefined
+        ? signedAmountValue(project.baseQuoteUntaxed)
+        : project.changeOrderNetUntaxed !== undefined
+          ? projectRevenueUntaxed(project) - signedAmountValue(project.changeOrderNetUntaxed)
+          : projectRevenueUntaxed(project);
+      const baseTaxed = project.baseQuoteTaxed !== undefined
+        ? signedAmountValue(project.baseQuoteTaxed)
+        : project.changeOrderNetTaxed !== undefined
+          ? projectTotalTaxed(project) - signedAmountValue(project.changeOrderNetTaxed)
+          : projectTotalTaxed(project);
+      entry.reportingRevenueUntaxed += baseRevenue;
+      entry.reportingQuoteTaxed += baseTaxed;
+      entry.reportingExternalCost += projectExternalCost(project);
+      const baseNumber = project.confirmedQuotationNumber || "";
+      if (baseNumber) entry.reportingQuotationNumbers.push(baseNumber);
+    });
+
+    latestConfirmedChangeOrders(normalized.quotations).forEach(quotation => {
+      if (quotationMonthFromNumber(quotation.number) !== month) return;
+      const project = eligibleProjects.find(item => item.id === quotation.projectId);
+      if (!project) return;
+      const entry = entryFor(project);
+      entry.reportingRevenueUntaxed += signedQuotationAmount(quotation, "adjustmentTotalUntaxed")
+        || signedQuotationAmount(quotation, "projectPriceUntaxed");
+      entry.reportingQuoteTaxed += signedQuotationAmount(quotation, "adjustmentTotalTaxed")
+        || signedQuotationAmount(quotation, "projectPriceTaxed");
+      if (quotation.number) entry.reportingQuotationNumbers.push(quotation.number);
+    });
+
+    const projects = [...entries.values()].map(project => ({
+      ...project,
+      reportingQuotationNumber: [...new Set(project.reportingQuotationNumbers)].join("、")
+    }));
+    const revenue = projects.reduce((sum, project) => sum + signedAmountValue(project.reportingRevenueUntaxed), 0);
+    const externalCost = projects.reduce((sum, project) => sum + amountValue(project.reportingExternalCost), 0);
     const profit = revenue - externalCost;
     const closedRevenue = projects.filter(project => project.status === "closed")
-      .reduce((sum, project) => sum + projectRevenueUntaxed(project), 0);
+      .reduce((sum, project) => sum + signedAmountValue(project.reportingRevenueUntaxed), 0);
     const invoiced = range ? normalized.payments
       .filter(payment => !payment.voided && payment.requestDate >= range.start && payment.requestDate <= range.end)
       .reduce((sum, payment) => sum + amountValue(payment.amount), 0) : 0;

@@ -1388,6 +1388,7 @@ body.drawer-open{ overflow:hidden; }
 .company-expense-kpi > b{ font-size:23px; }
 .company-expense-kpi > small{ margin-top:auto; color:var(--muted); font-weight:750; }
 .negative-value{ color:#b91c1c !important; }
+.positive-value{ color:#047857 !important; }
 .company-expense-toolbar{
   display:grid;
   grid-template-columns:minmax(260px,1fr) 210px 210px auto auto;
@@ -1620,6 +1621,21 @@ body.drawer-open{ overflow:hidden; }
 .quote-pdf-toggle input{ width:15px; height:15px; margin:0; accent-color:var(--orange); }
 .quote-pdf-toggle:has(input:disabled){ opacity:.48; cursor:not-allowed; }
 .quote-lines-table .row-subtotal{ width:128px; font-weight:900; }
+.change-order-editor{ display:grid; gap:16px; }
+.change-order-editor.hidden{ display:none; }
+.change-order-section{ border-left:4px solid #10b981; }
+.change-order-section.reduction-section{ border-left-color:#ef4444; }
+.change-order-section-total{ display:flex; justify-content:flex-end; align-items:center; gap:12px; margin-top:10px; color:#047857; font-size:13px; font-weight:800; }
+.change-order-section-total b{ font-size:17px; }
+.change-order-section-total.reduction-total{ color:#b91c1c; }
+.change-order-impact{ display:grid; gap:8px; padding:12px; border:1px solid #fed7aa; border-radius:12px; background:#fff7ed; }
+.change-order-impact > div{ display:flex; justify-content:space-between; gap:16px; }
+.change-order-impact span{ color:#9a3412; font-size:12px; font-weight:800; }
+.change-order-impact b{ color:#7c2d12; }
+.quotation-kind-badge{ display:inline-flex; margin-top:4px; }
+.a4-change-group td{ padding:5px 8px !important; background:#f3f4f6; color:#374151; font-weight:900; letter-spacing:.08em; }
+.a4-change-summary th:first-child{ color:#047857; }
+.a4-change-summary.reduction th:first-child{ color:#b91c1c; }
 .quote-subtotal-cell{ display:grid; gap:3px; min-width:128px; }
 .row-original-subtotal{ min-height:15px; padding:0 3px; color:var(--muted); font-size:10px; font-weight:800; white-space:nowrap; }
 .quote-lines-table .row-note{ width:180px; }

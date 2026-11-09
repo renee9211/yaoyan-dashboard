@@ -15,9 +15,11 @@ import { logAction } from "./audit.js";
 import { subscribeCollection, createRenderScheduler } from "./data-store.js";
 import {
   confirmedQuotationForProject,
+  latestConfirmedChangeOrders,
   latestQuotationForProject,
-  projectQuotationNumber
-} from "./relation-utils.js?v=phase3-v13-6";
+  projectQuotationNumber,
+  signedQuotationAmount
+} from "./relation-utils.js?v=phase3-v14";
 import {
   normalizeTaxMode,
   taxedToUntaxed,
@@ -26,7 +28,7 @@ import {
   expenseUntaxed,
   isCapitalExpense,
   createFinanceCalculator
-} from "./finance-calculations.js?v=phase3-v13-6";
+} from "./finance-calculations.js?v=phase3-v14";
 
 import {
   collection, doc, addDoc, updateDoc, deleteDoc,
@@ -450,6 +452,7 @@ function canUpdateProject() { return hasPermission(currentAccess, "editProjects"
 function canCreateEquipment() { return hasPermission(currentAccess, "createEquipment"); }
 function canUpdateEquipment() { return hasPermission(currentAccess, "editEquipment"); }
 function canManageCatalog() { return hasPermission(currentAccess, "manageCatalog"); }
+function canManageQuotations() { return hasPermission(currentAccess, "manageQuotations"); }
 function canDelete() { return currentRole === "admin"; }
 
 /* =========================================================
@@ -1209,6 +1212,30 @@ function projectQuotations(projectId) {
     });
 }
 
+function projectChangeOrderBreakdown(project) {
+  const rows = latestConfirmedChangeOrders(state.quotations, project?.id);
+  const additionTaxed = rows.reduce((sum, quotation) => {
+    const amount = signedQuotationAmount(quotation, "adjustmentTotalTaxed") || signedQuotationAmount(quotation, "projectPriceTaxed");
+    return sum + Math.max(0, amount);
+  }, 0);
+  const reductionTaxed = rows.reduce((sum, quotation) => {
+    const amount = signedQuotationAmount(quotation, "adjustmentTotalTaxed") || signedQuotationAmount(quotation, "projectPriceTaxed");
+    return sum + Math.max(0, -amount);
+  }, 0);
+  const netTaxed = additionTaxed - reductionTaxed;
+  const currentTaxed = getProjectTotalTaxed(project);
+  const baseTaxed = project?.baseQuoteTaxed !== undefined
+    ? Number(project.baseQuoteTaxed) || 0
+    : Math.max(0, currentTaxed - netTaxed);
+  return { rows, baseTaxed, additionTaxed, reductionTaxed, netTaxed, currentTaxed };
+}
+
+function formattedQuotationAmount(quotation) {
+  if (quotation?.quotationKind !== "change_order") return formatMoney(parseIntSafe(quotation?.projectPriceTaxed));
+  const amount = signedQuotationAmount(quotation, "adjustmentTotalTaxed") || signedQuotationAmount(quotation, "projectPriceTaxed");
+  return `${amount >= 0 ? "+" : "−"}${formatMoney(Math.abs(amount))}`;
+}
+
 function projectCollectionStatus(project, paymentSummary) {
   const rows = state.payments.filter(payment => payment.projectId === project.id && !payment.voided);
   if (!rows.length) return { label: "尚未建立款項", badge: "neutral", sub: "可先收訂金或結案後一次請款" };
@@ -1232,12 +1259,13 @@ function renderProjectQuotationsHtml(projectId) {
   if (!rows.length) return `<div class="project-detail-empty">尚未建立或連結報價。</div>`;
 
   return `<div class="project-detail-table-scroll"><table class="project-detail-table quotation-history-table">
-    <thead><tr><th>報價編號</th><th>版本</th><th>狀態</th><th class="num">專案價（含稅）</th><th>更新日</th></tr></thead>
+    <thead><tr><th>報價編號</th><th>類型</th><th>版本</th><th>狀態</th><th class="num">金額（含稅）</th><th>更新日</th></tr></thead>
     <tbody>${rows.map((quotation, index) => `<tr>
       <td><b>${escapeHtml(quotation.number || "—")}</b></td>
+      <td><span class="badge ${quotation.quotationKind === "change_order" ? "blue" : "neutral"}">${quotation.quotationKind === "change_order" ? "追加減" : "一般"}</span></td>
       <td>V${escapeHtml(quotation.version || 1)}${index === 0 ? '<span class="detail-latest-tag">最新</span>' : ""}</td>
       <td><span class="badge ${quotationStatusBadge(quotation.status)}">${escapeHtml(quotationStatusLabel(quotation.status))}</span></td>
-      <td class="num">${escapeHtml(formatMoney(parseIntSafe(quotation.projectPriceTaxed)))}</td>
+      <td class="num">${escapeHtml(formattedQuotationAmount(quotation))}</td>
       <td>${escapeHtml(timestampDateText(quotation.updatedAt || quotation.createdAt))}</td>
     </tr>`).join("")}</tbody>
   </table></div>`;
@@ -1437,6 +1465,7 @@ function renderProjectsTable() {
     const equipmentCostEstimate = projectEquipmentCostEstimate(p);
     const hasConfirmedPrice = parseIntSafe(p.quote) > 0;
     const projectTotalTaxed = getProjectTotalTaxed(p);
+    const changeOrder = projectChangeOrderBreakdown(p);
     const paymentSummary = getProjectPaymentSummary(p.id, projectTotalTaxed);
     const collectionStatus = projectCollectionStatus(p, paymentSummary);
     const relatedQuotations = projectQuotations(p.id);
@@ -1523,7 +1552,10 @@ function renderProjectsTable() {
           <section class="project-detail-section">
             <h4>金額總覽</h4>
             <div class="project-finance-grid">
-              <div><span>專案價（含稅）</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(projectTotalTaxed)) : '<em class="pending-value">待確認</em>'}</b></div>
+              <div><span>原始專案價（含稅）</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(changeOrder.baseTaxed)) : '<em class="pending-value">待確認</em>'}</b></div>
+              <div><span>累計追加</span><b class="positive-value">${escapeHtml(`+${formatMoney(changeOrder.additionTaxed)}`)}</b></div>
+              <div><span>累計減項</span><b class="negative-value">${escapeHtml(`−${formatMoney(changeOrder.reductionTaxed)}`)}</b></div>
+              <div><span>目前專案總價（含稅）</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(projectTotalTaxed)) : '<em class="pending-value">待確認</em>'}</b><small>${changeOrder.rows.length ? `已確認 ${changeOrder.rows.length} 張追加減` : "尚無已確認追加減"}</small></div>
               <div><span>營收（未稅）</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(revenueUntaxed)) : '<em class="pending-value">待確認</em>'}</b></div>
               <div><span>外部支出</span><b>${escapeHtml(formatMoney(cost))}</b></div>
               <div><span>案件毛利</span><b>${hasConfirmedPrice ? escapeHtml(formatMoney(profit)) : '<em class="pending-value">待確認</em>'}</b><small>未扣設備折舊及固定費用</small></div>
@@ -1537,7 +1569,7 @@ function renderProjectsTable() {
           </section>
 
           <section class="project-detail-section">
-            <div class="project-detail-section-head"><h4>報價紀錄</h4><button class="btn-sm" type="button" data-quotation-project="${escapeHtml(p.id)}">建立／查看報價</button></div>
+            <div class="project-detail-section-head"><h4>報價紀錄</h4><div class="inline-actions"><button class="btn-sm" type="button" data-change-order-project="${escapeHtml(p.id)}" ${hasConfirmedPrice && canManageQuotations() ? "" : "disabled"}>＋新增追加減</button><button class="btn-sm" type="button" data-quotation-project="${escapeHtml(p.id)}">建立／查看報價</button></div></div>
             ${renderProjectQuotationsHtml(p.id)}
           </section>
 
@@ -1939,10 +1971,10 @@ function renderReport() {
   let totalInvoiced = 0, totalUnbilled = 0, totalReceived = 0, totalReceivable = 0, totalOutstanding = 0;
 
   list.forEach(p => {
-    const revenueUntaxed = getRevenueUntaxed(p);
+    const revenueUntaxed = p.reportingRevenueUntaxed ?? getRevenueUntaxed(p);
     const projectTotalTaxed = getProjectTotalTaxed(p);
     const paymentSummary = calculator.projectPaymentSummary(p);
-    const cost = getProjectExternalCost(p);
+    const cost = p.reportingExternalCost ?? getProjectExternalCost(p);
     const profit = revenueUntaxed - cost;
     totalInvoiced += paymentSummary.invoiced;
     totalUnbilled += paymentSummary.unbilled;
@@ -1952,7 +1984,7 @@ function renderReport() {
 
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
     const quoteModeLabel = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
-    const quotationNumber = p.confirmedQuotationNumber || projectQuotationNumber(p, state.quotations);
+    const quotationNumber = p.reportingQuotationNumber || p.confirmedQuotationNumber || projectQuotationNumber(p, state.quotations);
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -1962,7 +1994,7 @@ function renderReport() {
       <td>${escapeHtml(p.location || "")}</td>
       <td>${escapeHtml(period)}</td>
       <td>${escapeHtml(statusLabel(p.status))}</td>
-      <td class="num">${escapeHtml(formatMoney(p.quote || 0))}</td>
+      <td class="num">${escapeHtml(formatMoney(p.reportingQuoteTaxed ?? p.quote ?? 0))}</td>
       <td>${escapeHtml(quoteModeLabel)}</td>
       <td class="num">${escapeHtml(formatMoney(paymentSummary.invoiced))}</td>
       <td class="num">${projectTotalTaxed ? escapeHtml(formatMoney(paymentSummary.unbilled)) : "—"}</td>
@@ -2019,22 +2051,22 @@ function exportReportCsv() {
   ]];
 
   list.forEach(p => {
-    const revenueUntaxed = getRevenueUntaxed(p);
+    const revenueUntaxed = p.reportingRevenueUntaxed ?? getRevenueUntaxed(p);
     const mode = getTaxModeFromProject(p) === "taxed" ? "含稅" : "未稅";
     const period = `${p.startDate || ""} ~ ${p.endDate || ""}`;
-    const cost = getProjectExternalCost(p);
+    const cost = p.reportingExternalCost ?? getProjectExternalCost(p);
     const profit = revenueUntaxed - cost;
     const projectTotalTaxed = getProjectTotalTaxed(p);
     const paymentSummary = getProjectPaymentSummary(p.id, projectTotalTaxed);
 
     rows.push([
       p.name || "",
-      p.confirmedQuotationNumber || projectQuotationNumber(p, state.quotations),
+      p.reportingQuotationNumber || p.confirmedQuotationNumber || projectQuotationNumber(p, state.quotations),
       projectClientName(p),
       p.location || "",
       period,
       statusLabel(p.status),
-      String(parseIntSafe(p.quote)),
+      String(p.reportingQuoteTaxed ?? parseIntSafe(p.quote)),
       mode,
       String(paymentSummary.invoiced),
       projectTotalTaxed ? String(paymentSummary.unbilled) : "專案總價待確認",

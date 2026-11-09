@@ -2,12 +2,12 @@
 import { db, watchAuth, getUserAccess, hasPermission, ensureUserDoc, defaultPermissionsForRole } from "./firebase.js";
 import { logAction } from "./audit.js";
 import { subscribeCollection, createRenderScheduler } from "./data-store.js";
-import { createFinanceCalculator } from "./finance-calculations.js?v=phase3-v13-6";
+import { createFinanceCalculator } from "./finance-calculations.js?v=phase3-v14";
 import {
   confirmedQuotationForProject,
   latestQuotationForProject,
   projectQuotationNumber
-} from "./relation-utils.js?v=phase3-v13-6";
+} from "./relation-utils.js?v=phase3-v14";
 import {
   collection, doc, setDoc, updateDoc, deleteDoc,
   serverTimestamp, writeBatch

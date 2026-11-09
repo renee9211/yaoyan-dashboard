@@ -15,10 +15,45 @@ export function quotationMonthFromNumber(number) {
   return `20${match[1]}-${String(month).padStart(2, "0")}`;
 }
 
+export function quotationKind(quotation) {
+  return quotation?.quotationKind === "change_order" ? "change_order" : "standard";
+}
+
+export function isChangeOrderQuotation(quotation) {
+  return quotationKind(quotation) === "change_order";
+}
+
+export function signedQuotationAmount(quotation, field = "projectPriceTaxed") {
+  const value = Number(String(quotation?.[field] ?? "").replaceAll(",", "").trim());
+  return Number.isFinite(value) ? Math.round(value) : 0;
+}
+
+export function latestConfirmedChangeOrders(quotations = [], projectId = "") {
+  const latestBySeries = new Map();
+  quotations
+    .filter(quotation => isChangeOrderQuotation(quotation)
+      && quotation.status === "confirmed"
+      && (!projectId || quotation.projectId === projectId))
+    .forEach(quotation => {
+      const key = quotation.seriesId || quotation.id;
+      const current = latestBySeries.get(key);
+      const versionCompare = Number(quotation.version || 1) - Number(current?.version || 1);
+      const timeCompare = relationTimestampValue(quotation.confirmedAt || quotation.updatedAt || quotation.createdAt)
+        - relationTimestampValue(current?.confirmedAt || current?.updatedAt || current?.createdAt);
+      if (!current || versionCompare > 0 || (versionCompare === 0 && timeCompare > 0)) latestBySeries.set(key, quotation);
+    });
+  return [...latestBySeries.values()].sort((a, b) =>
+    relationTimestampValue(a.confirmedAt || a.updatedAt || a.createdAt)
+      - relationTimestampValue(b.confirmedAt || b.updatedAt || b.createdAt)
+  );
+}
+
 export function confirmedQuotationForProject(project, quotations = []) {
   if (!project) return null;
   const linked = quotations
-    .filter(quotation => quotation.projectId === project.id && quotation.status === "confirmed")
+    .filter(quotation => quotation.projectId === project.id
+      && quotation.status === "confirmed"
+      && !isChangeOrderQuotation(quotation))
     .sort((a, b) => {
       const confirmedCompare = relationTimestampValue(b.confirmedAt || b.updatedAt || b.createdAt)
         - relationTimestampValue(a.confirmedAt || a.updatedAt || a.createdAt);
@@ -33,7 +68,7 @@ export function confirmedQuotationForProject(project, quotations = []) {
 export function latestQuotationForProject(project, quotations = []) {
   if (!project) return null;
   return quotations
-    .filter(quotation => quotation.projectId === project.id)
+    .filter(quotation => quotation.projectId === project.id && !isChangeOrderQuotation(quotation))
     .sort((a, b) => {
       const updatedCompare = relationTimestampValue(b.updatedAt || b.createdAt)
         - relationTimestampValue(a.updatedAt || a.createdAt);
