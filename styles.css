@@ -1591,6 +1591,7 @@ body.drawer-open{ overflow:hidden; }
 .quotation-table th:nth-child(n+4),
 .quotation-table td:nth-child(n+4){ white-space:nowrap; }
 .quotation-table td:nth-child(3){ overflow-wrap:anywhere; }
+.quotation-table tbody td:last-child{ vertical-align:middle; }
 .quotation-table td:last-child .row-actions{ flex-wrap:nowrap; white-space:nowrap; }
 .row-actions.quotation-row-actions{ position:relative; display:grid; grid-template-columns:80px 80px; align-items:center; justify-content:end; gap:8px; }
 .quotation-row-actions > .btn,
