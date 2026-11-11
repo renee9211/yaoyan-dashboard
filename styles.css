@@ -1211,9 +1211,11 @@ body.drawer-open{ overflow:hidden; }
 .drawer-panel{
   position:relative;
   width:min(720px,94vw);
+  min-width:0;
   height:100%;
   display:flex;
   flex-direction:column;
+  overflow:hidden;
   background:var(--bg);
   box-shadow:-18px 0 50px rgba(0,0,0,.18);
   animation:drawer-in .2s ease-out;
@@ -1231,9 +1233,10 @@ body.drawer-open{ overflow:hidden; }
 }
 .drawer-head h2{ margin:2px 0 0; font-size:20px; }
 .drawer-eyebrow{ color:var(--orange); font-size:11px; font-weight:1000; letter-spacing:.08em; }
-.drawer-form{ min-height:0; flex:1; display:flex; flex-direction:column; }
-.drawer-content{ flex:1; overflow-y:auto; padding:14px; }
+.drawer-form{ min-width:0; min-height:0; flex:1; display:flex; flex-direction:column; }
+.drawer-content{ min-width:0; flex:1; overflow-x:hidden; overflow-y:auto; padding:14px; }
 .form-section{
+  min-width:0;
   padding:15px;
   margin-bottom:12px;
   background:#fff;
@@ -1701,25 +1704,55 @@ body.drawer-open{ overflow:hidden; }
 .quote-event-pdf-toggle input{ width:16px; height:16px; margin:0; accent-color:var(--orange); }
 .quote-lines-section{ padding-left:0; padding-right:0; }
 .quote-lines-section > .section-head{ padding:0 15px; }
-.quote-lines-scroll{ overflow-x:auto; padding:0 15px 5px; }
-.quote-lines-table{ width:100%; min-width:1450px; border-collapse:separate; border-spacing:0 7px; }
-.quote-lines-table th{ padding:0 5px 5px; font-size:11px; color:var(--muted); text-align:left; }
-.quote-lines-table td{ padding:4px; background:#f9fafb; vertical-align:top; }
-.quote-lines-table td:first-child{ border-radius:10px 0 0 10px; }
-.quote-lines-table td:last-child{ border-radius:0 10px 10px 0; }
-.quote-lines-table .input,.quote-lines-table .select{ min-width:78px; padding:8px; border-radius:8px; }
-.quote-lines-table .row-event{ width:105px; }
-.quote-lines-table .row-category{ width:130px; }
-.quote-lines-table .row-name{ width:185px; }
-.quote-lines-table .row-price{ width:100px; }
-.quote-lines-table .row-qty,.quote-lines-table .row-days,.quote-lines-table .row-rate{ width:72px; }
-.quote-lines-table .row-unit{ width:75px; }
-.quote-lines-table .row-mode{ width:145px; }
+.quote-lines-scroll{ min-width:0; overflow:visible; padding:0 15px 5px; }
+.quote-lines-table{ display:block; width:100%; min-width:0; border:0; }
+.quote-lines-table thead{ display:none; }
+.quote-lines-table tbody{ display:grid; gap:10px; }
+.quote-lines-table tr.quotation-line{
+  display:grid;
+  grid-template-columns:repeat(12,minmax(0,1fr));
+  gap:9px;
+  padding:12px;
+  border:1px solid var(--line2);
+  border-radius:12px;
+  background:#f9fafb;
+}
+.quote-lines-table td{ display:block; min-width:0; padding:0; background:transparent; vertical-align:top; }
+.quote-lines-table td::before{ display:block; margin:0 0 5px 2px; color:var(--muted); font-size:10px; font-weight:900; line-height:1.2; }
+.quote-lines-table td:nth-child(1){ grid-column:span 2; }
+.quote-lines-table td:nth-child(1)::before{ content:"場次"; }
+.quote-lines-table td:nth-child(2){ grid-column:span 4; }
+.quote-lines-table td:nth-child(2)::before{ content:"類別／項目"; }
+.quote-lines-table td:nth-child(3){ grid-column:span 2; }
+.quote-lines-table td:nth-child(3)::before{ content:"單價"; }
+.quote-lines-table td:nth-child(4){ grid-column:span 1; }
+.quote-lines-table td:nth-child(4)::before{ content:"數量"; }
+.quote-lines-table td:nth-child(5){ grid-column:span 1; }
+.quote-lines-table td:nth-child(5)::before{ content:"單位"; }
+.quote-lines-table td:nth-child(6){ grid-column:span 1; }
+.quote-lines-table td:nth-child(6)::before{ content:"天數"; }
+.quote-lines-table td:nth-child(7){ grid-column:span 3; }
+.quote-lines-table td:nth-child(7)::before{ content:"計價"; }
+.quote-lines-table td:nth-child(8){ grid-column:span 1; }
+.quote-lines-table td:nth-child(8)::before{ content:"續日%"; }
+.quote-lines-table td:nth-child(9){ grid-column:span 2; }
+.quote-lines-table td:nth-child(9)::before{ content:"報價小計"; }
+.addition-section .quote-lines-table td:nth-child(9)::before{ content:"追加小計"; }
+.reduction-section .quote-lines-table td:nth-child(9)::before{ content:"減項小計"; }
+.quote-lines-table td:nth-child(10){ grid-column:span 5; }
+.quote-lines-table td:nth-child(10)::before{ content:"備註"; }
+.quote-lines-table td:nth-child(11){ grid-column:span 1; align-self:end; }
+.quote-lines-table td:nth-child(11)::before{ content:"順序／操作"; }
+.quote-lines-table .input,.quote-lines-table .select,
+.quote-lines-table .row-event,.quote-lines-table .row-category,.quote-lines-table .row-name,
+.quote-lines-table .row-price,.quote-lines-table .row-qty,.quote-lines-table .row-days,
+.quote-lines-table .row-rate,.quote-lines-table .row-unit,.quote-lines-table .row-mode,
+.quote-lines-table .row-subtotal,.quote-lines-table .row-note{ width:100%; min-width:0; padding:8px; border-radius:8px; }
 .quote-pricing-control{ display:grid; gap:7px; min-width:145px; }
 .quote-pdf-toggle{ display:flex; align-items:center; gap:6px; padding:0 3px; color:#5f6773; font-size:11px; font-weight:900; white-space:nowrap; cursor:pointer; }
 .quote-pdf-toggle input{ width:15px; height:15px; margin:0; accent-color:var(--orange); }
 .quote-pdf-toggle:has(input:disabled){ opacity:.48; cursor:not-allowed; }
-.quote-lines-table .row-subtotal{ width:128px; font-weight:900; }
+.quote-lines-table .row-subtotal{ font-weight:900; }
 .change-order-editor{ display:grid; gap:16px; }
 .change-order-editor.hidden{ display:none; }
 .change-order-section{ border-left:4px solid #10b981; }
@@ -1735,9 +1768,8 @@ body.drawer-open{ overflow:hidden; }
 .a4-change-group td{ padding:5px 8px !important; background:#f3f4f6; color:#374151; font-weight:900; letter-spacing:.08em; }
 .a4-change-summary th:first-child{ color:#047857; }
 .a4-change-summary.reduction th:first-child{ color:#b91c1c; }
-.quote-subtotal-cell{ display:grid; gap:3px; min-width:128px; }
+.quote-subtotal-cell{ display:grid; gap:3px; min-width:0; }
 .row-original-subtotal{ min-height:15px; padding:0 3px; color:var(--muted); font-size:10px; font-weight:800; white-space:nowrap; }
-.quote-lines-table .row-note{ width:180px; }
 .quote-row-actions{ display:flex; gap:4px; align-items:center; justify-content:center; }
 .quote-order-btn{ width:28px; height:28px; border:1px solid var(--line); border-radius:8px; background:#fff; color:#4b5563; cursor:pointer; font-weight:1000; }
 .quote-order-btn:hover{ border-color:rgba(255,126,0,.55); color:#9a4b00; }
@@ -2003,6 +2035,17 @@ body.drawer-open{ overflow:hidden; }
   .quote-basic-grid,.quote-summary-layout{ grid-template-columns:1fr; }
   .quote-event-row{ grid-template-columns:1fr 1fr; }
   .quote-event-row .remove-event{ align-self:end; }
+  .quote-lines-table tr.quotation-line{ grid-template-columns:repeat(6,minmax(0,1fr)); }
+  .quote-lines-table td:nth-child(1){ grid-column:span 2; }
+  .quote-lines-table td:nth-child(2){ grid-column:span 4; }
+  .quote-lines-table td:nth-child(3){ grid-column:span 2; }
+  .quote-lines-table td:nth-child(4),.quote-lines-table td:nth-child(5){ grid-column:span 1; }
+  .quote-lines-table td:nth-child(6){ grid-column:span 2; }
+  .quote-lines-table td:nth-child(7){ grid-column:span 3; }
+  .quote-lines-table td:nth-child(8){ grid-column:span 1; }
+  .quote-lines-table td:nth-child(9){ grid-column:span 2; }
+  .quote-lines-table td:nth-child(10){ grid-column:span 5; }
+  .quote-lines-table td:nth-child(11){ grid-column:span 1; }
   .preview-body{ padding:10px; overflow:auto; }
   .quote-a4{ transform-origin:top left; }
 }
@@ -2022,4 +2065,20 @@ body.drawer-open{ overflow:hidden; }
   .batch-toolbar{ align-items:stretch; flex-direction:column; }
   .batch-count{ min-width:0; }
   .batch-status-field{ width:100%; }
+  .quote-lines-section > .section-head{ align-items:stretch; flex-direction:column; }
+  .quote-lines-section > .section-head .inline-actions{ display:grid; grid-template-columns:1fr; }
+  .quote-lines-section .compact-select{ width:100%; }
+  .quote-lines-scroll{ padding:0 10px 4px; }
+  .quote-lines-table tr.quotation-line{ grid-template-columns:repeat(2,minmax(0,1fr)); padding:10px; }
+  .quote-lines-table td:nth-child(1),.quote-lines-table td:nth-child(2),
+  .quote-lines-table td:nth-child(7),.quote-lines-table td:nth-child(10),
+  .quote-lines-table td:nth-child(11){ grid-column:span 2; }
+  .quote-lines-table td:nth-child(3),.quote-lines-table td:nth-child(4),
+  .quote-lines-table td:nth-child(5),.quote-lines-table td:nth-child(6),
+  .quote-lines-table td:nth-child(8),.quote-lines-table td:nth-child(9){ grid-column:span 1; }
+  .quote-row-title{ grid-template-columns:1fr; }
+  .quote-row-actions{ justify-content:flex-start; }
+  .quote-drawer-actions{ display:grid; grid-template-columns:1fr 1fr; }
+  .quote-drawer-actions .drawer-actions-left{ grid-column:1 / -1; margin:0; }
+  .quote-drawer-actions .drawer-actions-left .btn{ width:100%; }
 }
