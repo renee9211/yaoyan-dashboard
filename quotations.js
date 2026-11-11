@@ -955,7 +955,7 @@ function resetQuotationForm(quotation = null, options = {}) {
   const project = options.project || null;
   const quotationKind = quotation?.quotationKind === "change_order" || options.changeOrder ? "change_order" : "standard";
   const isNewVersion = Boolean(options.newVersion);
-  const version = quotation ? (isNewVersion ? Number(quotation.version || 1) + 1 : Number(quotation.version || 1)) : 1;
+  const version = quotation ? (isNewVersion ? maxVersion(quotation.seriesId || quotation.id) + 1 : Number(quotation.version || 1)) : 1;
   $("#quotationId").value = quotation && !isNewVersion ? quotation.id : "";
   $("#quotationSeriesId").value = quotation?.seriesId || "";
   $("#quotationVersion").value = version;
@@ -1010,13 +1010,19 @@ function resetQuotationForm(quotation = null, options = {}) {
 }
 
 function maxVersion(seriesId) {
-  return Math.max(0, ...state.quotations.filter(q => q.seriesId === seriesId).map(q => Number(q.version) || 1));
+  return Math.max(0, ...state.quotations.filter(q => (q.seriesId || q.id) === seriesId).map(q => Number(q.version) || 1));
+}
+
+function maxActiveVersion(seriesId) {
+  return Math.max(0, ...state.quotations
+    .filter(q => (q.seriesId || q.id) === seriesId && q.status !== "void")
+    .map(q => Number(q.version) || 1));
 }
 
 function openQuotation(quotation = null, options = {}) {
   if ((options.newVersion || !quotation) && !canEdit()) return alert("viewer 僅能預覽與下載報價單");
   if (quotation && !options.newVersion && ["confirmed", "void"].includes(quotation.status)) return previewQuotation(quotation);
-  if (quotation && !options.newVersion && Number(quotation.version || 1) < maxVersion(quotation.seriesId)) {
+  if (quotation && !options.newVersion && Number(quotation.version || 1) < maxActiveVersion(quotation.seriesId || quotation.id)) {
     return previewQuotation(quotation);
   }
   resetQuotationForm(quotation, options);
@@ -1078,7 +1084,7 @@ async function saveQuotation() {
   try {
     let savedId = id;
     if (id) {
-      if (existing && Number(existing.version || 1) < maxVersion(existing.seriesId)) return alert("舊版本已鎖定，請從最新版複製為新版本");
+      if (existing && Number(existing.version || 1) < maxActiveVersion(existing.seriesId || existing.id)) return alert("舊版本已鎖定，請從目前有效的最新版複製為新版本");
       await updateDoc(doc(db, "quotations", id), {
         ...payload,
         ...(payload.status === "confirmed" && existing?.status !== "confirmed" ? { confirmedAt: serverTimestamp() } : {}),
@@ -1298,6 +1304,16 @@ function latestBySeries() {
   return map;
 }
 
+function latestActiveBySeries() {
+  const map = new Map();
+  state.quotations.filter(q => q.status !== "void").forEach(q => {
+    const key = q.seriesId || q.id;
+    const current = map.get(key);
+    if (!current || Number(q.version || 1) > Number(current.version || 1)) map.set(key, q);
+  });
+  return map;
+}
+
 function quotationEventDate(q) {
   const dates = (Array.isArray(q?.events) ? q.events : []).flatMap(event => normalizedDateTokens(event?.eventDate)).sort();
   if (dates[0]) return dates[0];
@@ -1396,6 +1412,7 @@ function renderQuotations() {
   const status = $("#quotationStatusFilter")?.value || "all";
   const sortBy = $("#quotationSort")?.value || "dateAsc";
   const latest = latestBySeries();
+  const activeLatest = latestActiveBySeries();
   const confirmedBySeries = new Map();
   state.quotations.filter(q => q.status === "confirmed").forEach(q => {
     const key = q.seriesId || q.id;
@@ -1418,12 +1435,13 @@ function renderQuotations() {
   const existingIds = new Set(state.quotations.map(quotation => quotation.id));
   [...state.quotationSelectedIds].forEach(id => {
     const quotation = state.quotations.find(item => item.id === id);
-    const isLatest = quotation && latest.get(quotation.seriesId || quotation.id)?.id === quotation.id;
-    if (!existingIds.has(id) || !isLatest || quotation?.status === "void") state.quotationSelectedIds.delete(id);
+    const isActiveLatest = quotation && activeLatest.get(quotation.seriesId || quotation.id)?.id === quotation.id;
+    if (!existingIds.has(id) || !isActiveLatest || quotation?.status === "void") state.quotationSelectedIds.delete(id);
   });
   body.innerHTML = list.length ? list.map(q => {
     const isLatest = latest.get(q.seriesId || q.id)?.id === q.id;
-    const selectable = canEdit() && isLatest && q.status !== "void";
+    const isActiveLatest = activeLatest.get(q.seriesId || q.id)?.id === q.id;
+    const selectable = canEdit() && isActiveLatest && q.status !== "void";
     return `<tr>
       <td class="batch-checkbox-cell"><input class="batch-checkbox quotation-select" type="checkbox" value="${esc(q.id)}" aria-label="選取報價 ${esc(q.number)} V${esc(q.version || 1)}" ${state.quotationSelectedIds.has(q.id) ? "checked" : ""} ${selectable ? "" : "disabled"} /></td>
       <td><button class="quote-link" type="button" data-quotation-preview="${esc(q.id)}">${esc(q.number)}</button><span class="badge ${q.quotationKind === "change_order" ? "blue" : "neutral"} quotation-kind-badge">${q.quotationKind === "change_order" ? "追加減" : "一般"}</span></td>
@@ -1437,26 +1455,26 @@ function renderQuotations() {
         <details class="row-action-menu">
           <summary class="btn ghost small">更多</summary>
           <div class="row-action-menu-list">
-            <button class="btn ghost small" type="button" data-quotation-edit="${esc(q.id)}" ${canEdit() && isLatest && !["confirmed", "void"].includes(q.status) ? "" : "disabled"}>編輯</button>
-            <button class="btn ghost small" type="button" data-quotation-version="${esc(q.id)}" ${canEdit() && isLatest ? "" : "disabled"}>複製新版</button>
+            <button class="btn ghost small" type="button" data-quotation-edit="${esc(q.id)}" ${canEdit() && isActiveLatest && !["confirmed", "void"].includes(q.status) ? "" : "disabled"}>編輯</button>
+            <button class="btn ghost small" type="button" data-quotation-version="${esc(q.id)}" ${canEdit() && isActiveLatest ? "" : "disabled"}>複製新版</button>
             ${q.status === "confirmed" ? `<button class="btn ghost small" type="button" data-quotation-sync="${esc(q.id)}" ${(canEdit() && (q.projectId ? canEditProject() : canCreateProject())) ? "" : "disabled"}>${q.quotationKind === "change_order" ? "重新計算專案價" : q.projectId ? "同步專案金額" : "建立專案"}</button>` : ""}
-            <button class="btn ghost small" type="button" data-quotation-void="${esc(q.id)}" ${canEdit() && isLatest && q.status !== "void" ? "" : "disabled"}>作廢</button>
+            <button class="btn ghost small" type="button" data-quotation-void="${esc(q.id)}" ${canEdit() && isActiveLatest && q.status !== "void" ? "" : "disabled"}>作廢</button>
             <button class="btn ghost small danger-text" type="button" data-quotation-delete="${esc(q.id)}" ${canDelete() ? "" : "disabled"}>刪除</button>
           </div>
         </details>
       </div></td>
     </tr>`;
   }).join("") : `<tr><td colspan="8"><div class="empty-state">尚無符合條件的報價</div></td></tr>`;
-  updateQuotationBatchUi(list, latest);
+  updateQuotationBatchUi(list, activeLatest);
   renderQuotationPagination(filteredList.length);
   renderQuotationProjectScope();
 
   $("#quotationSeriesCount").textContent = String(latest.size);
-  $("#quotationOpenCount").textContent = String([...latest.values()].filter(q => q.status === "draft" || q.status === "sent").length);
+  $("#quotationOpenCount").textContent = String([...activeLatest.values()].filter(q => q.status === "draft" || q.status === "sent").length);
   $("#quotationConfirmedTotal").textContent = signedMoney([...confirmedBySeries.values()].reduce((sum, q) => sum + (q.quotationKind === "change_order" ? signedIntegerValue(q.adjustmentTotalTaxed ?? q.projectPriceTaxed) : integerValue(q.projectPriceTaxed)), 0));
 }
 
-function updateQuotationBatchUi(pageList = [], latest = latestBySeries()) {
+function updateQuotationBatchUi(pageList = [], latest = latestActiveBySeries()) {
   const allowed = canEdit();
   $("#quotationBatchBar")?.classList.toggle("hidden", !allowed);
   const selectedCount = state.quotationSelectedIds.size;
@@ -1488,7 +1506,7 @@ async function applyQuotationBatchStatus() {
   if (!canEdit()) return alert("你目前沒有管理報價的權限");
   const nextStatus = $("#quotationBatchStatus")?.value || "";
   if (!["draft", "sent", "confirmed", "void"].includes(nextStatus)) return alert("請先選擇要套用的報價狀態");
-  const latest = latestBySeries();
+  const latest = latestActiveBySeries();
   const selected = state.quotations.filter(quotation => state.quotationSelectedIds.has(quotation.id));
   const changeOrdersRequiringIndividualAction = selected.filter(quotation => quotation.quotationKind === "change_order"
     && (nextStatus === "confirmed" || quotation.status === "confirmed"));
@@ -1543,7 +1561,7 @@ async function applyQuotationBatchStatus() {
 
 async function syncQuotationBatchToProjects() {
   if (!canEdit() || !canEditProject()) return alert("你目前沒有同時管理報價與編輯專案的權限");
-  const latest = latestBySeries();
+  const latest = latestActiveBySeries();
   const selected = state.quotations.filter(quotation => state.quotationSelectedIds.has(quotation.id));
   if (!selected.length) return alert("請先選擇要同步的報價");
   if (selected.length > 400) return alert("單次最多同步 400 筆報價，請分批操作");

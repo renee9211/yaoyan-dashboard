@@ -1577,7 +1577,7 @@ body.drawer-open{ overflow:hidden; }
 .quotation-project-scope button{ border:0; padding:4px 7px; background:transparent; color:#9a4b00; cursor:pointer; font-weight:900; }
 .customer-table,.item-table,.quotation-table{ min-width:900px; }
 .item-table th{ white-space:nowrap; }
-.quotation-table{ min-width:1062px; table-layout:fixed; }
+.quotation-table{ min-width:1076px; table-layout:fixed; }
 .quotation-table col.quotation-col-select{ width:42px; }
 .quotation-table col.quotation-col-number{ width:112px; }
 .quotation-table col.quotation-col-project{ width:300px; }
@@ -1585,14 +1585,16 @@ body.drawer-open{ overflow:hidden; }
 .quotation-table col.quotation-col-price{ width:110px; }
 .quotation-table col.quotation-col-status{ width:90px; }
 .quotation-table col.quotation-col-date{ width:156px; }
-.quotation-table col.quotation-col-actions{ width:160px; }
+.quotation-table col.quotation-col-actions{ width:176px; }
 .quotation-table th:nth-child(2),
 .quotation-table td:nth-child(2),
 .quotation-table th:nth-child(n+4),
 .quotation-table td:nth-child(n+4){ white-space:nowrap; }
 .quotation-table td:nth-child(3){ overflow-wrap:anywhere; }
 .quotation-table td:last-child .row-actions{ flex-wrap:nowrap; white-space:nowrap; }
-.quotation-row-actions{ position:relative; align-items:center; }
+.row-actions.quotation-row-actions{ position:relative; display:grid; grid-template-columns:80px 80px; align-items:center; justify-content:end; gap:8px; }
+.quotation-row-actions > .btn,
+.row-action-menu > summary{ display:inline-flex; align-items:center; justify-content:center; width:80px; min-height:38px; padding-left:10px; padding-right:10px; }
 .row-action-menu{ position:relative; }
 .row-action-menu > summary{ list-style:none; cursor:pointer; user-select:none; }
 .row-action-menu > summary::-webkit-details-marker{ display:none; }
@@ -1611,7 +1613,7 @@ body.drawer-open{ overflow:hidden; }
   background:#fff;
   box-shadow:0 14px 34px rgba(24,32,45,.18);
 }
-.row-action-menu-list .btn{ justify-content:flex-start; width:100%; border:0; }
+.row-action-menu-list .btn{ justify-content:center; width:100%; min-height:38px; border:0; text-align:center; }
 .danger-text{ color:#b42318 !important; }
 
 .project-workflow{

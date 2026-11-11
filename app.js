@@ -1610,7 +1610,7 @@ function renderProjectsTable() {
           </section>
 
           <section class="project-detail-section">
-            <div class="project-detail-section-head"><h4>報價紀錄</h4><div class="inline-actions"><button class="btn-sm" type="button" data-change-order-project="${escapeHtml(p.id)}" ${hasConfirmedPrice && canManageQuotations() ? "" : "disabled"}>＋新增追加減</button><button class="btn-sm" type="button" data-quotation-project="${escapeHtml(p.id)}">建立／查看報價</button></div></div>
+            <div class="project-detail-section-head"><h4>報價紀錄</h4><div class="inline-actions"><button class="btn-sm" type="button" data-change-order-project="${escapeHtml(p.id)}" ${canManageQuotations() ? "" : "disabled"} title="${hasConfirmedPrice ? "" : "尚未同步原始專案價，點擊後會顯示處理方式"}">＋新增追加減</button><button class="btn-sm" type="button" data-quotation-project="${escapeHtml(p.id)}">建立／查看報價</button></div></div>
             ${renderProjectQuotationsHtml(p.id)}
           </section>
 
