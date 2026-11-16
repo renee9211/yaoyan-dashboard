@@ -925,17 +925,26 @@ function renderPermissions() {
   const isAdmin = state.access?.role === "admin";
   section?.classList.toggle("hidden", !isAdmin);
   if (!isAdmin || !$("#userPermissionBody")) return;
-  $("#userPermissionBody").innerHTML = state.users.map(user => {
+  $("#userPermissionBody").innerHTML = state.users.filter(user => user.accessStatus !== "rejected" || $("#showRemovedUsers")?.checked).map(user => {
     const role = user.role || "viewer";
     const approved = user.approved === true || (!("approved" in user) && ["admin", "editor"].includes(role));
     const permissions = normalizedUserPermissions(user);
     const self = user.id === state.user?.uid;
+    const removed = user.accessStatus === "rejected";
+    const disabled = !removed && user.accessStatus === "disabled";
+    const pending = !approved && !disabled && !removed;
+    const statusLabel = removed ? "已移除" : disabled ? "已停用" : approved ? "已核准" : "待核准";
+    const locked = self || removed;
     return `<tr data-user-row="${esc(user.id)}">
       <td><b>${esc(user.displayName || "未填姓名")}</b><div class="table-sub">${esc(user.email || user.id)}</div>${self ? `<span class="detail-latest-tag">目前帳號</span>` : ""}</td>
-      <td><label class="approval-toggle"><input class="user-approved" type="checkbox" ${approved ? "checked" : ""} ${self ? "disabled" : ""} /><span class="badge ${approved ? "green" : "orange"}">${approved ? "已核准" : "待核准"}</span></label></td>
-      <td><select class="select compact-select user-role" ${self ? "disabled" : ""}><option value="viewer" ${role === "viewer" ? "selected" : ""}>viewer</option><option value="editor" ${role === "editor" ? "selected" : ""}>editor</option><option value="admin" ${role === "admin" ? "selected" : ""}>admin</option></select></td>
-      ${PERMISSION_KEYS.map(key => `<td class="permission-cell"><input type="checkbox" data-permission="${esc(key)}" ${permissions[key] ? "checked" : ""} ${(role === "admin" || self) ? "disabled" : ""} aria-label="${esc(permissionLabels[key] || key)}" /></td>`).join("")}
-      <td><button class="btn ghost small" type="button" data-save-user="${esc(user.id)}" ${self ? "disabled" : ""}>儲存</button></td>
+      <td><label class="approval-toggle"><input class="user-approved" type="checkbox" ${approved ? "checked" : ""} ${locked ? "disabled" : ""} /><span class="badge ${approved ? "green" : "orange"}">${statusLabel}</span></label></td>
+      <td><select class="select compact-select user-role" ${locked ? "disabled" : ""}><option value="viewer" ${role === "viewer" ? "selected" : ""}>viewer</option><option value="editor" ${role === "editor" ? "selected" : ""}>editor</option><option value="admin" ${role === "admin" ? "selected" : ""}>admin</option></select></td>
+      ${PERMISSION_KEYS.map(key => `<td class="permission-cell"><input type="checkbox" data-permission="${esc(key)}" ${permissions[key] ? "checked" : ""} ${(role === "admin" || locked) ? "disabled" : ""} aria-label="${esc(permissionLabels[key] || key)}" /></td>`).join("")}
+      <td><div class="row-actions">
+        ${removed ? `<button class="btn ghost small" type="button" data-restore-request="${esc(user.id)}">還原申請</button>`
+          : `<button class="btn ghost small" type="button" data-save-user="${esc(user.id)}" ${self ? "disabled" : ""}>儲存</button>
+          ${!self ? pending ? `<button class="btn ghost small" type="button" data-remove-request="${esc(user.id)}">移除申請</button>` : approved ? `<button class="btn ghost small" type="button" data-disable-user="${esc(user.id)}">停用</button>` : `<button class="btn ghost small" type="button" data-enable-user="${esc(user.id)}">重新啟用</button>` : ""}`}
+      </div></td>
     </tr>`;
   }).join("");
 }
@@ -977,18 +986,52 @@ async function saveUserPermissions(userId) {
   if (state.access?.role !== "admin" || userId === state.user?.uid) return;
   const row = $(`[data-user-row="${CSS.escape(userId)}"]`);
   const user = state.users.find(item => item.id === userId);
-  if (!row || !user) return;
+  if (!row || !user || user.accessStatus === "rejected") return;
   const role = $(".user-role", row).value;
   const approved = $(".user-approved", row)?.checked === true;
   const permissions = {};
   PERMISSION_KEYS.forEach(key => { permissions[key] = $(`[data-permission="${CSS.escape(key)}"]`, row)?.checked === true; });
   try {
-    await updateDoc(doc(db, "users", userId), { role, approved, permissions, updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+    await updateDoc(doc(db, "users", userId), { role, approved, permissions, accessStatus: approved ? "active" : (user.accessStatus === "disabled" || user.approved === true ? "disabled" : "pending"), updatedAt: serverTimestamp(), updatedBy: state.user.uid });
     await logAction({ action: "permission", module: "permissions", targetType: "user", targetId: userId, targetName: user.displayName || user.email || userId, summary: `${approved ? "已核准" : "已停用"}｜角色：${role}｜已開放 ${Object.values(permissions).filter(Boolean).length} 項操作權限` });
     alert("權限已儲存；對方重新整理網站後會套用新權限。");
   } catch (error) {
     console.error(error);
     alert("權限儲存失敗：請確認第三階段 Firestore Rules 已發布");
+  }
+}
+
+async function changeUserAccess(userId, action) {
+  if (state.access?.role !== "admin" || userId === state.user?.uid) return;
+  const user = state.users.find(item => item.id === userId);
+  if (!user) return;
+  const approved = user.approved === true || (!("approved" in user) && ["admin", "editor"].includes(user.role));
+  const pending = !approved && user.accessStatus !== "disabled" && user.accessStatus !== "rejected";
+  const allowed = (action === "remove" && pending) ||
+    (action === "disable" && approved && user.accessStatus !== "rejected") ||
+    (action === "enable" && user.accessStatus === "disabled") ||
+    (action === "restore" && user.accessStatus === "rejected");
+  if (!allowed) return;
+  const messages = {
+    remove: "確定移除待核准申請？會封存紀錄並拒絕存取，不會刪除 Authentication 帳號。",
+    disable: "確定停用此帳號？對方將無法再讀取曜炎的資料。",
+    enable: "確定重新啟用此帳號原有權限？",
+    restore: "確定還原為待核准申請？還原後仍不會自動獲准使用。"
+  };
+  if (!confirm(messages[action])) return;
+  const changes = {
+    remove: { approved: false, role: "viewer", permissions: defaultPermissionsForRole("viewer"), accessStatus: "rejected" },
+    disable: { approved: false, accessStatus: "disabled" },
+    enable: { approved: true, accessStatus: "active" },
+    restore: { approved: false, role: "viewer", permissions: defaultPermissionsForRole("viewer"), accessStatus: "pending" }
+  }[action];
+  const names = { remove: "移除待核准申請", disable: "停用帳號", enable: "重新啟用帳號", restore: "還原待核准申請" };
+  try {
+    await updateDoc(doc(db, "users", userId), { ...changes, updatedAt: serverTimestamp(), updatedBy: state.user.uid });
+    await logAction({ action: "permission", module: "permissions", targetType: "user", targetId: userId, targetName: user.displayName || user.email || userId, summary: names[action] });
+  } catch (error) {
+    console.error(error);
+    alert("變更帳號狀態失敗，請檢查 Firebase 權限與網路連線。");
   }
 }
 
@@ -1189,8 +1232,18 @@ function bindEvents() {
   });
   $("#userPermissionBody")?.addEventListener("click", event => {
     const button = event.target.closest("[data-save-user]");
-    if (button) saveUserPermissions(button.dataset.saveUser);
+    if (button) return saveUserPermissions(button.dataset.saveUser);
+    const actions = [
+      ["removeRequest", "remove"], ["disableUser", "disable"],
+      ["enableUser", "enable"], ["restoreRequest", "restore"]
+    ];
+    for (const [key, action] of actions) {
+      const name = "data-" + key.replace(/[A-Z]/g, match => "-" + match.toLowerCase());
+      const control = event.target.closest("[" + name + "]");
+      if (control) return changeUserAccess(control.dataset[key], action);
+    }
   });
+  $("#showRemovedUsers")?.addEventListener("change", renderPermissions);
   $("#auditSearch")?.addEventListener("input", () => { resetFinancePages(["audit"]); renderAudit(); });
   $("#auditModuleFilter")?.addEventListener("change", () => { resetFinancePages(["audit"]); renderAudit(); });
 }
