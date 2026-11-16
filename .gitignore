@@ -1,0 +1,14 @@
+# Local credentials and build artifacts
+node_modules/
+firebase-debug.log
+firebase-debug.*.log
+.env
+.env.*
+!.env.example
+.firebase/
+*.local
+*.pem
+*.p12
+*.pfx
+*service-account*.json
+*serviceAccount*.json
