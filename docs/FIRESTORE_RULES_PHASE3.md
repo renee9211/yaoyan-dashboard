@@ -1,15 +1,17 @@
-# 第三階段 v7（標準財務流程）完整 Firestore Rules
+# Firestore Security Rules — 曜炎 Dashboard 權限修正版（2026-11-16）
 
-第三階段新增：
+> 注意：此檔為版本化的規則參考，**不是 Firebase Console 的即時讀取結果**。內容依 2026-11-16 對話中已交付並由管理員回報發布、完成角色測試的修正版整理。若後續 Console 有修改，必須重新同步本文件。
 
-- `expenses`：逐筆外部支出
-- `companyExpenses`：不連結單一專案的公司營運支出與設備採購
-- `auditLogs`：不可修改或刪除的操作紀錄
-- `users.permissions`：各功能的細分操作權限
-- `receipts`：每一次實際入帳的獨立收款紀錄；同一筆請款可分次收款
-- `expenses`／`companyExpenses`：新增廠商請款、預計付款與實際付款欄位
+## 主要安全限制
 
-請將 Firebase Console「Firestore Database → 規則」目前內容全部替換為下方完整版本，再按「發布」。
+- 只有已核准的使用者能讀取專案、報價、財務、客戶、設備資料。
+- 所有功能權限函式先檢查 `isApproved()`，避免未核准使用者靠自訂 permissions 寫入資料。
+- 新用戶只能建立未核准 Viewer，不可額外申報自訂權限。
+- 非管理員只能修改自己有限的個人欄位，新增／刪除欄位也會被 `affectedKeys()` 阻擋。
+- 保留既有 `admin`、`editor`、`viewer` 與 Legacy Editor 相容行為；本規則尚未支援跨公司隔離。
+- `users` 文件目前禁止刪除；前端「移除申請」是將使用者狀態封存／拒絕，非刪除 Authentication 帳號。
+
+## 規則全文
 
 ```javascript
 rules_version = '2';
@@ -25,8 +27,19 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function hasUserDoc() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isApproved() {
+      return hasUserDoc() && (
+        (("approved" in userData()) && userData().approved == true) ||
+        (!("approved" in userData()) && userData().role in ["admin", "editor"])
+      );
+    }
+
     function userRole() {
-      return isSignedIn() ? userData().role : null;
+      return isApproved() ? userData().role : null;
     }
 
     function isAdmin() {
@@ -38,59 +51,59 @@ service cloud.firestore {
     }
 
     function canCreateProjects() {
-      return isAdmin() || isLegacyEditor() ||
-        (("permissions" in userData()) && userData().permissions.createProjects == true);
+      return isApproved() && (isAdmin() || isLegacyEditor() ||
+        (("permissions" in userData()) && userData().permissions.createProjects == true));
     }
 
     function canEditProjects() {
-      return isAdmin() ||
-        (("permissions" in userData()) && userData().permissions.editProjects == true);
+      return isApproved() && (isAdmin() ||
+        (("permissions" in userData()) && userData().permissions.editProjects == true));
     }
 
     function canManageQuotations() {
-      return isAdmin() || isLegacyEditor() ||
-        (("permissions" in userData()) && userData().permissions.manageQuotations == true);
+      return isApproved() && (isAdmin() || isLegacyEditor() ||
+        (("permissions" in userData()) && userData().permissions.manageQuotations == true));
     }
 
     function canManagePayments() {
-      return isAdmin() || isLegacyEditor() ||
-        (("permissions" in userData()) && userData().permissions.managePayments == true);
+      return isApproved() && (isAdmin() || isLegacyEditor() ||
+        (("permissions" in userData()) && userData().permissions.managePayments == true));
     }
 
     function canManageExpenses() {
-      return isAdmin() || isLegacyEditor() ||
-        (("permissions" in userData()) && userData().permissions.manageExpenses == true);
+      return isApproved() && (isAdmin() || isLegacyEditor() ||
+        (("permissions" in userData()) && userData().permissions.manageExpenses == true));
     }
 
     function canManageCompanyExpenses() {
-      return isAdmin() ||
+      return isApproved() && (isAdmin() ||
         (userRole() == "editor" && (!("permissions" in userData()) || !("manageCompanyExpenses" in userData().permissions))) ||
-        (("permissions" in userData()) && userData().permissions.manageCompanyExpenses == true);
+        (("permissions" in userData()) && userData().permissions.manageCompanyExpenses == true));
     }
 
     function canCreateEquipment() {
-      return isAdmin() || isLegacyEditor() ||
-        (("permissions" in userData()) && userData().permissions.createEquipment == true);
+      return isApproved() && (isAdmin() || isLegacyEditor() ||
+        (("permissions" in userData()) && userData().permissions.createEquipment == true));
     }
 
     function canEditEquipment() {
-      return isAdmin() ||
-        (("permissions" in userData()) && userData().permissions.editEquipment == true);
+      return isApproved() && (isAdmin() ||
+        (("permissions" in userData()) && userData().permissions.editEquipment == true));
     }
 
     function canManageCustomers() {
-      return isAdmin() || isLegacyEditor() ||
-        (("permissions" in userData()) && userData().permissions.manageCustomers == true);
+      return isApproved() && (isAdmin() || isLegacyEditor() ||
+        (("permissions" in userData()) && userData().permissions.manageCustomers == true));
     }
 
     function canManageCatalog() {
-      return isAdmin() || isLegacyEditor() ||
-        (("permissions" in userData()) && userData().permissions.manageCatalog == true);
+      return isApproved() && (isAdmin() || isLegacyEditor() ||
+        (("permissions" in userData()) && userData().permissions.manageCatalog == true));
     }
 
     function canViewAudit() {
-      return isAdmin() ||
-        (("permissions" in userData()) && userData().permissions.viewAudit == true);
+      return isApproved() && (isAdmin() ||
+        (("permissions" in userData()) && userData().permissions.viewAudit == true));
     }
 
     function validProjectData() {
@@ -190,77 +203,98 @@ service cloud.firestore {
       allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       allow list: if isSignedIn() && isAdmin();
 
+      // New users can only register as unapproved viewers. No custom privileges.
       allow create: if isSignedIn() && request.auth.uid == userId &&
-        request.resource.data.role == "viewer";
+        request.resource.data.keys().hasOnly([
+          "email", "displayName", "role", "approved", "permissions", "createdAt", "updatedAt"
+        ]) &&
+        request.resource.data.role == "viewer" &&
+        request.resource.data.approved == false &&
+        (!('permissions' in request.resource.data) ||
+          request.resource.data.permissions == {
+            "createProjects": false,
+            "editProjects": false,
+            "manageQuotations": false,
+            "managePayments": false,
+            "manageExpenses": false,
+            "manageCompanyExpenses": false,
+            "createEquipment": false,
+            "editEquipment": false,
+            "manageCustomers": false,
+            "manageCatalog": false,
+            "viewAudit": false
+          });
 
       allow update: if isSignedIn() && (
         (request.auth.uid == userId &&
-          request.resource.data.diff(resource.data).changedKeys().hasOnly(["updatedAt", "displayName", "email"])) ||
-        (isAdmin() && request.resource.data.role in ["admin", "editor", "viewer"])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["updatedAt", "displayName", "email"])) ||
+        (isAdmin() &&
+          request.resource.data.role in ["admin", "editor", "viewer"] &&
+          request.resource.data.approved is bool)
       );
 
       allow delete: if false;
     }
 
     match /projects/{projectId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isApproved();
       allow create: if canCreateProjects() && validProjectData();
       allow update: if canEditProjects() && validProjectData();
       allow delete: if isAdmin();
     }
 
     match /equipment/{equipmentId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isApproved();
       allow create: if canCreateEquipment() && validEquipmentData();
       allow update: if canEditEquipment() && validEquipmentData();
       allow delete: if isAdmin();
     }
 
     match /customers/{customerId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isApproved();
       allow create, update: if canManageCustomers();
       allow delete: if isAdmin();
     }
 
     match /quotationItems/{itemId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isApproved();
       allow create, update: if canManageCatalog();
       allow delete: if isAdmin();
     }
 
     match /quotations/{quotationId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isApproved();
       allow create, update: if canManageQuotations();
       allow delete: if isAdmin();
     }
 
     match /payments/{paymentId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isApproved();
       allow create, update: if canManagePayments() && validPaymentData();
       allow delete: if isAdmin();
     }
 
     match /receipts/{receiptId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isApproved();
       allow create, update: if canManagePayments() && validReceiptData();
       allow delete: if isAdmin();
     }
 
     match /expenses/{expenseId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isApproved();
       allow create, update: if canManageExpenses() && validExpenseData();
       allow delete: if isAdmin();
     }
 
     match /companyExpenses/{expenseId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isApproved();
       allow create, update: if canManageCompanyExpenses() && validCompanyExpenseData();
       allow delete: if isAdmin();
     }
 
     match /auditLogs/{logId} {
-      allow get, list: if isSignedIn() && canViewAudit();
-      allow create: if isSignedIn() && validAuditData();
+      allow get, list: if isApproved() && canViewAudit();
+      allow create: if isApproved() && validAuditData();
       allow update, delete: if false;
     }
 
@@ -271,11 +305,8 @@ service cloud.firestore {
 }
 ```
 
-## 權限相容性
+## 驗證狀態
 
-- 舊的 `admin`：仍保有全部權限。
-- 舊的 `editor`：在尚未透過「系統管理」儲存細分權限前，維持第二階段原有權限。
-- 已儲存舊版細分權限的 `editor`：新增的「公司支出」權限預設開放；admin 再次儲存後可個別關閉。
-- 舊的 `viewer`：維持只看資料。
-- admin 在「系統管理」儲存某位使用者後，該使用者改採逐項權限。
-- 操作紀錄從第三階段上線後才開始累積，不會偽造過去的歷史紀錄。
+管理員回報：Admin 登入／專案／報價財務／權限管理、Editor 授權與未授權操作、未核准帳號讀取拒絕，均已通過人工操作測試。**尚不等於 Firebase Emulator 自動化測試或實際部署規則的 API 逐字驗證。**
+
+修改本檔不會自動部署 Firebase Rules；任何修改均需通過 Emulator 並另行部署。
