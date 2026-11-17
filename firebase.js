@@ -2,6 +2,7 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-analytics.js";
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app-check.js";
 
 import {
   getFirestore,
@@ -31,6 +32,14 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
+
+// Firebase App Check: issue web attestation tokens before Firestore/Auth requests.
+// Enforcement is intentionally NOT enabled here; it is controlled in Firebase Console.
+export const appCheck = initializeAppCheck(app, {
+  provider: new ReCaptchaEnterpriseProvider("6LcW_SMuAAAAAAy5lfhHRGY_zXxeDio9hieJpxTD"),
+  isTokenAutoRefreshEnabled: true
+});
+
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
